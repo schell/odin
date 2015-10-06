@@ -13,13 +13,6 @@ import Graphics.UI.GLFW
 import Graphics.Text.TrueType
 import Gelatin.Core.Rendering
 import GHC.Generics (Generic)
---import Control.Concurrent.Async
-import Control.Varying
-import Control.Eff
-import Control.Eff.Lift
-import Control.Eff.Fresh
-import Control.Eff.State.Strict
-import Control.Eff.Reader.Strict
 import Data.Typeable
 import Data.Hashable
 import Data.Renderable
@@ -34,19 +27,6 @@ data Rez = Rez { rezGeom      :: GeomRenderSource
                , rezFont      :: Font
                , rezIcons     :: Font
                } deriving (Typeable)
-
-type MakesScene r = ( ReadsRez r
-                    , ModifiesRenderings r
-                    , DoesIO r
-                    )
-
-type ReadsRez r = Member (Reader Rez) r
-type ModifiesTime r = Member (State Delta) r
-type DoesIO r = SetMember Lift (Lift IO) r
-
-type ModifiesRenderings r = (Member (State AttachedRenderings) r)
-
-instance Hashable Clip
 
 data Clip = Clip { clipTopLeft     :: V2 Int
                  , clipBottomRight :: V2 Int
@@ -73,9 +53,3 @@ data PicInfo = PicInfo { picInfoWidth  :: Int
                        } deriving (Show, Eq, Ord)
 
 newtype Uid = Uid { unUid :: Int } deriving (Show, Eq, Enum, Ord, Num)
-
-type MakesUid r = Member (Fresh Uid) r
-
-type TimeDelta r = Member (State Delta) r
-
-type Vareff r = Var (Eff r)

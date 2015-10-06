@@ -1,20 +1,6 @@
-module Odin.Data where
+module Odin.Data (
+    module D
+) where
 
-import Graphics.UI.GLFW
-
-instance Monoid InputEvent where
-    mempty = NoInputEvent
-    mappend NoInputEvent e = e
-    mappend e _ = e
-
-data InputEvent = NoInputEvent
-                | CharEvent Char
-                | WindowSizeEvent Int Int
-                | KeyEvent Key Int KeyState ModifierKeys
-                -- ^ Key, scancode, pressed/released, mods
-                | MouseButtonEvent MouseButton MouseButtonState ModifierKeys
-                | CursorMoveEvent Double Double
-                | CursorEnterEvent CursorState
-                | ScrollEvent Double Double
-                | FileDropEvent [String]
-                deriving (Show, Eq, Ord)
+import Odin.Data.Common as D
+import Odin.Data.Login as D
