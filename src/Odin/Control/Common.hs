@@ -9,20 +9,22 @@ import Control.Concurrent.Async
 import Graphics.UI.GLFW hiding (init)
 import Gelatin.Core.Triangulation.Common
 import Data.Time.Clock
-import Control.GUI
 import Linear
-import Control.Monad.State.Strict
 import Control.Varying
 import Control.Varying.Time hiding (before, after)
+import Control.Monad.Trans.Reader
+import Control.Monad.State
 import Control.Monad.Trans.Either
 
-type V = Var IO
-type Odin = GUI IO InputEvent UI
+initialize :: s -> State s () -> s
+initialize s f = execState f s
 
-typingBuffer :: V InputEvent String
+typingBuffer :: Monad m => Var m InputEvent String
 typingBuffer = typingBufferOn "" $ always ()
 
-typingBufferOn :: String -> V InputEvent (Event a) -> V InputEvent String
+typingBufferOn :: Monad m
+               => String -> Var m InputEvent (Event a)
+               -> Var m InputEvent String
 typingBufferOn ss on =
     ((>>) <$> on <*> keyInput) ~> foldStream f ss
     where f s (KeyChar c) = s ++ [c]
@@ -30,25 +32,23 @@ typingBufferOn ss on =
           f s (KeyMod Key'Backspace) = f s (KeyMod Key'Delete)
           f s _ = s
 
-tabCount :: V InputEvent Int
-tabCount = tabs ~> foldStream (+) 0
-    where tabs :: V InputEvent (Event Int)
-          tabs = (1 <$) <$> tab
+tabCount :: Monad m => Var m InputEvent Int
+tabCount = ((1 <$) <$> tab) ~> foldStream (+) 0
 
-tab :: V InputEvent (Event ())
+tab :: Monad m => Var m InputEvent (Event ())
 tab = f <$> keyInput
     where f (Event (KeyMod Key'Tab)) = Event ()
           f _ = NoEvent
 
-enter :: V InputEvent (Event ())
+enter :: Monad m => Var m InputEvent (Event ())
 enter = f <$> keyInput
     where f (Event (KeyMod Key'Enter)) = Event ()
           f _ = NoEvent
 
-time :: V a Float
+time :: MonadIO m => Var m a Float
 time = delta (liftIO getCurrentTime) (\a b -> realToFrac $ diffUTCTime a b)
 
-keyInput :: V InputEvent (Event KeyInput)
+keyInput :: Monad m => Var m InputEvent (Event KeyInput)
 keyInput = var check ~> onJust
     where check e
             | (CharEvent c) <- e
@@ -69,12 +69,14 @@ untilEvent va (ve, f) = Var $ \a -> do
        Event c -> runVar (f c b) a
        NoEvent -> return (b, untilEvent va' (ve', f))
 
-caltrops :: Show b => EitherT ServantError IO b -> V a (Event (Either String b))
+caltrops :: (Show b, MonadIO m)
+         => EitherT ServantError IO b -> Var m a (Event (Either String b))
 caltrops f = Var $ \_ -> do
     e <- liftIO $ async $ runEitherT f
     return (NoEvent, checkAsync e)
 
-checkAsync :: Show b => Async (Either ServantError b) -> V a (Event (Either String b))
+checkAsync :: (Show b, MonadIO m)
+           => Async (Either ServantError b) -> Var m a (Event (Either String b))
 checkAsync a = Var $ \_ -> do
     r <- liftIO $ poll a
     case r of
@@ -87,34 +89,39 @@ checkAsync a = Var $ \_ -> do
 localhost :: BaseUrl
 localhost = BaseUrl Http "localhost" 8081
 
-windowSizeStream :: Monad m => Var m InputEvent (Event (V2 Float))
-windowSizeStream = var f ~> onJust
-    where f (WindowSizeEvent w h) = Just $ realToFrac <$> V2 w h
-          f _ = Nothing
+windowSize :: Monad m => Var (ReaderT Input m) i (V2 Float)
+windowSize = varM $ const $ asks inputWindowSize
 
-cursorPos :: Monad m => Var m InputEvent (V2 Float)
-cursorPos = cursorMoved ~> startingWith 0
+cursorPos :: Monad m => Var (ReaderT Input m) i (V2 Float)
+cursorPos = varM $ const $ asks inputCursorPos
 
-isCursorInPath :: Monad m => Var m InputEvent Path -> Var m InputEvent Bool
+isCursorInPath :: Monad m
+               => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i Bool
 isCursorInPath vpath = pointInside <$> cursorPos <*> vpath
 
-cursorInPath :: Monad m => Var m InputEvent Path -> Var m InputEvent (Event ())
+cursorInPath :: Monad m
+             => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i (Event ())
 cursorInPath vpath = isCursorInPath vpath ~> onTrue
 
-cursorNotInPath :: Monad m => Var m InputEvent Path -> Var m InputEvent (Event ())
+cursorNotInPath :: Monad m
+                => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i (Event ())
 cursorNotInPath vpath = (not <$> isCursorInPath vpath) ~> onTrue
 
-leftClickInPath :: Monad m => Var m InputEvent Path -> Var m InputEvent (Event ())
+leftClickInPath :: Monad m
+                => Var (ReaderT Input m) InputEvent Path
+                -> Var (ReaderT Input m) InputEvent (Event ())
 leftClickInPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
     where f (Event v) path = v `pointInside` path
           f _ _ = False
 
-leftClickOutPath :: Monad m => Var m InputEvent Path -> Var m InputEvent (Event ())
+leftClickOutPath :: Monad m
+                 => Var (ReaderT Input m) InputEvent Path
+                 -> Var (ReaderT Input m) InputEvent (Event ())
 leftClickOutPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
     where f (Event v) path = not $ pointInside v path
           f _ _ = False
 
-leftClickPos :: Monad m => Var m InputEvent (Event (V2 Float))
+leftClickPos :: Monad m => Var (ReaderT Input m) InputEvent (Event (V2 Float))
 leftClickPos = (<$) <$> cursorPos <*> leftClick
 
 leftClick :: Monad m => Var m InputEvent (Event ())

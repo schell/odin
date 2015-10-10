@@ -13,6 +13,7 @@ import Gelatin.Core.Color
 import Gelatin.Core.Rendering
 import Control.Varying
 import Control.GUI
+import Control.Monad.IO.Class
 
 loginCard :: Odin LoginCookie
 loginCard = loginAttempt Nothing
@@ -27,9 +28,9 @@ loginAttempt mcreds = do
         Right (Just ck) -> return ck
         _   -> loginAttempt $ Just (e,p,"Please try again.")
 
-errorMsg :: String -> Var IO i (Event a) -> GUI IO i UI ()
+errorMsg :: String -> Var InputM InputEvent (Event a) -> Odin ()
 errorMsg s ve = gui err ve $ const $ const ()
-    where err :: Var IO i Component
+    where err :: Monad m => Var m i Component
           err = pure (mempty, Element $ PlainText s red)
 
 getEmailAndPassword :: Odin (String, String)
@@ -42,27 +43,30 @@ errEmailAndPassword a b e = combineGUI card err const
           err  = transformGUI (pure t) $ errorMsg e enter
           t    = Transform (V2 16 92) 1 0
 
-getLoginCookie :: String -> String -> GUI IO i UI (Either String (Maybe LoginCookie))
+getLoginCookie :: String -> String
+               -> Odin (Either String (Maybe LoginCookie))
 getLoginCookie n p = gui spinner (fetchLoginCookie n p) $ \_ mck -> mck
     where spinner = (,) <$> tfrm <*> icon
           tfrm = Transform statusPos 1 <$> (time ~> r)
           r = tween linear 0 (2*pi) 1 `andThen` r
           icon = pure $ Element $ Icon "\xf1ce" white
 
-fetchLoginCookie :: String -> String -> V a (Event (Either String (Maybe LoginCookie)))
+fetchLoginCookie :: MonadIO m
+                 => String -> String
+                 -> Var m a (Event (Either String (Maybe LoginCookie)))
 fetchLoginCookie n p = caltrops $ login localhost $ Login (pack n) (pack p)
 
 statusPos :: V2 Float
 statusPos = V2 130 40
 
-emptyLoginCard :: V InputEvent LoginCard
+emptyLoginCard :: Monad m => Var m InputEvent LoginCard
 emptyLoginCard = loginCardWith "" ""
 
-loginCardWith :: String -> String -> V InputEvent LoginCard
+loginCardWith :: Monad m => String -> String -> Var m InputEvent LoginCard
 loginCardWith s1 s2 = uncurry (LoginCard mempty)
     <$> tabTuple s1 s2
     <*> ((`mod` 2) <$> tabCount)
 
-tabTuple :: String -> String -> V InputEvent (String,String)
+tabTuple :: Monad m => String -> String -> Var m InputEvent (String,String)
 tabTuple s1 s2 = (,) <$> typingBufferOn s1 (t 0) <*> typingBufferOn s2 (t 1)
     where t n = tabCount ~> onWhen (\c -> c `mod` 2 == n)

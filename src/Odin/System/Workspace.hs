@@ -8,20 +8,30 @@ import Odin.System
 import Data.Renderable
 import Data.IORef
 import Data.Bits
+import Data.Proxy
 import Graphics.UI.GLFW
 import Graphics.GL.Core33
 import Gelatin.Core.Rendering
 import Control.Varying
 import Control.GUI
 import Control.Concurrent
+import Control.Monad.Reader
 import System.Exit
+import Linear
 
-runWorkspace :: GUI IO InputEvent UI b -> IO ()
+runWorkspace :: Odin b -> IO ()
 runWorkspace net = newWorkspace >>= step net
-    where step n ws = do events        <- getWorkspaceInput ws
-                         (UX ui _, n') <- stepMany events $ runGUI n
-                         ws'           <- renderFrame ws ui
-                         step (GUI n') ws'
+    where step n ws = do
+            events <- getWorkspaceInput ws
+            let input = foldl addInputEvent (wsInput ws) events
+                ws' = ws{ wsInput = input }
+            (Step ui _, n') <- runReaderT (stepMany events $ runSplineT n) input
+            ws''          <- renderFrame ws' ui
+            step (SplineT n') ws''
+          addInputEvent input (CursorMoveEvent x y) =
+              let v = realToFrac <$> V2 x y
+              in input{ inputCursorPos = v }
+          addInputEvent input _ = input
 
 stepMany :: (Monad m, Monoid a) => [a] -> Var m a b -> m (b, Var m a b)
 stepMany ([e]) y = runVar y e
@@ -37,7 +47,7 @@ renderFrame ws ui = do
     glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
     glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
-    new <- renderData rz old ui
+    new <- renderData rz old ui (Proxy :: Proxy [])
 
     pollEvents
     swapBuffers $ rezWindow rz
@@ -91,11 +101,12 @@ newWorkspace = do
     setScrollCallback w $ Just $ \_ x y -> input $
         ScrollEvent x y
 
-    input (WindowSizeEvent 800 600)
-
     ---- Not till GLFW-b with 3.1 additions
     --setDropCallback w $ Just $ \_ fs -> do
     --    putStrLn $ "Got files:\n" ++ unlines fs
     --    input $ FileDropEvent fs
 
-    return $ Workspace Nothing rez mempty ref
+    let i = Input { inputCursorPos = 0
+                  , inputWindowSize = V2 800 600
+                  }
+    return $ Workspace Nothing rez mempty ref i

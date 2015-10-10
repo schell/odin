@@ -22,12 +22,50 @@ import Data.IORef
 import Data.Renderable
 import GHC.Generics (Generic)
 import Control.Lens.TH
+import Control.GUI
+import Control.Monad.Reader
+--------------------------------------------------------------------------------
+-- User Input
+--------------------------------------------------------------------------------
+data KeyInput = KeyChar Char
+              | KeyMod Key
+              deriving (Show, Eq, Typeable)
+
+data InputEvent = NoInputEvent
+                | CharEvent Char
+                | WindowSizeEvent Int Int
+                | KeyEvent Key Int KeyState ModifierKeys
+                -- ^ Key, scancode, pressed/released, mods
+                | MouseButtonEvent MouseButton MouseButtonState ModifierKeys
+                | CursorMoveEvent Double Double
+                | CursorEnterEvent CursorState
+                | ScrollEvent Double Double
+                | FileDropEvent [String]
+                deriving (Show, Eq, Ord)
+
+instance Monoid InputEvent where
+    mempty = NoInputEvent
+    mappend NoInputEvent e = e
+    mappend e _ = e
 --------------------------------------------------------------------------------
 -- Really simple stuff
 --------------------------------------------------------------------------------
 fromPrim :: (Primitive a, Hashable a, Monad (PrimM a), Monoid (PrimT a))
          => a -> (PrimT a, Element (PrimM a) (PrimR a) (PrimT a))
 fromPrim a = (mempty, Element a)
+
+-- | Input is a type that stores certain values pertaining to user input.
+-- Without storing things like the last cursor position our varying values
+-- have to wait for an event before taking a real value. This way all
+-- varying values that rely on cursor position can have a (usable) value
+-- instantly.
+data Input = Input { inputCursorPos :: V2 Float
+                   , inputWindowSize :: V2 Float
+                   } deriving (Show, Eq)
+
+type InputM = ReaderT Input IO
+type Odin = SplineT InputM [] InputEvent Component
+type Varying = Var InputM InputEvent
 
 type Component = (Transform, Element IO Rez Transform)
 type UI = [Component]
@@ -37,6 +75,10 @@ instance Primitive () where
     type PrimR  () = Rez
     type PrimT  () = Transform
     compilePrimitive _ _ = return (return (), const $ return ())
+--------------------------------------------------------------------------------
+-- Path
+--------------------------------------------------------------------------------
+type Path = [V2 Float]
 --------------------------------------------------------------------------------
 -- Polyline
 --------------------------------------------------------------------------------
@@ -87,6 +129,14 @@ boxPolyline lw Box{..} = Polyline lw boxColor path
 data Box = Box { boxSize      :: Size
                , boxColor     :: Color
                } deriving (Show, Eq, Typeable, Generic)
+$(makeLensesFor [("boxSize", "boxSize_")
+                ,("boxColor", "boxColor_")
+                ] ''Box)
+
+emptyBox :: Box
+emptyBox = Box { boxSize = 0
+               , boxColor = 0
+               }
 
 instance Hashable Box where
     hashWithSalt s (Box sz c) = s `hashWithSalt` sz `hashWithSalt` c
@@ -101,29 +151,7 @@ instance Primitive Box where
             cs = replicate 6 c
         Rendering f c' <- colorRendering win geom GL_TRIANGLES vs cs
         return (c',f)
---------------------------------------------------------------------------------
--- User Input
---------------------------------------------------------------------------------
-data KeyInput = KeyChar Char
-              | KeyMod Key
-              deriving (Show, Eq, Typeable)
 
-instance Monoid InputEvent where
-    mempty = NoInputEvent
-    mappend NoInputEvent e = e
-    mappend e _ = e
-
-data InputEvent = NoInputEvent
-                | CharEvent Char
-                | WindowSizeEvent Int Int
-                | KeyEvent Key Int KeyState ModifierKeys
-                -- ^ Key, scancode, pressed/released, mods
-                | MouseButtonEvent MouseButton MouseButtonState ModifierKeys
-                | CursorMoveEvent Double Double
-                | CursorEnterEvent CursorState
-                | ScrollEvent Double Double
-                | FileDropEvent [String]
-                deriving (Show, Eq, Ord)
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
@@ -160,11 +188,9 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            -- ^ The rendering cache for the workspace
                            , wsRef   :: IORef [InputEvent]
                            -- ^ The input ioref
+                           , wsInput :: Input
+                           -- ^ The input state
                            }
---------------------------------------------------------------------------------
--- Path
---------------------------------------------------------------------------------
-type Path = [V2 Float]
 --------------------------------------------------------------------------------
 -- Icon
 --------------------------------------------------------------------------------
@@ -210,6 +236,14 @@ instance Hashable PlainText where
 data PlainText = PlainText { plainTxtString :: String
                            , plainTxtColor  :: Color
                            } deriving (Show, Eq, Generic)
+$(makeLensesFor [("plainTxtString", "plainTxtString_")
+                ,("plainTxtColor", "plainTxtColor_")
+                ] ''PlainText)
+
+emptyPlainText :: PlainText
+emptyPlainText = PlainText { plainTxtString = ""
+                           , plainTxtColor = 0
+                           }
 --------------------------------------------------------------------------------
 -- TextInput
 --------------------------------------------------------------------------------
@@ -219,6 +253,12 @@ data TextInput = TextInput { textInputTransform :: Transform
                            , textInputPos       :: Int
                            , textInputActive    :: Bool
                            } deriving (Show, Eq, Typeable)
+$(makeLensesFor [("textInputTransform", "textInputTransform_")
+                ,("textInputText", "textInputText_")
+                ,("textInputBox", "textInputBox_")
+                ,("textInputPos", "textInputPos_")
+                ,("textInputActive", "textInputActive_")
+                ] ''TextInput)
 
 localTextInputPath :: TextInput -> Path
 localTextInputPath = boxPath . boxSize . textInputBox
@@ -230,7 +270,15 @@ globalTextInputPath t@TextInput{..} =
 textInputOutline :: TextInput -> Polyline
 textInputOutline t@TextInput{..} = path2Polyline 1 white $ localTextInputPath t
 
-instance Composite TextInput IO Rez Transform where
+emptyTextInput :: TextInput
+emptyTextInput = TextInput { textInputTransform = mempty
+                           , textInputText = emptyPlainText
+                           , textInputBox = emptyBox
+                           , textInputPos = 0
+                           , textInputActive = False
+                           }
+
+instance Composite TextInput [] IO Rez Transform where
     composite txt@TextInput{..} =
         [ (textInputTransform, Element textInputBox)
         , (textInputTransform, Element textInputText)

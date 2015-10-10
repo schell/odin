@@ -28,7 +28,7 @@ import Control.Lens.TH
 cardToLogin :: LoginCard -> Login
 cardToLogin LoginCard{..} = Login (T.pack loginEmail) (T.pack loginPassword)
 
-instance Composite LoginCard IO Rez Transform where
+instance Composite LoginCard [] IO Rez Transform where
     composite LoginCard{..} = els
         where els = [ (loginTransform, Element $ Box (V2 400 100) $ V4 0.1 0.1 0.1 1)
                     , (loginTransform <> titleT, Element $ PlainText "Please Login" $
