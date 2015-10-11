@@ -15,41 +15,42 @@ import Control.Varying
 import Control.GUI
 import Control.Monad.IO.Class
 
-loginCard :: Odin LoginCookie
-loginCard = loginAttempt Nothing
-
-loginAttempt :: Maybe (String, String, String) -> Odin LoginCookie
-loginAttempt mcreds = do
-    (e,p) <- case mcreds of
-        Just (e,p, m) -> errEmailAndPassword e p m
-        Nothing       -> getEmailAndPassword
-    res <- getLoginCookie e p
-    case res of
-        Right (Just ck) -> return ck
-        _   -> loginAttempt $ Just (e,p,"Please try again.")
-
-errorMsg :: String -> Var InputM InputEvent (Event a) -> Odin ()
-errorMsg s ve = gui err ve $ const $ const ()
-    where err :: Monad m => Var m i Component
-          err = pure (mempty, Element $ PlainText s red)
-
-getEmailAndPassword :: Odin (String, String)
-getEmailAndPassword = gui emptyLoginCard enter $ \l _ -> (O.loginEmail l, O.loginPassword l)
-
-errEmailAndPassword :: String -> String -> String -> Odin (String, String)
-errEmailAndPassword a b e = combineGUI card err const
-    where card = gui (loginCardWith a b) enter $ \l _ ->
-                     (O.loginEmail l, O.loginPassword l)
-          err  = transformGUI (pure t) $ errorMsg e enter
-          t    = Transform (V2 16 92) 1 0
-
-getLoginCookie :: String -> String
-               -> Odin (Either String (Maybe LoginCookie))
-getLoginCookie n p = gui spinner (fetchLoginCookie n p) $ \_ mck -> mck
-    where spinner = (,) <$> tfrm <*> icon
-          tfrm = Transform statusPos 1 <$> (time ~> r)
-          r = tween linear 0 (2*pi) 1 `andThen` r
-          icon = pure $ Element $ Icon "\xf1ce" white
+--loginCard :: Odin LoginCookie
+--loginCard = loginAttempt Nothing
+--
+--loginAttempt :: Maybe (String, String, String) -> Odin LoginCookie
+--loginAttempt mcreds = do
+--    (e,p) <- case mcreds of
+--        Just (e,p, m) -> errEmailAndPassword e p m
+--        Nothing       -> getEmailAndPassword
+--    res <- getLoginCookie e p
+--    case res of
+--        Right (Just ck) -> return ck
+--        _   -> loginAttempt $ Just (e,p,"Please try again.")
+--
+--errorMsg :: String -> Var InputM InputEvent (Event a) -> Odin ()
+--errorMsg s ve = gui err ve >> return ()
+--    where err :: Monad m => Var m i Component
+--          err = pure (mempty, Element $ PlainText s red)
+--
+--getEmailAndPassword :: Odin (String, String)
+--getEmailAndPassword = uncurry f <$> gui emptyLoginCard enter
+--    where f l _ = (O.loginEmail l, O.loginPassword l)
+--
+--errEmailAndPassword :: String -> String -> String -> Odin (String, String)
+--errEmailAndPassword a b e = combineGUI card err
+--    where card = gui (loginCardWith a b) enter $ \l _ ->
+--                     (O.loginEmail l, O.loginPassword l)
+--          err  = transformGUI (pure t) $ errorMsg e enter
+--          t    = Transform (V2 16 92) 1 0
+--
+--getLoginCookie :: String -> String
+--               -> Odin (Either String (Maybe LoginCookie))
+--getLoginCookie n p = gui spinner (fetchLoginCookie n p) $ \_ mck -> mck
+--    where spinner = (,) <$> tfrm <*> icon
+--          tfrm = Transform statusPos 1 <$> (time ~> r)
+--          r = tween linear 0 (2*pi) 1 `andThen` r
+--          icon = pure $ Element $ Icon "\xf1ce" white
 
 fetchLoginCookie :: MonadIO m
                  => String -> String

@@ -25,9 +25,9 @@ testTextInput :: TextInput -> Odin TextInput
 testTextInput t@TextInput{..} = do
     let path = textInputPath t
 
-    t' <- gui (inactiveTextInput t) (leftClickInPath $ pure path) const
+    t' <- fst <$> gui (inactiveTextInput t) (leftClickInPath $ pure path)
 
-    t'' <- gui (activeTextInput t') (leftClickOutPath $ pure path) const
+    t'' <- fst <$> gui (activeTextInput t') (leftClickOutPath $ pure path)
 
     liftIO $ putStrLn "done editing text input"
     let str = t''^.textInputText_.plainTxtString_
@@ -55,10 +55,10 @@ textInput t = do
         clickIn = leftClickInPath path
         clickOut = leftClickOutPath path
 
-    t' <- gui (inactiveTextInput t) clickIn const
+    t' <- fst <$> gui (inactiveTextInput t) clickIn
 
     liftIO $ putStrLn "now editing text input"
-    t'' <- gui (activeTextInput t') clickOut const
+    t'' <- fst <$> gui (activeTextInput t') clickOut
 
     let str = t''^.textInputText_.plainTxtString_
     liftIO $ putStrLn $ "got: " ++ str

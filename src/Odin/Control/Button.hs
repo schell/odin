@@ -9,14 +9,13 @@ import Odin.Control.Common
 import Control.Varying
 import Control.GUI
 import Control.Monad.Trans.Reader
-import Control.Monad.IO.Class
 import Control.Lens
 import Linear
 import Gelatin.Core.Color
 import Gelatin.Core.Rendering
 
 buttonGUI :: String -> Odin TextInput
-buttonGUI str = gui (button str) (leftClickInPath $ pure path) const
+buttonGUI str = fst <$> gui (button str) (leftClickInPath $ pure path)
     where btn = input str
           path = textInputPath btn
 
