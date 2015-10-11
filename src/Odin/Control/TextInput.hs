@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 module Odin.Control.TextInput (
+    textInput,
     testTextInput,
     inactiveTextInput,
     activeTextInput,
@@ -17,6 +18,8 @@ import Control.Lens hiding ((<~))
 import Linear
 import Gelatin.Core.Color
 import Gelatin.Core.Rendering
+
+
 
 testTextInput :: TextInput -> Odin TextInput
 testTextInput t@TextInput{..} = do
@@ -37,28 +40,30 @@ textInputPath TextInput{..} = path
     where path = transformPoly textInputTransform (boxPath bxsz)
           bxsz = textInputBox^.boxSize_
 
+blad :: MonadIO m => Var m Float Float
+blad = execSpline 0 test
+
 test :: MonadIO m => Spline m Float Float Float
 test = do
     x <- tweenTo easeOutExpo 0 100 1
     liftIO $ putStrLn "halfway there"
     tweenTo easeOutExpo x 0 1
 
-textInput :: MonadIO m
-          => TextInput -> Spline (ReaderT Input m) InputEvent TextInput ()
+textInput :: TextInput -> Odin String
 textInput t = do
     let path = pure $ textInputPath t
         clickIn = leftClickInPath path
         clickOut = leftClickOutPath path
 
-    t' <- varyUntilEvent (inactiveTextInput t) clickIn const
+    t' <- gui (inactiveTextInput t) clickIn const
 
     liftIO $ putStrLn "now editing text input"
-    t'' <- varyUntilEvent (activeTextInput t') clickOut const
+    t'' <- gui (activeTextInput t') clickOut const
 
     let str = t''^.textInputText_.plainTxtString_
     liftIO $ putStrLn $ "got: " ++ str
 
-    textInput t''
+    return str
 
 -- | An inactive text input reacts to the mouse by highlighting its
 -- bounding box. The gui ends once the mouse clicks inside the field's bounding
