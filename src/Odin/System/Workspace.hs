@@ -13,9 +13,8 @@ import Graphics.UI.GLFW
 import Graphics.GL.Core33
 import Gelatin.Core.Rendering
 import Control.Varying
-import Control.GUI
 import Control.Concurrent
-import Control.Monad.Reader
+import Control.Monad.Trans.RWS.Strict
 import System.Exit
 import Linear
 
@@ -23,14 +22,16 @@ runWorkspace :: Odin b -> IO ()
 runWorkspace net = newWorkspace >>= step net
     where step n ws = do
             events <- getWorkspaceInput ws
-            let input = foldl addInputEvent (wsInput ws) events
-                ws' = ws{ wsInput = input }
-            (Step ui _, n') <- runReaderT (stepMany events $ runSplineT n) input
-            ws''          <- renderFrame ws' ui
+            let input = foldl addInputEvent (wsRead ws) events
+                ws' = ws{ wsRead = input }
+            ((Step ui _, n'),_) <- evalRWST (stepMany events $ runSplineT n)
+                                            input
+                                            ()
+            ws'' <- renderFrame ws' ui
             step (SplineT n') ws''
           addInputEvent input (CursorMoveEvent x y) =
               let v = realToFrac <$> V2 x y
-              in input{ inputCursorPos = v }
+              in input{ _readCursorPos = v }
           addInputEvent input _ = input
 
 stepMany :: (Monad m, Monoid a) => [a] -> Var m a b -> m (b, Var m a b)
@@ -106,7 +107,10 @@ newWorkspace = do
     --    putStrLn $ "Got files:\n" ++ unlines fs
     --    input $ FileDropEvent fs
 
-    let i = Input { inputCursorPos = 0
-                  , inputWindowSize = V2 800 600
-                  }
+    dpi <- calculateDpi
+    let i = ReadData { _readCursorPos = 0
+                     , _readWindowSize = V2 800 600
+                     , _readResources = rez
+                     , _readDpi = dpi
+                     }
     return $ Workspace Nothing rez mempty ref i

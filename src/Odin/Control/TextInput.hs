@@ -1,109 +1,87 @@
-{-# LANGUAGE RecordWildCards #-}
 module Odin.Control.TextInput (
     textInput,
-    testTextInput,
+    textInputPath,
+    defaultTextInput,
     inactiveTextInput,
     activeTextInput,
-    textInputPath
+    clickInTextInput,
+    clickOutTextInput,
 ) where
 
 import Odin.Data.Common
 import Odin.Control.Common
 import Control.Varying
-import Control.Varying.Spline
-import Control.GUI
-import Control.Monad.Trans.Reader
+import Odin.GUI
+import Control.Monad.Trans.RWS.Strict
 import Control.Monad.IO.Class
 import Control.Lens hiding ((<~))
 import Linear
 import Gelatin.Core.Color
 import Gelatin.Core.Rendering
 
+defaultTextInput :: TextInput
+defaultTextInput = mutate emptyTextInput $ do
+    textInputBox._2.boxColor .= V4 0.3 0.3 0.3 1
+    textInputBox._2.boxSize .= V2 200 20
 
+textInput :: Varying Transform -> Maybe TextInput -> Odin TextInput
+textInput vt Nothing = textInput vt $ Just defaultTextInput
 
-testTextInput :: TextInput -> Odin TextInput
-testTextInput t@TextInput{..} = do
-    let path = textInputPath t
+textInput vt (Just t) = do
+    liftIO $ putStrLn "inactive"
+    let inactive = inactiveTextInput vt t
+    t' <- fst <$> gui inactive (clickInTextInput inactive)
 
-    t' <- fst <$> gui (inactiveTextInput t) (leftClickInPath $ pure path)
+    let active = activeTextInput vt t'
+    liftIO $ putStrLn "active"
+    fst <$> gui active (clickOutTextInput active)
 
-    t'' <- fst <$> gui (activeTextInput t') (leftClickOutPath $ pure path)
-
-    liftIO $ putStrLn "done editing text input"
-    let str = t''^.textInputText_.plainTxtString_
-
-    liftIO $ putStrLn str
-    testTextInput t''
-
-textInputPath :: TextInput -> Path
-textInputPath TextInput{..} = path
-    where path = transformPoly textInputTransform (boxPath bxsz)
-          bxsz = textInputBox^.boxSize_
-
-blad :: MonadIO m => Var m Float Float
-blad = execSpline 0 test
-
-test :: MonadIO m => Spline m Float Float Float
-test = do
-    x <- tweenTo easeOutExpo 0 100 1
-    liftIO $ putStrLn "halfway there"
-    tweenTo easeOutExpo x 0 1
-
-textInput :: TextInput -> Odin String
-textInput t = do
-    let path = pure $ textInputPath t
-        clickIn = leftClickInPath path
-        clickOut = leftClickOutPath path
-
-    t' <- fst <$> gui (inactiveTextInput t) clickIn
-
-    liftIO $ putStrLn "now editing text input"
-    t'' <- fst <$> gui (activeTextInput t') clickOut
-
-    let str = t''^.textInputText_.plainTxtString_
-    liftIO $ putStrLn $ "got: " ++ str
-
-    return str
+clickOutTextInput, clickInTextInput :: Varying TextInput
+                                    -> Varying (Event ())
+clickInTextInput = leftClickInPath . (textInputPath <$>)
+clickOutTextInput = leftClickOutPath . (textInputPath <$>)
 
 -- | An inactive text input reacts to the mouse by highlighting its
 -- bounding box. The gui ends once the mouse clicks inside the field's bounding
 -- box.
-inactiveTextInput :: Monad m
-                  => TextInput -> Var (ReaderT Input m) InputEvent TextInput
-inactiveTextInput TextInput{..} = textinput
-    where textinput = TextInput <$> tfrm
-                                <*> text
+inactiveTextInput :: Varying Transform -> TextInput -> Varying TextInput
+inactiveTextInput vt t = textinput
+    where textinput = TextInput <$> text
                                 <*> box
                                 <*> 0
                                 <*> pure False
-          box = Box <$> bxsz
-                    <*> bxclr
-          text = pure textInputText
-          bxclr = (textInputBox^.boxColor_ ^*) <$> colorMult path
-          bxsz = pure $ textInputBox^.boxSize_
-          tfrm = pure textInputTransform
+          box = (,) <$> tfrm <*> (Box <$> bxsz <*> bxclr)
+          text = (,) <$> tfrm <*> pure (t^.textInputText._2)
+          bxclr = (t^.textInputBox._2.boxColor ^*) <$> colorMult path
+          bxsz = pure $ t^.textInputBox._2.boxSize
+          tfrm = vt
           path = transformPoly <$> tfrm <*> (boxPath <$> bxsz)
 
 -- | An active text input collects typed text in a buffer. It ends once the
 -- user clicks ouside of the field's bounding box.
-activeTextInput :: Monad m
-                => TextInput -> Var (ReaderT Input m) InputEvent TextInput
-activeTextInput TextInput{..} = textinput
-    where textinput = TextInput <$> tfrm
-                                <*> text
+activeTextInput :: Varying Transform -> TextInput -> Varying TextInput
+activeTextInput vt t = textinput
+    where textinput = TextInput <$> text
                                 <*> box
                                 <*> 0
                                 <*> pure True
-          box = pure textInputBox
-          text = PlainText <$> str
-                           <*> strclr
-          str = typingBufferOn (plainTxtString textInputText) (always ())
+          box = (,) <$> vt <*> (Box <$> (str ~> varM (\s -> textInputBoxSize s 200 500))
+                                    <*> pure (t^.textInputBox^._2.boxColor))
+          text = (,) <$> vt <*> (PlainText <$> str <*> strclr)
+          str = typingBufferOn (t^.textInputText._2.plainTextString) (always ())
           strclr = pure white
-          tfrm = pure textInputTransform
-          bxsz = pure $ textInputBox^.boxSize_
-          path = transformPoly <$> tfrm <*> (boxPath <$> bxsz)
 
-colorMult :: Monad m
-          => Var (ReaderT Input m) InputEvent Path
-          -> Var (ReaderT Input m) InputEvent Float
+textInputBoxSize :: (Monad m, Monoid w)
+                  => String -> Float -> Float
+                  -> (RWST ReadData w s m) (V2 Float)
+textInputBoxSize s mn mx = do
+    sz <- textSize s
+    let V2 w h = sz + V2 2 0
+        h' = if h < 20 then 20 else h
+        w' = max mn (min w mx)
+    return $ V2 w' h'
+
+colorMult :: (Monad m, Monoid w)
+          => Var (RWST ReadData w s m) InputEvent Path
+          -> Var (RWST ReadData w s m) InputEvent Float
 colorMult vpath = 0.8 `orE` ((1 <$) <$> cursorInPath vpath)

@@ -23,8 +23,8 @@ import Data.IORef
 import Data.Renderable
 import GHC.Generics (Generic)
 import Control.Lens.TH
-import Control.GUI
-import Control.Monad.Reader
+import Control.Varying
+import Control.Monad.Trans.RWS.Strict
 --------------------------------------------------------------------------------
 -- User Input
 --------------------------------------------------------------------------------
@@ -60,13 +60,16 @@ fromPrim a = (mempty, Element a)
 -- have to wait for an event before taking a real value. This way all
 -- varying values that rely on cursor position can have a (usable) value
 -- instantly.
-data Input = Input { inputCursorPos :: V2 Float
-                   , inputWindowSize :: V2 Float
-                   } deriving (Show, Eq)
+data ReadData = ReadData { _readCursorPos :: V2 Float
+                         , _readWindowSize :: V2 Float
+                         , _readResources :: Rez
+                         , _readDpi :: Dpi
+                         }
+makeLenses ''ReadData
 
-type InputM = ReaderT Input IO
-type Odin = SplineT InputM [] InputEvent Component
-type Varying = Var InputM InputEvent
+type ControlM = RWST ReadData () () IO
+type Odin = SplineT [] InputEvent Component ControlM
+type Varying = Var ControlM InputEvent
 
 type Component = (Transform, Element IO Rez Transform)
 type UI = [Component]
@@ -76,6 +79,10 @@ instance Primitive () where
     type PrimR  () = Rez
     type PrimT  () = Transform
     compilePrimitive _ _ = return (return (), const $ return ())
+
+instance Composite () [] IO Rez Transform where
+    composite () = []
+
 --------------------------------------------------------------------------------
 -- Path
 --------------------------------------------------------------------------------
@@ -88,21 +95,22 @@ instance Primitive Polyline where
     type PrimR  Polyline = Rez
     type PrimT  Polyline = Transform
     compilePrimitive (Rez geom _ _ win _ _) Polyline{..} = do
-        let fill = solid polylineColor
-            p = polyline EndCapSquare LineJoinMiter polylineWidth polylinePath
+        let fill = solid _polylineColor
+            p = polyline EndCapSquare LineJoinMiter _polylineWidth _polylinePath
         Rendering f c <- filledTriangleRendering win geom p fill
         return (c, f)
 
 instance Hashable Polyline where
     hashWithSalt s Polyline{..} =
-        s `hashWithSalt` polylineWidth
-            `hashWithSalt` polylineColor
-                `hashWithSalt` polylinePath
+        s `hashWithSalt` _polylineWidth
+            `hashWithSalt` _polylineColor
+                `hashWithSalt` _polylinePath
 
-data Polyline = Polyline { polylineWidth     :: Float
-                         , polylineColor     :: Color
-                         , polylinePath      :: [V2 Float]
+data Polyline = Polyline { _polylineWidth     :: Float
+                         , _polylineColor     :: Color
+                         , _polylinePath      :: [V2 Float]
                          } deriving (Show, Eq, Typeable, Generic)
+makeLenses ''Polyline
 
 path2Polyline :: Float -> Color -> Path -> Polyline
 path2Polyline = Polyline
@@ -118,25 +126,23 @@ boxPath (V2 w h) = poly
           y2 = h
 
 boxPolyline :: Float -> Box -> Polyline
-boxPolyline lw Box{..} = Polyline lw boxColor path
+boxPolyline lw Box{..} = Polyline lw _boxColor path
     where path = [V2 x1 y1, V2 x2 y1, V2 x2 y2, V2 x1 y2, V2 x1 y1]
-          (V2 w h) = boxSize
+          (V2 w h) = _boxSize
           x1 = -hw
           x2 = w + hw
           y1 = -hw
           y2 = h + hw
           hw = lw/2
 
-data Box = Box { boxSize      :: Size
-               , boxColor     :: Color
+data Box = Box { _boxSize      :: Size
+               , _boxColor     :: Color
                } deriving (Show, Eq, Typeable, Generic)
-$(makeLensesFor [("boxSize", "boxSize_")
-                ,("boxColor", "boxColor_")
-                ] ''Box)
+makeLenses ''Box
 
 emptyBox :: Box
-emptyBox = Box { boxSize = 0
-               , boxColor = 0
+emptyBox = Box { _boxSize = 0
+               , _boxColor = 0
                }
 
 instance Hashable Box where
@@ -189,8 +195,9 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            -- ^ The rendering cache for the workspace
                            , wsRef   :: IORef [InputEvent]
                            -- ^ The input ioref
-                           , wsInput :: Input
-                           -- ^ The input state
+                           , wsRead  :: ReadData
+                           -- ^ The readable data for our control
+                           -- structures
                            }
 --------------------------------------------------------------------------------
 -- Icon
@@ -212,13 +219,10 @@ iconReset = Transform (V2 16 (-11.5)) 1 0
 instance Hashable Icon where
     hashWithSalt s (Icon t c) = s `hashWithSalt` t `hashWithSalt` c
 
-data Icon = Icon { iconString :: String
-                 , iconColor  :: Color
+data Icon = Icon { _iconString :: String
+                 , _iconColor  :: Color
                  } deriving (Show, Eq)
-$(makeLensesFor [("iconTransform", "iconTransform_")
-                ,("iconString", "iconString_")
-                ,("iconColor", "iconColor_")
-                ] ''Icon)
+makeLenses ''Icon
 --------------------------------------------------------------------------------
 -- PlainText
 --------------------------------------------------------------------------------
@@ -232,56 +236,66 @@ instance Primitive PlainText where
 
 instance Hashable PlainText where
     hashWithSalt s PlainText{..} =
-        s `hashWithSalt` plainTxtString `hashWithSalt` plainTxtColor
+        s `hashWithSalt` _plainTextString `hashWithSalt` _plainTextColor
 
-data PlainText = PlainText { plainTxtString :: String
-                           , plainTxtColor  :: Color
+data PlainText = PlainText { _plainTextString :: String
+                           , _plainTextColor  :: Color
                            } deriving (Show, Eq, Generic)
-$(makeLensesFor [("plainTxtString", "plainTxtString_")
-                ,("plainTxtColor", "plainTxtColor_")
-                ] ''PlainText)
+makeLenses ''PlainText
 
 emptyPlainText :: PlainText
-emptyPlainText = PlainText { plainTxtString = ""
-                           , plainTxtColor = 0
+emptyPlainText = PlainText { _plainTextString = ""
+                           , _plainTextColor = 0
                            }
 --------------------------------------------------------------------------------
 -- TextInput
 --------------------------------------------------------------------------------
-data TextInput = TextInput { textInputTransform :: Transform
-                           , textInputText      :: PlainText
-                           , textInputBox       :: Box
-                           , textInputPos       :: Int
-                           , textInputActive    :: Bool
+data TextInput = TextInput { _textInputText      :: (Transform, PlainText)
+                           , _textInputBox       :: (Transform, Box)
+                           , _textInputPos       :: Int
+                           , _textInputActive    :: Bool
                            } deriving (Show, Eq, Typeable)
-$(makeLensesFor [("textInputTransform", "textInputTransform_")
-                ,("textInputText", "textInputText_")
-                ,("textInputBox", "textInputBox_")
-                ,("textInputPos", "textInputPos_")
-                ,("textInputActive", "textInputActive_")
-                ] ''TextInput)
+makeLenses ''TextInput
 
-localTextInputPath :: TextInput -> Path
-localTextInputPath = boxPath . boxSize . textInputBox
-
-globalTextInputPath :: TextInput -> Path
-globalTextInputPath t@TextInput{..} =
-    transformPoly textInputTransform $ localTextInputPath t
+textInputPath :: TextInput -> Path
+textInputPath TextInput{..} = transformPoly t $ boxPath $ _boxSize box
+    where (t,box) = _textInputBox
 
 textInputOutline :: TextInput -> Polyline
-textInputOutline t@TextInput{..} = path2Polyline 1 white $ localTextInputPath t
+textInputOutline t@TextInput{..} = path2Polyline 1 white $ textInputPath t
 
 emptyTextInput :: TextInput
-emptyTextInput = TextInput { textInputTransform = mempty
-                           , textInputText = emptyPlainText
-                           , textInputBox = emptyBox
-                           , textInputPos = 0
-                           , textInputActive = False
+emptyTextInput = TextInput { _textInputText = (mempty, emptyPlainText)
+                           , _textInputBox = (mempty, emptyBox)
+                           , _textInputPos = 0
+                           , _textInputActive = False
                            }
 
 instance Composite TextInput [] IO Rez Transform where
     composite txt@TextInput{..} =
-        [ (textInputTransform, Element textInputBox)
-        , (textInputTransform, Element textInputText)
-        ] ++ [(textInputTransform, Element poly) | textInputActive]
+        [ Element <$> _textInputBox
+        , Element <$> _textInputText
+        ] ++ [(mempty, Element poly) | _textInputActive]
             where poly = textInputOutline txt
+
+--------------------------------------------------------------------------------
+-- TextField
+--------------------------------------------------------------------------------
+data TextField = TextField { _textFieldLabel :: (Transform, PlainText)
+                           , _textFieldInput :: TextInput
+                           , _textFieldError :: (Transform, PlainText)
+                           } deriving (Show, Eq)
+makeLenses ''TextField
+
+emptyTextField :: TextField
+emptyTextField = TextField { _textFieldLabel = (mempty, emptyPlainText)
+                           , _textFieldInput = emptyTextInput
+                           , _textFieldError = (mempty, emptyPlainText)
+                           }
+
+instance Composite TextField [] IO Rez Transform where
+    composite TextField{..} =
+       (fst _textFieldLabel, Element $ snd _textFieldLabel)
+       : composite _textFieldInput
+       ++
+       [ (fst _textFieldError, Element $ snd _textFieldError) ]

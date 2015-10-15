@@ -4,20 +4,24 @@
 module Odin.Control.Common where
 
 import Odin.Data
+import Odin.Graphics.Types
 import Servant.Client
 import Control.Concurrent.Async
 import Graphics.UI.GLFW hiding (init)
+import Graphics.Text.TrueType
 import Gelatin.Core.Triangulation.Common
 import Data.Time.Clock
 import Linear
 import Control.Varying
-import Control.Varying.Time hiding (before, after)
-import Control.Monad.Trans.Reader
+import Control.Monad.Trans.RWS.Strict
 import Control.Monad.State
 import Control.Monad.Trans.Either
 
 initialize :: s -> State s () -> s
 initialize s f = execState f s
+
+mutate :: s -> State s () -> s
+mutate = initialize
 
 typingBuffer :: Monad m => Var m InputEvent String
 typingBuffer = typingBufferOn "" $ always ()
@@ -59,15 +63,14 @@ keyInput = var check ~> onJust
             | otherwise = Nothing
           keyPressed k = k == KeyState'Pressed || k == KeyState'Repeating
 
-
-untilEvent :: Monad m
-           => Var m a b -> (Var m a (Event c), c -> b -> Var m a b) -> Var m a b
-untilEvent va (ve, f) = Var $ \a -> do
-    (b, va') <- runVar va a
-    (e, ve') <- runVar ve a
-    case e of
-       Event c -> runVar (f c b) a
-       NoEvent -> return (b, untilEvent va' (ve', f))
+--untilEvent :: Monad m
+--           => Var m a b -> (Var m a (Event c), c -> b -> Var m a b) -> Var m a b
+--untilEvent va (ve, f) = Var $ \a -> do
+--    (b, va') <- runVar va a
+--    (e, ve') <- runVar ve a
+--    case e of
+--       Event c -> runVar (f c b) a
+--       NoEvent -> return (b, untilEvent va' (ve', f))
 
 caltrops :: (Show b, MonadIO m)
          => EitherT ServantError IO b -> Var m a (Event (Either String b))
@@ -76,7 +79,8 @@ caltrops f = Var $ \_ -> do
     return (NoEvent, checkAsync e)
 
 checkAsync :: (Show b, MonadIO m)
-           => Async (Either ServantError b) -> Var m a (Event (Either String b))
+           => Async (Either ServantError b)
+           -> Var m a (Event (Either String b))
 checkAsync a = Var $ \_ -> do
     r <- liftIO $ poll a
     case r of
@@ -89,39 +93,43 @@ checkAsync a = Var $ \_ -> do
 localhost :: BaseUrl
 localhost = BaseUrl Http "localhost" 8081
 
-windowSize :: Monad m => Var (ReaderT Input m) i (V2 Float)
-windowSize = varM $ const $ asks inputWindowSize
+windowSize :: (Monad m, Monoid w) => Var (RWST ReadData w s m) i (V2 Float)
+windowSize = varM $ const $ asks _readWindowSize
 
-cursorPos :: Monad m => Var (ReaderT Input m) i (V2 Float)
-cursorPos = varM $ const $ asks inputCursorPos
+cursorPos :: (Monad m, Monoid w) => Var (RWST ReadData w s m) i (V2 Float)
+cursorPos = varM $ const $ asks _readCursorPos
 
-isCursorInPath :: Monad m
-               => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i Bool
+isCursorInPath :: (Monad m, Monoid w)
+               => Var (RWST ReadData w s m) i Path
+               -> Var (RWST ReadData w s m) i Bool
 isCursorInPath vpath = pointInside <$> cursorPos <*> vpath
 
-cursorInPath :: Monad m
-             => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i (Event ())
+cursorInPath :: (Monad m, Monoid w)
+             => Var (RWST ReadData w s m) i Path
+             -> Var (RWST ReadData w s m) i (Event ())
 cursorInPath vpath = isCursorInPath vpath ~> onTrue
 
-cursorNotInPath :: Monad m
-                => Var (ReaderT Input m) i Path -> Var (ReaderT Input m) i (Event ())
+cursorNotInPath :: (Monad m, Monoid w)
+                => Var (RWST ReadData w s m) i Path
+                -> Var (RWST ReadData w s m) i (Event ())
 cursorNotInPath vpath = (not <$> isCursorInPath vpath) ~> onTrue
 
-leftClickInPath :: Monad m
-                => Var (ReaderT Input m) InputEvent Path
-                -> Var (ReaderT Input m) InputEvent (Event ())
+leftClickInPath :: (Monad m, Monoid w)
+                => Var (RWST ReadData w s m) InputEvent Path
+                -> Var (RWST ReadData w s m) InputEvent (Event ())
 leftClickInPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
     where f (Event v) path = v `pointInside` path
           f _ _ = False
 
-leftClickOutPath :: Monad m
-                 => Var (ReaderT Input m) InputEvent Path
-                 -> Var (ReaderT Input m) InputEvent (Event ())
+leftClickOutPath :: (Monad m, Monoid w)
+                 => Var (RWST ReadData w s m) InputEvent Path
+                 -> Var (RWST ReadData w s m) InputEvent (Event ())
 leftClickOutPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
     where f (Event v) path = not $ pointInside v path
           f _ _ = False
 
-leftClickPos :: Monad m => Var (ReaderT Input m) InputEvent (Event (V2 Float))
+leftClickPos :: (Monad m, Monoid w)
+             => Var (RWST ReadData w s m) InputEvent (Event (V2 Float))
 leftClickPos = (<$) <$> cursorPos <*> leftClick
 
 leftClick :: Monad m => Var m InputEvent (Event ())
@@ -133,3 +141,11 @@ cursorMoved :: Monad m => Var m InputEvent (Event (V2 Float))
 cursorMoved = var f ~> onJust
     where f (CursorMoveEvent x y) = Just $ realToFrac <$> V2 x y
           f _ = Nothing
+
+textSize :: (Monad m, Monoid w) => String -> (RWST ReadData w s m) (V2 Float)
+textSize s = do
+    dpi <- asks _readDpi
+    rez <- asks _readResources
+    let BoundingBox _ _ w h _ = stringBoundingBox (rezFont rez) dpi sz s
+        sz = pixelSizeInPointAtDpi 16 dpi
+    return $ V2 w h

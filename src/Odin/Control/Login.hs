@@ -6,13 +6,13 @@ module Odin.Control.Login where
 import Odin.Data as O
 import Odin.Control.Common
 import Data.Text (pack)
-import Data.Renderable
+--import Data.Renderable
 import Caltrops.Client
-import Linear hiding (trace, el)
-import Gelatin.Core.Color
-import Gelatin.Core.Rendering
+--import Linear hiding (trace, el)
+--import Gelatin.Core.Color
+--import Gelatin.Core.Rendering
 import Control.Varying
-import Control.GUI
+--import Odin.GUI
 import Control.Monad.IO.Class
 
 --loginCard :: Odin LoginCookie
@@ -28,7 +28,7 @@ import Control.Monad.IO.Class
 --        Right (Just ck) -> return ck
 --        _   -> loginAttempt $ Just (e,p,"Please try again.")
 --
---errorMsg :: String -> Var InputM InputEvent (Event a) -> Odin ()
+--errorMsg :: String -> Var ControlM InputEvent (Event a) -> Odin ()
 --errorMsg s ve = gui err ve >> return ()
 --    where err :: Monad m => Var m i Component
 --          err = pure (mempty, Element $ PlainText s red)
@@ -57,16 +57,16 @@ fetchLoginCookie :: MonadIO m
                  -> Var m a (Event (Either String (Maybe LoginCookie)))
 fetchLoginCookie n p = caltrops $ login localhost $ Login (pack n) (pack p)
 
-statusPos :: V2 Float
-statusPos = V2 130 40
-
-emptyLoginCard :: Monad m => Var m InputEvent LoginCard
-emptyLoginCard = loginCardWith "" ""
-
-loginCardWith :: Monad m => String -> String -> Var m InputEvent LoginCard
-loginCardWith s1 s2 = uncurry (LoginCard mempty)
-    <$> tabTuple s1 s2
-    <*> ((`mod` 2) <$> tabCount)
+--statusPos :: V2 Float
+--statusPos = V2 130 40
+--
+--emptyLoginCard :: Monad m => Var m InputEvent LoginCard
+--emptyLoginCard = loginCardWith "" ""
+--
+--loginCardWith :: Monad m => String -> String -> Var m InputEvent LoginCard
+--loginCardWith s1 s2 = uncurry (LoginCard mempty)
+--    <$> tabTuple s1 s2
+--    <*> ((`mod` 2) <$> tabCount)
 
 tabTuple :: Monad m => String -> String -> Var m InputEvent (String,String)
 tabTuple s1 s2 = (,) <$> typingBufferOn s1 (t 0) <*> typingBufferOn s2 (t 1)
