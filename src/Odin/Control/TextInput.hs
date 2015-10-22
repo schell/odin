@@ -10,8 +10,10 @@ module Odin.Control.TextInput (
 
 import Odin.Data.Common
 import Odin.Control.Common
-import Control.Varying
 import Odin.GUI
+import Control.Monad
+import Control.Varying
+import Control.Applicative
 import Control.Monad.Trans.RWS.Strict
 import Control.Monad.IO.Class
 import Control.Lens hiding ((<~))
@@ -24,17 +26,24 @@ defaultTextInput = mutate emptyTextInput $ do
     textInputBox._2.boxColor .= V4 0.3 0.3 0.3 1
     textInputBox._2.boxSize .= V2 200 20
 
-textInput :: Varying Transform -> Maybe TextInput -> Odin TextInput
-textInput vt Nothing = textInput vt $ Just defaultTextInput
-
-textInput vt (Just t) = do
+textInput :: Varying Transform -> TabIndex -> Maybe TextInput -> Odin TextInput
+textInput vt ti Nothing = textInput vt ti $ Just defaultTextInput
+textInput vt (TabIndex ndx) (Just t) = do
     liftIO $ putStrLn "inactive"
     let inactive = inactiveTextInput vt t
-    t' <- fst <$> gui inactive (clickInTextInput inactive)
+        activate = msum <$> sequenceA [clickInTextInput inactive
+                                      ,tabCount ~> onWhen (== ndx) ~> var (() <$)
+                                      ]
+    t' <- fst <$> gui inactive activate
 
     let active = activeTextInput vt t'
+        deactivate = msum <$> sequenceA [clickOutTextInput active
+                                        ,dropE 1 tab
+                                        ]
     liftIO $ putStrLn "active"
-    fst <$> gui active (clickOutTextInput active)
+    (ui, (txt,_)) <- capture $ gui active deactivate
+    wait 1 ui
+    return txt
 
 clickOutTextInput, clickInTextInput :: Varying TextInput
                                     -> Varying (Event ())

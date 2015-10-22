@@ -4,6 +4,7 @@ module Odin.System.Workspace where
 import Odin.Graphics.Types
 import Odin.Data
 import Odin.System
+import Odin.GUI
 
 import Data.Renderable
 import Data.IORef
@@ -13,21 +14,27 @@ import Graphics.UI.GLFW
 import Graphics.GL.Core33
 import Gelatin.Core.Rendering
 import Control.Varying
+import Control.Monad
 import Control.Concurrent
 import Control.Monad.Trans.RWS.Strict
 import System.Exit
 import Linear
 
-runWorkspace :: Odin b -> IO ()
+runWorkspace :: SplineOf InputEvent (Picture ()) () -> IO ()
 runWorkspace net = newWorkspace >>= step net
     where step n ws = do
             events <- getWorkspaceInput ws
             let input = foldl addInputEvent (wsRead ws) events
                 ws' = ws{ wsRead = input }
-            ((Step ui _, n'),_) <- evalRWST (stepMany events $ runSplineT n)
-                                            input
-                                            ()
-            ws'' <- renderFrame ws' ui
+                st  = wsState ws
+            ((Step (Event ui) _, n'), st',_) <- runRWST (stepMany events $ runSplineT n)
+                                                input
+                                                st
+
+            when (_statePrintUISteps st') $
+                putStrLn $ "UI\n" ++ show ui
+
+            ws'' <- renderFrame (ws'{wsState = st'}) $ composite ui
             step (SplineT n') ws''
           addInputEvent input (CursorMoveEvent x y) =
               let v = realToFrac <$> V2 x y
@@ -113,4 +120,5 @@ newWorkspace = do
                      , _readResources = rez
                      , _readDpi = dpi
                      }
-    return $ Workspace Nothing rez mempty ref i
+        s = StateData { _statePrintUISteps = False }
+    return $ Workspace Nothing rez mempty ref i s

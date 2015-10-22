@@ -67,9 +67,14 @@ data ReadData = ReadData { _readCursorPos :: V2 Float
                          }
 makeLenses ''ReadData
 
-type ControlM = RWST ReadData () () IO
+data StateData = StateData { _statePrintUISteps :: Bool }
+makeLenses ''StateData
+
+type ControlM = RWST ReadData () StateData IO
 type Odin = SplineT [] InputEvent Component ControlM
 type Varying = Var ControlM InputEvent
+type VaryingOn = Var ControlM
+type SplineOf a b c = Spline a b ControlM c
 
 type Component = (Transform, Element IO Rez Transform)
 type UI = [Component]
@@ -196,8 +201,9 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            , wsRef   :: IORef [InputEvent]
                            -- ^ The input ioref
                            , wsRead  :: ReadData
-                           -- ^ The readable data for our control
-                           -- structures
+                           -- ^ The readable data for our control structures
+                           , wsState :: StateData
+                           -- ^ The mutable data for our control structures
                            }
 --------------------------------------------------------------------------------
 -- Icon
@@ -250,6 +256,9 @@ emptyPlainText = PlainText { _plainTextString = ""
 --------------------------------------------------------------------------------
 -- TextInput
 --------------------------------------------------------------------------------
+newtype TabIndex = TabIndex { _tabIndex :: Int }
+makeLenses ''TabIndex
+
 data TextInput = TextInput { _textInputText      :: (Transform, PlainText)
                            , _textInputBox       :: (Transform, Box)
                            , _textInputPos       :: Int
@@ -299,3 +308,11 @@ instance Composite TextField [] IO Rez Transform where
        : composite _textFieldInput
        ++
        [ (fst _textFieldError, Element $ snd _textFieldError) ]
+--------------------------------------------------------------------------------
+-- TextForm
+--------------------------------------------------------------------------------
+data TextForm = TextForm { _textFormFields   :: [TextField]
+                         , _textFormButton   :: TextInput
+                         , _textFormTabIndex :: Int
+                         }
+makeLenses ''TextForm
