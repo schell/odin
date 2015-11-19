@@ -1,5 +1,4 @@
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -19,13 +18,11 @@ import Data.Renderable
 
 newtype AttachedRenderings = Attached { attached :: Cache IO Transform }
 
-data Rez = Rez { rezGeom      :: GeomRenderSource
-               , rezBez       :: BezRenderSource
-               , rezMask      :: MaskRenderSource
-               , rezWindow    :: Window
+data Rez = Rez { rezShader :: SumShader
+               , rezWindow :: Window
                --, rezFontCache :: Async FontCache
-               , rezFont      :: Font
-               , rezIcons     :: Font
+               , rezFont   :: Font
+               , rezIcons  :: Font
                } deriving (Typeable)
 
 data Clip = Clip { clipTopLeft     :: V2 Int
@@ -39,7 +36,6 @@ deriving instance Eq Transform
 deriving instance Generic PointSize
 
 type Color = V4 Float
-type Size = V2 Float
 type Position = V2 Float
 type Vector = V2 Float
 type Scale = V2 Float

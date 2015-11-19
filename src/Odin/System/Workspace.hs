@@ -28,13 +28,13 @@ runWorkspace net = newWorkspace >>= step net
                 ws' = ws{ wsRead = input }
                 st  = wsState ws
             ((Step (Event ui) _, n'), st',_) <- runRWST (stepMany events $ runSplineT n)
-                                                input
-                                                st
+                                                        input
+                                                        st
 
             when (_statePrintUISteps st') $
                 putStrLn $ "UI\n" ++ show ui
 
-            ws'' <- renderFrame (ws'{wsState = st'}) $ composite ui
+            ws'' <- renderFrame (ws'{wsState = st'}) ui
             step (SplineT n') ws''
           addInputEvent input (CursorMoveEvent x y) =
               let v = realToFrac <$> V2 x y
@@ -46,8 +46,8 @@ stepMany ([e]) y = runVar y e
 stepMany (e:es) y = execVar y e >>= stepMany es
 stepMany []     y = runVar y mempty
 
-renderFrame :: Workspace -> UI -> IO Workspace
-renderFrame ws ui = do
+renderFrame :: Workspace -> Picture () -> IO Workspace
+renderFrame ws pic = do
     let rz  = wsRez ws
         old = wsCache ws
 
@@ -55,7 +55,7 @@ renderFrame ws ui = do
     glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
     glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
-    new <- renderData rz old ui (Proxy :: Proxy [])
+    new <- renderData rz old pic (Proxy :: Proxy [])
 
     pollEvents
     swapBuffers $ rezWindow rz

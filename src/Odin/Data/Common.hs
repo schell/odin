@@ -15,15 +15,18 @@ import Graphics.GL.Core33
 import Graphics.UI.GLFW
 import Graphics.Text.TrueType
 import Gelatin.Core.Rendering as G
+import Gelatin.Core.Triangulation.KET as T
 import Gelatin.Core.Color
 import Linear hiding (mult)
 import Data.Typeable
 import Data.Hashable
 import Data.IORef
 import Data.Renderable
+import Data.Monoid
 import GHC.Generics (Generic)
 import Control.Lens.TH
 import Control.Varying
+import Control.Monad
 import Control.Monad.Trans.RWS.Strict
 --------------------------------------------------------------------------------
 -- User Input
@@ -87,11 +90,15 @@ instance Primitive () where
 
 instance Composite () [] IO Rez Transform where
     composite () = []
-
 --------------------------------------------------------------------------------
 -- Path
 --------------------------------------------------------------------------------
-type Path = [V2 Float]
+newtype Path = Path { unPath :: [V2 Float] } deriving (Show, Generic)
+
+instance Transformable Transform Path where
+    transform t (Path vs) = Path $ transform t vs
+
+instance Hashable Path
 --------------------------------------------------------------------------------
 -- Polyline
 --------------------------------------------------------------------------------
@@ -99,31 +106,35 @@ instance Primitive Polyline where
     type PrimM Polyline = IO
     type PrimR  Polyline = Rez
     type PrimT  Polyline = Transform
-    compilePrimitive (Rez geom _ _ win _ _) Polyline{..} = do
-        let fill = solid _polylineColor
-            p = polyline EndCapSquare LineJoinMiter _polylineWidth _polylinePath
-        Rendering f c <- filledTriangleRendering win geom p fill
+    compilePrimitive (Rez sh win _ _) Polyline{..} = do
+        let cs = map snd _polylinePath
+            vs = map fst _polylinePath
+            shader = _shProjectedPolyline sh
+        Rendering f c <- projectedPolylineRendering win shader _polylineWidth
+                             _polylineFeather _polylineCaps vs cs
         return (c, f)
+
+instance Hashable LineCap where
+    hashWithSalt s c = s `hashWithSalt` show c
 
 instance Hashable Polyline where
     hashWithSalt s Polyline{..} =
         s `hashWithSalt` _polylineWidth
-            `hashWithSalt` _polylineColor
+            `hashWithSalt` _polylineFeather
                 `hashWithSalt` _polylinePath
+                    `hashWithSalt` _polylineCaps
 
 data Polyline = Polyline { _polylineWidth     :: Float
-                         , _polylineColor     :: Color
-                         , _polylinePath      :: [V2 Float]
+                         , _polylineFeather   :: Float
+                         , _polylinePath      :: [(V2 Float,V4 Float)]
+                         , _polylineCaps      :: (LineCap,LineCap)
                          } deriving (Show, Eq, Typeable, Generic)
 makeLenses ''Polyline
-
-path2Polyline :: Float -> Color -> Path -> Polyline
-path2Polyline = Polyline
 --------------------------------------------------------------------------------
 -- Box
 --------------------------------------------------------------------------------
 boxPath :: V2 Float -> Path
-boxPath (V2 w h) = poly
+boxPath (V2 w h) = Path poly
     where poly = [V2 x1 y1, V2 x2 y1, V2 x2 y2, V2 x1 y2, V2 x1 y1]
           x1 = 0
           x2 = w
@@ -131,7 +142,7 @@ boxPath (V2 w h) = poly
           y2 = h
 
 boxPolyline :: Float -> Box -> Polyline
-boxPolyline lw Box{..} = Polyline lw _boxColor path
+boxPolyline lw Box{..} = Polyline lw 0.5 (zip path $ repeat _boxColor) (LineCapSquare,LineCapSquare)
     where path = [V2 x1 y1, V2 x2 y1, V2 x2 y2, V2 x1 y2, V2 x1 y1]
           (V2 w h) = _boxSize
           x1 = -hw
@@ -140,7 +151,7 @@ boxPolyline lw Box{..} = Polyline lw _boxColor path
           y2 = h + hw
           hw = lw/2
 
-data Box = Box { _boxSize      :: Size
+data Box = Box { _boxSize      :: V2 Float
                , _boxColor     :: Color
                } deriving (Show, Eq, Typeable, Generic)
 makeLenses ''Box
@@ -157,17 +168,157 @@ instance Primitive Box where
     type PrimM Box = IO
     type PrimR Box  = Rez
     type PrimT Box  = Transform
-    compilePrimitive (Rez geom _ _ win _ _) (Box (V2 w h) c) = do
-        let [tl, tr, br, bl] = [zero, V2 w 0, V2 w h, V2 0 h]
+    compilePrimitive (Rez sh win _ _) (Box (V2 w h) c) = do
+        let geom = _shGeometry sh
+            [tl, tr, br, bl] = [zero, V2 w 0, V2 w h, V2 0 h]
             vs = [tl, tr, br, tl, br, bl]
             cs = replicate 6 c
         Rendering f c' <- colorRendering win geom GL_TRIANGLES vs cs
         return (c',f)
+--------------------------------------------------------------------------------
+-- Picture Helpers
+--------------------------------------------------------------------------------
+newtype Size = Size (V2 Float)
+--------------------------------------------------------------------------------
+-- Decomposing things into paths
+--------------------------------------------------------------------------------
+class ToPaths a where
+    toPaths :: a -> [Path]
 
+instance ToPaths [V2 Float] where
+    toPaths vs = [Path vs]
+
+instance ToPaths Size where
+    toPaths (Size sz) = [boxPath sz]
+
+instance ToPaths Path where
+    toPaths p = [p]
+--------------------------------------------------------------------------------
+-- Stroke
+--------------------------------------------------------------------------------
+data Stroke = Stroke { _strokeColor   :: Color
+                     , _strokeWidth   :: Float
+                     , _strokeFeather :: Float
+                     , _strokeLineCaps:: (LineCap,LineCap)
+                     } deriving (Show, Generic)
+makeLenses ''Stroke
+
+emptyStroke :: Stroke
+emptyStroke = Stroke 0 2 1 (LineCapRound,LineCapRound)
+
+data Stroked a = Stroked Stroke a deriving (Show, Generic)
+
+instance Hashable Stroke
+instance Hashable a => Hashable (Stroked a)
+
+instance (ToPaths a, Show a) => Primitive (Stroked a) where
+    type PrimM (Stroked a) = IO
+    type PrimR (Stroked a) = Rez
+    type PrimT (Stroked a) = Transform
+    compilePrimitive (Rez sh win _ _) (Stroked (Stroke c w f cp) p) = do
+        let ps = toPaths p
+            cs = repeat c
+            shader = _shProjectedPolyline sh
+        rs <- forM ps $ \(Path vs) ->
+            projectedPolylineRendering win shader w f cp vs cs
+        let Rendering a b = foldl (<>) mempty rs
+        return (b, a)
+--------------------------------------------------------------------------------
+-- Decomposing things into triangles
+--------------------------------------------------------------------------------
+sizeToTris :: Size -> [Triangle (V2 Float)]
+sizeToTris (Size (V2 w h)) = [Triangle a b c, Triangle a c d]
+    where [a,b,c,d] = [V2 0 0, V2 w 0, V2 w h, V2 0 h]
+
+class ToTriangles a where
+    toTriangles :: a -> [Triangle (V2 Float)]
+
+instance ToTriangles a => ToTriangles [a] where
+    toTriangles = concatMap toTriangles
+
+instance ToTriangles Size where
+    toTriangles = sizeToTris
+
+instance ToTriangles (Bezier (V2 Float)) where
+    toTriangles (Bezier _ a b c) = [Triangle a b c]
+
+instance Hashable a => Hashable (Triangle a) where
+    hashWithSalt s (Triangle a b c) =
+        s `hashWithSalt`  a `hashWithSalt` b `hashWithSalt` c
+--------------------------------------------------------------------------------
+-- Filling things
+--------------------------------------------------------------------------------
+data FillPrimitives = FillBeziers Fill [Bezier (V2 Float)]
+                    | FillTriangles Fill [Triangle (V2 Float)]
+                    | FillPaths Fill [Path]
+
+fillPrimsString :: FillPrimitives -> String
+fillPrimsString (FillBeziers _ _) = "FillBeziers"
+fillPrimsString (FillTriangles _ _) = "FillTriangles"
+fillPrimsString (FillPaths _ _) = "FillPaths"
+
+fillPrimsFill :: FillPrimitives -> Fill
+fillPrimsFill (FillBeziers f _) = f
+fillPrimsFill (FillTriangles f _) = f
+fillPrimsFill (FillPaths f _) = f
+
+fillPrimsPoints :: FillPrimitives -> [[V2 Float]]
+fillPrimsPoints (FillBeziers _ bs) = [trisToComp $ toTriangles bs]
+fillPrimsPoints (FillTriangles _ ts) = [trisToComp ts]
+fillPrimsPoints (FillPaths _ ps) = map unPath ps
+
+instance Show Fill where
+    show (FillColor _) = "FillColor"
+    show (FillTexture p _) = "FillTexture " ++ show p
+
+instance Hashable FillPrimitives where
+    hashWithSalt s fp
+        | FillColor f <- fillPrimsFill fp =
+            s `hashWithSalt` "FillColor" `hashWithSalt` fillPrimsString fp
+                `hashWithSalt` map (map f) (fillPrimsPoints fp)
+        | FillTexture p f <- fillPrimsFill fp =
+            s `hashWithSalt` "FillTexture" `hashWithSalt` fillPrimsString fp
+                `hashWithSalt` p `hashWithSalt` map (map f) (fillPrimsPoints fp)
+        | otherwise = s
+
+instance Transformable Transform FillPrimitives where
+    transform t (FillBeziers f bs) = FillBeziers f $ transform t bs
+    transform t (FillTriangles f bs) = FillTriangles f $ transform t bs
+    transform t (FillPaths f bs) = FillPaths f $ transform t bs
+
+path2ConcavePoly :: Path -> [Triangle (V2 Float)]
+path2ConcavePoly (Path vs)
+    | length vs >= 3
+    , x:xs <- vs = zipWith (Triangle x) xs (drop 1 xs)
+    | otherwise = []
+
+instance Primitive FillPrimitives where
+    type PrimM FillPrimitives = IO
+    type PrimR FillPrimitives = Rez
+    type PrimT FillPrimitives = Transform
+    compilePrimitive (Rez sh win _ _) (FillBeziers fill bs) = do
+        let bsh = _shBezier sh
+        Rendering f c <- filledBezierRendering win bsh bs fill
+        return (c, f)
+    compilePrimitive (Rez sh win _ _) (FillTriangles fill ts) = do
+        let gsh = _shGeometry sh
+        Rendering f c <- filledTriangleRendering win gsh ts fill
+        return (c, f)
+    compilePrimitive (Rez sh win _ _) (FillPaths fill ps) = do
+        -- We use a filled concave polygon technique instead of
+        -- triangulating the path.
+        -- http://www.glprogramming.com/red/chapter14.html#name13
+        let gsh = _shGeometry sh
+            tss = map path2ConcavePoly ps
+        rs <- forM tss $ \ts -> do
+            Rendering f c <- filledTriangleRendering win gsh ts fill
+            return $ Rendering (\t -> stencilMask (f t) (f t)) c
+        let Rendering f c = foldl (<>) mempty rs
+        return (c,f)
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-stringRendering :: Window -> GeomRenderSource -> BezRenderSource -> Font
+stringRendering :: Window -> GeomShader -> BezShader -> Font
                 -> String -> Color -> (Float,Float) -> IO G.Rendering
 stringRendering win geom bz font str fc xy = do
     -- Some docs
@@ -186,7 +337,6 @@ stringRendering win geom bz font str fc xy = do
                   r1 (translate 0 (-movv) t')
                   r2 t'
     return $ transformRendering t $ G.Rendering f (c1 >> c2)
-
 --------------------------------------------------------------------------------
 -- Workspace
 --------------------------------------------------------------------------------
@@ -212,7 +362,9 @@ instance Primitive Icon where
     type PrimM Icon = IO
     type PrimR Icon = Rez
     type PrimT Icon = Transform
-    compilePrimitive (Rez geom bz _ win _ font) (Icon str fc) = do
+    compilePrimitive (Rez sh win _ font) (Icon str fc) = do
+        let geom = _shGeometry sh
+            bz = _shBezier sh
         Rendering f c <- stringRendering win geom bz font str fc iconOffset
         return (c,f)
 
@@ -236,7 +388,9 @@ instance Primitive PlainText where
     type PrimM PlainText = IO
     type PrimR PlainText = Rez
     type PrimT PlainText = Transform
-    compilePrimitive (Rez geom bz _ win font _) (PlainText str fc) = do
+    compilePrimitive (Rez sh win font _) (PlainText str fc) = do
+        let geom = _shGeometry sh
+            bz = _shBezier sh
         Rendering f c <- stringRendering win geom bz font str fc (0,32)
         return (c,f)
 
@@ -266,12 +420,12 @@ data TextInput = TextInput { _textInputText      :: (Transform, PlainText)
                            } deriving (Show, Eq, Typeable)
 makeLenses ''TextInput
 
-textInputPath :: TextInput -> Path
-textInputPath TextInput{..} = transformPoly t $ boxPath $ _boxSize box
-    where (t,box) = _textInputBox
-
-textInputOutline :: TextInput -> Polyline
-textInputOutline t@TextInput{..} = path2Polyline 1 white $ textInputPath t
+--textInputPath :: TextInput -> Path
+--textInputPath TextInput{..} = transformPoly t $ boxPath $ _boxSize box
+--    where (t,box) = _textInputBox
+--
+--textInputOutline :: TextInput -> Polyline
+--textInputOutline t@TextInput{..} = Polyline 1 0.5 (zip (textInputPath t) (repeat white)) (LineCapSquare, LineCapSquare)
 
 emptyTextInput :: TextInput
 emptyTextInput = TextInput { _textInputText = (mempty, emptyPlainText)
@@ -280,12 +434,12 @@ emptyTextInput = TextInput { _textInputText = (mempty, emptyPlainText)
                            , _textInputActive = False
                            }
 
-instance Composite TextInput [] IO Rez Transform where
-    composite txt@TextInput{..} =
-        [ Element <$> _textInputBox
-        , Element <$> _textInputText
-        ] ++ [(mempty, Element poly) | _textInputActive]
-            where poly = textInputOutline txt
+--instance Composite TextInput [] IO Rez Transform where
+--    composite txt@TextInput{..} =
+--        [ Element <$> _textInputBox
+--        , Element <$> _textInputText
+--        ] ++ [(mempty, Element poly) | _textInputActive]
+--            where poly = textInputOutline txt
 
 --------------------------------------------------------------------------------
 -- TextField
@@ -302,12 +456,12 @@ emptyTextField = TextField { _textFieldLabel = (mempty, emptyPlainText)
                            , _textFieldError = (mempty, emptyPlainText)
                            }
 
-instance Composite TextField [] IO Rez Transform where
-    composite TextField{..} =
-       (fst _textFieldLabel, Element $ snd _textFieldLabel)
-       : composite _textFieldInput
-       ++
-       [ (fst _textFieldError, Element $ snd _textFieldError) ]
+--instance Composite TextField [] IO Rez Transform where
+--    composite TextField{..} =
+--       (fst _textFieldLabel, Element $ snd _textFieldLabel)
+--       : composite _textFieldInput
+--       ++
+--       [ (fst _textFieldError, Element $ snd _textFieldError) ]
 --------------------------------------------------------------------------------
 -- TextForm
 --------------------------------------------------------------------------------

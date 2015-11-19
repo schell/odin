@@ -10,15 +10,13 @@ import System.FilePath
 
 odinRez :: Window -> IO Rez
 odinRez w = do
-    grs <- loadGeomRenderSource
-    brs <- loadBezRenderSource
-    mrs <- loadMaskRenderSource
+    sh <- loadShaders
     Right hack <- odinFont "Hack-Regular.ttf"
     efawe <- odinFont "fontawesome-webfont.ttf"
     fawe <- case efawe of
         Left str -> putStrLn str >> return hack
         Right fawe -> return fawe
-    return $ Rez grs brs mrs w hack fawe
+    return $ Rez sh w hack fawe
 
 odinFont :: FilePath -> IO (Either String Font)
 odinFont fp = do
