@@ -3,7 +3,7 @@
 module Odin.Data.Login where
 
 --import Odin.Data.Common
---import Odin.Graphics.Types
+--import Odin.Data.Common
 --import Caltrops.Client
 --import Gelatin.Core.Rendering as G
 --import Gelatin.Core.Color

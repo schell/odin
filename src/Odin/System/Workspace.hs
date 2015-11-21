@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Odin.System.Workspace where
 
-import Odin.Graphics.Types
+import Odin.Data.Common
 import Odin.Data
 import Odin.System
 import Odin.GUI
@@ -10,12 +10,16 @@ import Data.Renderable
 import Data.IORef
 import Data.Bits
 import Data.Proxy
+import Data.Maybe
+import qualified Data.Map.Strict as M
 import Graphics.UI.GLFW
 import Graphics.GL.Core33
+import Graphics.Text.TrueType
 import Gelatin.Core.Rendering
 import Control.Varying
 import Control.Monad
 import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Monad.Trans.RWS.Strict
 import System.Exit
 import Linear
@@ -46,10 +50,23 @@ stepMany ([e]) y = runVar y e
 stepMany (e:es) y = execVar y e >>= stepMany es
 stepMany []     y = runVar y mempty
 
+getFonts :: [FontDescriptor] -> Rez -> IO Rez
+getFonts [] rz = return rz
+getFonts (fd:fds) rz
+    | Just _ <- M.lookup fd (rezFonts rz) = getFonts fds rz
+    | otherwise = do
+    mrz <- withFontAsync (rezFontCache rz) fd $ \font -> do
+        putStrLn $ "found font " ++ show fd
+        return $ rz{ rezFonts = M.insert fd font $ rezFonts rz }
+    let rz' = fromMaybe rz mrz
+    getFonts fds rz'
+
 renderFrame :: Workspace -> Picture () -> IO Workspace
 renderFrame ws pic = do
-    let rz  = wsRez ws
+    let fonts = neededFonts pic
         old = wsCache ws
+
+    rz  <- getFonts fonts $ wsRez ws
 
     (fbw,fbh) <- getFramebufferSize $ rezWindow rz
     glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
@@ -64,7 +81,7 @@ renderFrame ws pic = do
     then exitSuccess
     else threadDelay 100
 
-    return $ ws { wsCache = new }
+    return $ ws { wsCache = new, wsRez = rz }
 
 getWorkspaceInput :: Workspace -> IO [InputEvent]
 getWorkspaceInput ws = do

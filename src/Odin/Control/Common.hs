@@ -4,7 +4,7 @@
 module Odin.Control.Common where
 
 import Odin.Data
-import Odin.Graphics.Types
+import Odin.Data.Common
 import Servant.Client
 import Control.Concurrent.Async
 import Graphics.UI.GLFW hiding (init)

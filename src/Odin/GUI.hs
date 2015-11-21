@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 module Odin.GUI where
 
 import Control.Monad
@@ -10,16 +10,16 @@ import Control.Monad.Free
 import Control.Monad.Free.Church
 import Control.Monad.Reader
 import Control.Varying
-import Control.Arrow (first)
+import Control.Arrow (first,second)
 import Control.Lens hiding (transform)
 import Data.Renderable
 import Data.Monoid
 import Odin.Data.Common hiding (Polyline)
-import qualified Odin.Data.Common as ODC
-import Odin.Graphics.Types
+import Odin.Data.Common
 import Gelatin.Core.Rendering hiding (triangulate)
 import Gelatin.Core.Rendering.Bezier
 import Gelatin.Core.Rendering.Shape as Shape
+import Graphics.Text.TrueType
 import Linear
 
 -- | Some type synonyms.
@@ -64,13 +64,13 @@ strokeAttr (Just s) (StrokeCaps cs) = Just $ s & strokeLineCaps .~ cs
 -- interfaces in a purely functional language" Copyright 1998 by Sigbjørn Finne
 data PictureCmd f where
     Blank         :: f -> PictureCmd f
-    --Point         :: f -> PictureCmd f
     Polyline      :: [V2 Float] -> f -> PictureCmd f
     Rectangle     :: V2 Float -> f -> PictureCmd f
     Curve         :: V2 Float -> V2 Float -> V2 Float -> f -> PictureCmd f
     Ellipse       :: V2 Float -> f -> PictureCmd f
     Circle        :: Float -> f -> PictureCmd f
     --Arc         :: V2 Float -> Angles -> f -> PictureCmd f
+    Letters       :: FontDescriptor -> Float -> String -> f -> PictureCmd f
     WithStroke    :: [StrokeAttr] -> Picture () -> f -> PictureCmd f
     WithFill      :: Fill -> Picture () -> f -> PictureCmd f
     WithTransform :: Transform -> Picture () -> f -> PictureCmd f
@@ -78,63 +78,110 @@ data PictureCmd f where
 
 instance Functor PictureCmd where
     fmap f (Blank n) = Blank $ f n
-    fmap f (WithStroke as p n) = WithStroke as p $ f n
-    fmap f (WithFill fill p n) = WithFill fill p $ f n
-    fmap f (WithTransform t p n) = WithTransform t p $ f n
-    --fmap f (Point n) = Point $ f n
     fmap f (Polyline vs n) = Polyline vs $ f n
     fmap f (Rectangle v n) = Rectangle v $ f n
     fmap f (Curve a b c n) = Curve a b c $ f n
     fmap f (Ellipse v n) = Ellipse v $ f n
     fmap f (Circle r n) = Circle r $ f n
     --fmap f (Arc v a n) = Arc v a $ f n
+    fmap f (Letters fd px s n) = Letters fd px s $ f n
+    fmap f (WithStroke as p n) = WithStroke as p $ f n
+    fmap f (WithFill fill p n) = WithFill fill p $ f n
+    fmap f (WithTransform t p n) = WithTransform t p $ f n
 
 type Picture = F PictureCmd
-
+--------------------------------------------------------------------------------
+-- Extracting needed fonts
+--------------------------------------------------------------------------------
+neededFonts :: Picture () -> [FontDescriptor]
+neededFonts = f . fromF
+    where f (Pure ()) = []
+          f (Free (Letters fd _ _ n)) = fd : f n
+          f (Free (WithTransform _ p n)) = neededFonts p ++ f n
+          f (Free (WithStroke _ p n)) = neededFonts p ++ f n
+          f (Free (WithFill _ p n)) = neededFonts p ++ f n
+          f p = f $ nextPicCmd p
 --------------------------------------------------------------------------------
 -- Picture to Paths
 --------------------------------------------------------------------------------
-compilePaths :: Free PictureCmd () -> [Path]
-compilePaths (Pure ()) = []
-compilePaths (Free (Blank n)) = [] ++ compilePaths n
-compilePaths (Free (Polyline vs n)) = [Path vs] ++ compilePaths n
-compilePaths (Free (Rectangle sz n)) = toPaths (Size sz) ++ compilePaths n
-compilePaths (Free (Curve a b c n)) =
-    [Path $ subdivideAdaptive 100 0 $ bez3 a b c] ++ compilePaths n
-compilePaths (Free (Ellipse (V2 x y) n)) =
-    [Path $ bez4sToPath 100 0 $ Shape.ellipse x y] ++ compilePaths n
-compilePaths (Free (Circle r n)) =
-    [Path $ bez4sToPath 100 0 $ Shape.ellipse r r] ++ compilePaths n
-compilePaths (Free (WithStroke _ p n)) =
-    compilePaths (fromF p) ++ compilePaths n
-compilePaths (Free (WithFill _ p n)) = compilePaths (fromF p) ++ compilePaths n
-compilePaths (Free (WithTransform t p n)) =
-    (transform t (compilePaths $ fromF p)) ++ compilePaths n
-
-instance ToPaths (Picture ()) where
-    toPaths = compilePaths . fromF
+compilePaths :: Free PictureCmd () -> Reader Transform [(Transform, PathPrimitives)]
+compilePaths (Pure ()) = return []
+compilePaths (Free (Blank n)) = ([] ++) <$> compilePaths n
+compilePaths (Free (Polyline vs n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    return $ (t, Paths [Path vs]) : prims
+compilePaths (Free (Rectangle sz n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    let ps  = toPaths mempty (Size sz)
+        ps' = map (\p -> (t,Paths [p])) ps
+    return $ ps' ++ prims
+compilePaths (Free (Curve a b c n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    return $ (t, Paths [Path $ subdivideAdaptive 100 0 $ bez3 a b c]) : prims
+compilePaths (Free (Ellipse (V2 x y) n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    return $ (t, Paths [Path $ bez4sToPath 100 0 $ Shape.ellipse x y]) : prims
+compilePaths (Free (Circle rad n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    return $ (t, Paths [Path $ bez4sToPath 100 0 $ Shape.ellipse rad rad]) : prims
+compilePaths (Free (Letters fd px s n)) = do
+    t     <- ask
+    prims <- compilePaths n
+    return $ (t, PathText fd px s) : prims
+compilePaths (Free (WithStroke _ p n)) = do
+    prims <- compilePaths n
+    paths <- compilePaths $ fromF p
+    return $ paths ++ prims
+compilePaths (Free (WithFill _ p n)) = do
+    prims <- compilePaths n
+    paths <- compilePaths $ fromF p
+    return $ paths ++ prims
+compilePaths (Free (WithTransform t p n)) = do
+    ps <- local (t <>) (compilePaths $ fromF p)
+    (ps ++) <$> compilePaths n
 --------------------------------------------------------------------------------
 -- Filling Pictures
 --------------------------------------------------------------------------------
-compileFillPrims :: Fill -> Free PictureCmd () -> [FillPrimitives]
-compileFillPrims _ (Pure ()) = []
-compileFillPrims f (Free (Blank n)) = [] ++ compileFillPrims f n
-compileFillPrims f (Free (Polyline vs n)) =
-    FillPaths f [Path vs] : compileFillPrims f n
-compileFillPrims f (Free (Rectangle sz n)) =
-    FillTriangles f (toTriangles (Size sz)) : compileFillPrims f n
-compileFillPrims f (Free (Curve a b c n)) =
-    FillBeziers f [bez a b c] : compileFillPrims f n
-compileFillPrims f (Free (Ellipse (V2 x y) n)) =
-    FillPaths f [Path $ bez4sToPath 100 0 $ Shape.ellipse x y] : compileFillPrims f n
-compileFillPrims f (Free (Circle r n)) =
-    FillPaths f [Path $ bez4sToPath 100 0 $ Shape.ellipse r r] : compileFillPrims f n
+compileFillPrims :: Fill -> Free PictureCmd ()
+                 -> Reader Transform [(Transform, FillPrimitives)]
+compileFillPrims _ (Pure ()) = return []
+compileFillPrims f (Free (Blank n)) = ([] ++) <$> compileFillPrims f n
+compileFillPrims f (Free (Polyline vs n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillPaths f [Path vs]) : prims
+compileFillPrims f (Free (Rectangle sz n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillTriangles f $ toTriangles $ Size sz) : prims
+compileFillPrims f (Free (Curve a b c n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillBeziers f [bez a b c]) : prims
+compileFillPrims f (Free (Ellipse (V2 x y) n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillPaths f [Path $ bez4sToPath 100 0 $ Shape.ellipse x y]) : prims
+compileFillPrims f (Free (Circle rad n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillPaths f [Path $ bez4sToPath 100 0 $ Shape.ellipse rad rad]) : prims
+compileFillPrims f (Free (Letters fd px s n)) = do
+    t <- ask
+    prims <- compileFillPrims f n
+    return $ (t, FillText f fd px s) : prims
 compileFillPrims f (Free (WithStroke _ p n)) =
-    compileFillPrims f (fromF p) ++ compileFillPrims f n
+    (++) <$> compileFillPrims f (fromF p) <*> compileFillPrims f n
 compileFillPrims f (Free (WithFill _ p n)) =
-    compileFillPrims f (fromF p) ++ compileFillPrims f n
-compileFillPrims f (Free (WithTransform t p n)) =
-    transform t (compileFillPrims f $ fromF p) ++ compileFillPrims f n
+    (++) <$> compileFillPrims f (fromF p) <*> compileFillPrims f n
+compileFillPrims f (Free (WithTransform t p n)) = do
+    prims <- local (t <>) (compileFillPrims f $ fromF p)
+    (prims ++) <$> compileFillPrims f n
 --------------------------------------------------------------------------------
 -- Creating Pictures
 --------------------------------------------------------------------------------
@@ -165,6 +212,9 @@ ellipse sz = liftF $ Ellipse sz ()
 circle :: Float -> Picture ()
 circle r = liftF $ Circle r ()
 
+letters :: FontDescriptor -> Float -> String -> Picture ()
+letters fd px s = liftF $ Letters fd px s ()
+
 withStroke :: [StrokeAttr] -> Picture () -> Picture ()
 withStroke attrs pic = liftF $ WithStroke attrs pic ()
 
@@ -186,34 +236,36 @@ nextPicCmd (Free (Rectangle _ n)) = n
 nextPicCmd (Free (Curve _ _ _ n)) = n
 nextPicCmd (Free (Ellipse _ n)) = n
 nextPicCmd (Free (Circle _ n)) = n
+nextPicCmd (Free (Letters _ _ _ n)) = n
 nextPicCmd (Free (WithStroke _ _ n)) = n
 nextPicCmd (Free (WithFill _ _ n)) = n
 nextPicCmd (Free (WithTransform _ _ n)) = n
 
 -- | Compile the picture commands into a list of renderable primitives.
-compilePrimitives :: Free PictureCmd () -> Reader Transform [(Transform, Element IO Rez Transform)]
+compilePrimitives :: Free PictureCmd ()
+                  -> Reader Transform [(Transform, Element IO Rez Transform)]
 compilePrimitives (Pure ()) = return []
 compilePrimitives (Free (WithTransform t p n)) = do
     prims <- local (t <>) $ compilePrimitives $ fromF p
     (prims ++) <$> compilePrimitives n
 compilePrimitives (Free (WithStroke attrs p n)) = do
-    t <- ask
-    let paths = toPaths p
-        stroke = foldl strokeAttr Nothing attrs
+    paths <- compilePaths $ fromF p
+    let stroke = foldl strokeAttr Nothing attrs
         prims = case stroke of
                  Nothing -> []
-                 Just s  -> map (\path -> (t, Element $ Stroked s path)) paths
+                 Just s  -> map (second (Element . Stroked s)) paths
     (prims ++) <$> compilePrimitives n
 compilePrimitives (Free (WithFill fill p n)) = do
-    t <- ask
-    let prims = map (\prim -> (t, Element prim)) $ compileFillPrims fill $ fromF p
-    (prims ++) <$> compilePrimitives n
-
+    prims <- compileFillPrims fill $ fromF p
+    let prims' = map (second Element) prims
+    (prims' ++) <$> compilePrimitives n
 compilePrimitives p = compilePrimitives $ nextPicCmd p
 
 instance Composite (Picture ()) [] IO Rez Transform where
     composite pic = runReader (compilePrimitives $ fromF pic) mempty
-
+--------------------------------------------------------------------------------
+-- Showing a picture as a string
+--------------------------------------------------------------------------------
 compileLine :: Free PictureCmd () -> String -> Reader Int String
 compileLine n s = do
     t <- ask
@@ -229,6 +281,8 @@ compileString (Free (Rectangle sz n)) = compileLine n $ "rectangle " ++ show sz
 compileString (Free (Curve a b c n)) = compileLine n $ unwords $ "curve" : map show [a,b,c]
 compileString (Free (Ellipse sz n)) = compileLine n $ "ellipse " ++ show sz
 compileString (Free (Circle u n)) = compileLine n $ "circle " ++ show u
+compileString (Free (Letters fd px s n)) =
+    compileLine n $ unwords ["letters", show fd, show px, show s]
 compileString (Free (WithStroke attrs p n)) = do
     s <- local (+1) $ compileString $ fromF p
     compileLine n $ "withStroke " ++ show attrs ++ "\n" ++ s

@@ -13,10 +13,11 @@ module Odin.Control (
 --import Odin.Control.Common as C
 import Odin.Data
 import Odin.GUI
-import Odin.Graphics.Types
+import Odin.Data.Common
 import Linear hiding (trace, el)
 import Gelatin.Core.Rendering hiding (polyline)
 import Gelatin.Core.Color
+import Graphics.Text.TrueType
 import Control.Varying
 import Control.Monad
 import Control.Monad.IO.Class
@@ -30,19 +31,30 @@ import Data.Time.Clock
 linePic :: Picture ()
 linePic = do
     withFill (FillColor fill) line
-    withStroke [StrokeColor white, StrokeFeather 1, StrokeWidth 4] line
+    withStroke [StrokeColor white, StrokeFeather 1, StrokeWidth 4] $ do
+        line
+        withTransform (Transform (V2 20 100) 1 0) $
+            letters (FontDescriptor "Arial" $ FontStyle False False) 16 "Hello!"
     where line = polyline [V2 0 0, V2 100 100, V2 200 30, V2 400 50]
           fill (V2 x y) = V4 0 (x/400) (y/100) 1
 
-rectPic = withFill (FillColor f) $ rectangle $ V2 100 100
-    where f (V2 x y) = V4 (x/100) (y/100) 0 1
+rectPic =
+    withTransform (Transform 100 1 0) $
+        withFill (FillColor f) $ rectangle $ V2 400 400
+    where f (V2 x y) = V4 (x/400) (y/400) 0 1
+
+hello =
+    withTransform (Transform 100 1 0) $ do
+        withFill (solid white) $
+            letters (FontDescriptor "Arial" $ FontStyle False False) 64 "Hello."
+        withStroke [StrokeColor red, StrokeWidth 2, StrokeFeather 1] $
+            letters (FontDescriptor "Arial" $ FontStyle False False) 64 "Hello."
 
 network :: SplineOf InputEvent (Picture ()) ()
 network = do
-    lns <- spline blank $ takeE 16 $ always $ do rectPic
-                                                 linePic
-    let n = withFill (FillTexture "/Users/schell/Desktop/leo-wtf-small.png" f) lns
-        f (V2 x y) = V2 (x/400) (y/100)
+    ui <- spline blank $ {-takeE 16 $-} always hello
+    let n = withFill (FillTexture "/Users/schell/Desktop/leo-wtf-small.png" f) ui
+        f (V2 x y) = V2 (x/400) (y/400)
     void $ pure n `untilEvent` (time ~> after 3)
     --_ <- textForm (pure mempty) ["Name: ", "Password: "] "Login"
     network
