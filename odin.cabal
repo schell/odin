@@ -79,6 +79,7 @@ executable odin
                        lens >= 4.13 && < 4.14,
                        gelatin >= 0.0.0.3,
                        free >= 4.12 && < 4.13,
+                       pipes >= 4.1 && < 4.2,
                        caltrops
 
   -- Directories containing source files.

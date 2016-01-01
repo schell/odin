@@ -10,10 +10,11 @@ module Odin.Control (
 --import Odin.Control.TextField
 --import Odin.Control.TextForm
 --import Odin.Control.Button
---import Odin.Control.Common as C
+import Odin.Control.Common as C
 import Odin.Data
 import Odin.GUI
 import Odin.Data.Common
+import Odin.Control.File
 import Linear hiding (trace, el)
 import Gelatin.Core.Rendering hiding (polyline)
 import Gelatin.Core.Color
@@ -27,6 +28,7 @@ import Control.Lens
 import Data.Maybe
 import Data.Renderable
 import Data.Time.Clock
+import System.Exit
 
 linePic :: Picture ()
 linePic = do
@@ -52,25 +54,9 @@ hello =
 
 network :: SplineOf InputEvent (Picture ()) ()
 network = do
-    ui <- spline blank $ {-takeE 16 $-} always hello
-    let n = withFill (FillTexture "/Users/schell/Desktop/leo-wtf-small.png" f) ui
-        f (V2 x y) = V2 (x/400) (y/400)
-    void $ pure n `untilEvent` (time ~> after 3)
-    --_ <- textForm (pure mempty) ["Name: ", "Password: "] "Login"
+    spline blank $ always hello--graph ~> onWhen (const True)
     network
 
 time :: MonadIO m => Var m a Float
 time = delta (liftIO getCurrentTime) (\a b -> realToFrac $ diffUTCTime a b)
 
---field :: Maybe TextField -> Odin ()
---field mtxt = textField mempty mtxt >>= field . Just
---
---fields :: [String] -> [Maybe String -> Odin String]
---fields ss = zipWith f ss [(0 :: Int) ..]
---    where f s i mt = g <$> textField vt (Just $ mutate defaultTextField $ do
---                            textFieldLabel._2.plainTextString .= s
---                            textFieldInput.textInputText._2.plainTextString .= fromMaybe "" mt)
---                                where vt = pure t
---                                      t = Transform (V2 0 (32* fromIntegral i)) 1 0
---          txt = textFieldInput.textInputText._2.plainTextString
---          g = (^. txt)

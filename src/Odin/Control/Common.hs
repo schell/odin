@@ -99,34 +99,34 @@ windowSize = varM $ const $ asks _readWindowSize
 cursorPos :: (Monad m, Monoid w) => Var (RWST ReadData w s m) i (V2 Float)
 cursorPos = varM $ const $ asks _readCursorPos
 
-isCursorInPath :: (Monad m, Monoid w)
-               => Var (RWST ReadData w s m) i Path
-               -> Var (RWST ReadData w s m) i Bool
-isCursorInPath vpath = pointInside <$> cursorPos <*> vpath
+--isCursorInPath :: (Monad m, Monoid w)
+--               => Var (RWST ReadData w s m) i Path
+--               -> Var (RWST ReadData w s m) i Bool
+--isCursorInPath vpath = pointInside <$> cursorPos <*> vpath
+--
+--cursorInPath :: (Monad m, Monoid w)
+--             => Var (RWST ReadData w s m) i Path
+--             -> Var (RWST ReadData w s m) i (Event ())
+--cursorInPath vpath = isCursorInPath vpath ~> onTrue
+--
+--cursorNotInPath :: (Monad m, Monoid w)
+--                => Var (RWST ReadData w s m) i Path
+--                -> Var (RWST ReadData w s m) i (Event ())
+--cursorNotInPath vpath = (not <$> isCursorInPath vpath) ~> onTrue
 
-cursorInPath :: (Monad m, Monoid w)
-             => Var (RWST ReadData w s m) i Path
-             -> Var (RWST ReadData w s m) i (Event ())
-cursorInPath vpath = isCursorInPath vpath ~> onTrue
-
-cursorNotInPath :: (Monad m, Monoid w)
-                => Var (RWST ReadData w s m) i Path
-                -> Var (RWST ReadData w s m) i (Event ())
-cursorNotInPath vpath = (not <$> isCursorInPath vpath) ~> onTrue
-
-leftClickInPath :: (Monad m, Monoid w)
-                => Var (RWST ReadData w s m) InputEvent Path
-                -> Var (RWST ReadData w s m) InputEvent (Event ())
-leftClickInPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
-    where f (Event v) path = v `pointInside` path
-          f _ _ = False
-
-leftClickOutPath :: (Monad m, Monoid w)
-                 => Var (RWST ReadData w s m) InputEvent Path
-                 -> Var (RWST ReadData w s m) InputEvent (Event ())
-leftClickOutPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
-    where f (Event v) path = not $ pointInside v path
-          f _ _ = False
+--leftClickInPath :: (Monad m, Monoid w)
+--                => Var (RWST ReadData w s m) InputEvent Path
+--                -> Var (RWST ReadData w s m) InputEvent (Event ())
+--leftClickInPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
+--    where f (Event v) path = v `pointInside` path
+--          f _ _ = False
+--
+--leftClickOutPath :: (Monad m, Monoid w)
+--                 => Var (RWST ReadData w s m) InputEvent Path
+--                 -> Var (RWST ReadData w s m) InputEvent (Event ())
+--leftClickOutPath vpath = (f <$> leftClickPos <*> vpath) ~> onTrue
+--    where f (Event v) path = not $ pointInside v path
+--          f _ _ = False
 
 leftClickPos :: (Monad m, Monoid w)
              => Var (RWST ReadData w s m) InputEvent (Event (V2 Float))
@@ -142,10 +142,10 @@ cursorMoved = var f ~> onJust
     where f (CursorMoveEvent x y) = Just $ realToFrac <$> V2 x y
           f _ = Nothing
 
-textSize :: (Monad m, Monoid w) => String -> (RWST ReadData w s m) (V2 Float)
-textSize s = do
-    dpi <- asks _readDpi
-    rez <- asks _readResources
-    let BoundingBox _ _ w h _ = stringBoundingBox (rezFont rez) dpi sz s
-        sz = pixelSizeInPointAtDpi 16 dpi
-    return $ V2 w h
+--textSize :: (Monad m, Monoid w) => String -> (RWST ReadData w s m) (V2 Float)
+--textSize s = do
+--    dpi <- asks _readDpi
+--    rez <- asks _readResources
+--    let BoundingBox _ _ w h _ = stringBoundingBox (rezFont rez) dpi sz s
+--        sz = pixelSizeInPointAtDpi 16 dpi
+--    return $ V2 w h

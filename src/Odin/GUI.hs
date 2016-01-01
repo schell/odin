@@ -14,7 +14,6 @@ import Control.Arrow (first,second)
 import Control.Lens hiding (transform)
 import Data.Renderable
 import Data.Monoid
-import Odin.Data.Common hiding (Polyline)
 import Odin.Data.Common
 import Gelatin.Core.Rendering hiding (triangulate)
 import Gelatin.Core.Rendering.Bezier
@@ -56,7 +55,6 @@ strokeAttr (Just s) (StrokeCaps cs) = Just $ s & strokeLineCaps .~ cs
 --    LineTo :: V2 Float -> f -> PathCmd f
 --    MoveTo :: V2 Float -> f -> PathCmd f
 --    ColorTo :: V4 Float -> f -> PathCmd f
-
 --------------------------------------------------------------------------------
 -- Picture
 --------------------------------------------------------------------------------
@@ -74,7 +72,7 @@ data PictureCmd f where
     WithStroke    :: [StrokeAttr] -> Picture () -> f -> PictureCmd f
     WithFill      :: Fill -> Picture () -> f -> PictureCmd f
     WithTransform :: Transform -> Picture () -> f -> PictureCmd f
-    deriving (Show)
+    RelativeTo    :: Picture () -> Picture () -> f -> PictureCmd f
 
 instance Functor PictureCmd where
     fmap f (Blank n) = Blank $ f n
@@ -88,6 +86,7 @@ instance Functor PictureCmd where
     fmap f (WithStroke as p n) = WithStroke as p $ f n
     fmap f (WithFill fill p n) = WithFill fill p $ f n
     fmap f (WithTransform t p n) = WithTransform t p $ f n
+    fmap f (RelativeTo p1 p2 n) = RelativeTo p1 p2 $ f n
 
 type Picture = F PictureCmd
 --------------------------------------------------------------------------------
@@ -144,6 +143,22 @@ compilePaths (Free (WithFill _ p n)) = do
 compilePaths (Free (WithTransform t p n)) = do
     ps <- local (t <>) (compilePaths $ fromF p)
     (ps ++) <$> compilePaths n
+compilePaths (Free (RelativeTo p1 p2 n)) = do
+    t  <- ask
+    ps <- local (t <>) $ compilePaths $ fromF p1
+    let b   = boundsOfPaths ps
+        p2' = uncurry adjustBy b p2
+    ps' <- compilePaths $ fromF p2'
+    (ps' ++) <$> compilePaths n
+
+boundsOfPath :: Transform -> PathPrimitives -> (Float, Float)
+boundsOfPath = undefined
+
+boundsOfPaths :: [(Transform, PathPrimitives)] -> (Float,Float)
+boundsOfPaths = foldl (\(x,y) (x',y') -> (max x x', max y y')) (0,0) . map (uncurry boundsOfPath)
+
+adjustBy :: Float -> Float -> Picture () -> Picture ()
+adjustBy = undefined
 --------------------------------------------------------------------------------
 -- Filling Pictures
 --------------------------------------------------------------------------------
@@ -182,6 +197,19 @@ compileFillPrims f (Free (WithFill _ p n)) =
 compileFillPrims f (Free (WithTransform t p n)) = do
     prims <- local (t <>) (compileFillPrims f $ fromF p)
     (prims ++) <$> compileFillPrims f n
+compileFillPrims f (Free (RelativeTo p1 p2 n)) = do
+    t  <- ask
+    ps <- local (t <>) $ compileFillPrims f $ fromF p1
+    let b   = boundsOfFills ps
+        p2' = uncurry adjustBy b p2
+    ps' <- compileFillPrims f $ fromF p2'
+    (ps' ++) <$> compileFillPrims f n
+
+boundsOfFill :: Transform -> FillPrimitives -> (Float, Float)
+boundsOfFill = undefined
+
+boundsOfFills :: [(Transform, FillPrimitives)] -> (Float,Float)
+boundsOfFills = foldl (\(x,y) (x',y') -> (max x x', max y y')) (0,0) . map (uncurry boundsOfFill)
 --------------------------------------------------------------------------------
 -- Creating Pictures
 --------------------------------------------------------------------------------

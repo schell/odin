@@ -13,7 +13,7 @@ module Odin.Data.Common where
 
 import Graphics.GL.Core33
 import Graphics.UI.GLFW
-import Graphics.Text.TrueType
+import Graphics.Text.TrueType hiding (BoundingBox)
 import Gelatin.Core.Rendering as G
 import Gelatin.Core.Rendering.Bezier
 import Gelatin.Core.Color
@@ -95,12 +95,17 @@ instance Monoid InputEvent where
 fromPrim :: (Primitive a, Hashable a, Monad (PrimM a), Monoid (PrimT a))
          => a -> (PrimT a, Element (PrimM a) (PrimR a) (PrimT a))
 fromPrim a = (mempty, Element a)
-
--- | Input is a type that stores certain values pertaining to user input.
--- Without storing things like the last cursor position our varying values
--- have to wait for an event before taking a real value. This way all
--- varying values that rely on cursor position can have a (usable) value
--- instantly.
+--------------------------------------------------------------------------------
+-- Low level infrastructure
+--------------------------------------------------------------------------------
+-- | ReadData is a type that stores resources and certain values pertaining to
+-- user input. Without storing things like the last cursor position our varying
+-- values have to wait for an event before taking a real value, which means
+-- placeholder values must be used until such an event. Many times using a
+-- placeholder value results in a signal that is less than ideal. By
+-- storing certain important user input events in a read-only structure we can
+-- query the event to construct a nice signal, e.g. a signal that would rely on
+-- cursor position can have a (usable) value instantly.
 data ReadData = ReadData { _readCursorPos :: V2 Float
                          , _readWindowSize :: V2 Float
                          , _readResources :: Rez
@@ -129,6 +134,41 @@ instance Primitive () where
 instance Composite () [] IO Rez Transform where
     composite () = []
 --------------------------------------------------------------------------------
+-- Measuring things with boundaries
+--------------------------------------------------------------------------------
+class BoundedByBox a where
+    type BoundingBoxR a :: *
+    type BoundingBox a :: *
+    boundingBox :: BoundingBoxR a -> a -> BoundingBox a
+
+type BBox = (V2 Float, V2 Float)
+
+instance BoundedByBox [V2 Float] where
+    type BoundingBoxR [V2 Float] = ()
+    type BoundingBox [V2 Float] = (V2 Float, V2 Float)
+    boundingBox _ [] = (0,0)
+    boundingBox _ ps = (V2 minx miny, V2 maxx maxy)
+        where xs = map fx ps
+              ys = map fy ps
+              minx = minimum xs
+              miny = minimum ys
+              maxx = maximum xs
+              maxy = maximum ys
+              fx (V2 x _) = x
+              fy (V2 _ y) = y
+
+instance BoundedByBox [BBox] where
+    type BoundingBoxR [BBox] = ()
+    type BoundingBox [BBox] = BBox
+    boundingBox _ [] = (0,0)
+    boundingBox _ bs = boundingBox () ps
+        where ps = concatMap (\(v1,v2) -> [v1,v2]) bs
+
+instance BoundedByBox (Triangle (V2 Float)) where
+    type BoundingBoxR (Triangle (V2 Float)) = ()
+    type BoundingBox (Triangle (V2 Float)) = BBox
+    boundingBox _ (Triangle a b c) = boundingBox () [a,b,c]
+--------------------------------------------------------------------------------
 -- Path
 --------------------------------------------------------------------------------
 newtype Path = Path { unPath :: [V2 Float] } deriving (Show, Generic)
@@ -138,42 +178,16 @@ instance Transformable Transform Path where
 
 instance Hashable Path
 
+instance BoundedByBox Path where
+    type BoundingBoxR Path = ()
+    type BoundingBox Path = (V2 Float, V2 Float)
+    boundingBox _ (Path ps) = boundingBox () ps
+
 data PathPrimitives = Paths [Path]
                     | PathText FontDescriptor Float String
                     deriving (Generic, Show)
 
 instance Hashable PathPrimitives
---------------------------------------------------------------------------------
--- Polyline
---------------------------------------------------------------------------------
---instance Primitive Polyline where
---    type PrimM Polyline = IO
---    type PrimR  Polyline = Rez
---    type PrimT  Polyline = Transform
---    compilePrimitive (Rez sh win _ _) Polyline{..} = do
---        let cs = map snd _polylinePath
---            vs = map fst _polylinePath
---            shader = _shProjectedPolyline sh
---        Rendering f c <- projectedPolylineRendering win shader _polylineWidth
---                             _polylineFeather _polylineCaps vs cs
---        return (c, f)
---
---instance Hashable LineCap where
---    hashWithSalt s c = s `hashWithSalt` show c
---
---instance Hashable Polyline where
---    hashWithSalt s Polyline{..} =
---        s `hashWithSalt` _polylineWidth
---            `hashWithSalt` _polylineFeather
---                `hashWithSalt` _polylinePath
---                    `hashWithSalt` _polylineCaps
---
---data Polyline = Polyline { _polylineWidth     :: Float
---                         , _polylineFeather   :: Float
---                         , _polylinePath      :: [(V2 Float,V4 Float)]
---                         , _polylineCaps      :: (LineCap,LineCap)
---                         } deriving (Show, Eq, Typeable, Generic)
---makeLenses ''Polyline
 --------------------------------------------------------------------------------
 -- Box
 --------------------------------------------------------------------------------
@@ -184,41 +198,6 @@ boxPath (V2 w h) = Path poly
           x2 = w
           y1 = 0
           y2 = h
-
---boxPolyline :: Float -> Box -> Polyline
---boxPolyline lw Box{..} = Polyline lw 0.5 (zip path $ repeat _boxColor) (LineCapSquare,LineCapSquare)
---    where path = [V2 x1 y1, V2 x2 y1, V2 x2 y2, V2 x1 y2, V2 x1 y1]
---          (V2 w h) = _boxSize
---          x1 = -hw
---          x2 = w + hw
---          y1 = -hw
---          y2 = h + hw
---          hw = lw/2
---
---data Box = Box { _boxSize      :: V2 Float
---               , _boxColor     :: Color
---               } deriving (Show, Eq, Typeable, Generic)
---makeLenses ''Box
---
---emptyBox :: Box
---emptyBox = Box { _boxSize = 0
---               , _boxColor = 0
---               }
---
---instance Hashable Box where
---    hashWithSalt s (Box sz c) = s `hashWithSalt` sz `hashWithSalt` c
---
---instance Primitive Box where
---    type PrimM Box = IO
---    type PrimR Box  = Rez
---    type PrimT Box  = Transform
---    compilePrimitive (Rez sh win _ _) (Box (V2 w h) c) = do
---        let geom = _shGeometry sh
---            [tl, tr, br, bl] = [zero, V2 w 0, V2 w h, V2 0 h]
---            vs = [tl, tr, br, tl, br, bl]
---            cs = replicate 6 c
---        Rendering f c' <- colorRendering win geom GL_TRIANGLES vs cs
---        return (c',f)
 --------------------------------------------------------------------------------
 -- Picture Helpers
 --------------------------------------------------------------------------------
@@ -248,6 +227,10 @@ instance ToPaths PathPrimitives where
                            mkPath = Path . cleanSeqDupes . concat . fmap sub
                        in concat $ fmap (fmap mkPath) qs
 
+instance BoundedByBox PathPrimitives where
+    type BoundingBoxR PathPrimitives = FontMap
+    type BoundingBox PathPrimitives = (V2 Float, V2 Float)
+    boundingBox m prims = boundingBox () $ concatMap unPath $ toPaths m prims
 --------------------------------------------------------------------------------
 -- Stroke
 --------------------------------------------------------------------------------
@@ -268,7 +251,7 @@ instance Hashable LineCap
 instance Hashable Stroke
 instance Hashable a => Hashable (Stroked a)
 
-instance (ToPaths a, Show a) => Primitive (Stroked a) where
+instance ToPaths a => Primitive (Stroked a) where
     type PrimM (Stroked a) = IO
     type PrimR (Stroked a) = Rez
     type PrimT (Stroked a) = Transform
@@ -281,6 +264,13 @@ instance (ToPaths a, Show a) => Primitive (Stroked a) where
             projectedPolylineRendering win shader w f cp vs cs
         let Rendering a b = foldl (<>) mempty rs
         return (b, a)
+
+instance ToPaths a => BoundedByBox (Stroked a) where
+    type BoundingBoxR (Stroked a) = FontMap
+    type BoundingBox (Stroked a) = (V2 Float, V2 Float)
+    boundingBox m (Stroked (Stroke _ w _ _) p) = (tl - v, br + v)
+        where v = 0.5 ^* w
+              (tl,br) = boundingBox () $ concatMap unPath $ toPaths m p
 --------------------------------------------------------------------------------
 -- Decomposing things into triangles
 --------------------------------------------------------------------------------
@@ -366,6 +356,12 @@ path2ConcavePoly (Path vs)
     , x:xs <- vs = zipWith (Triangle x) xs (drop 1 xs)
     | otherwise = []
 
+instance BoundedByBox FillPrimitives where
+    type BoundingBoxR FillPrimitives = FontMap
+    type BoundingBox FillPrimitives = BBox
+    boundingBox m (FillText _ fd w s) = boundingBox m $ PathText fd w s
+    boundingBox _ prims = boundingBox () $ concat $ fillPrimsPoints prims
+
 instance Primitive FillPrimitives where
     type PrimM FillPrimitives = IO
     type PrimR FillPrimitives = Rez
@@ -445,118 +441,3 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            , wsState :: StateData
                            -- ^ The mutable data for our control structures
                            }
---------------------------------------------------------------------------------
--- Icon
---------------------------------------------------------------------------------
---instance Primitive Icon where
---    type PrimM Icon = IO
---    type PrimR Icon = Rez
---    type PrimT Icon = Transform
---    compilePrimitive (Rez sh win _ font) (Icon str fc) = do
---        let geom = _shGeometry sh
---            bz = _shBezier sh
---        Rendering f c <- stringRendering win geom bz font str fc iconOffset
---        return (c,f)
---
---iconOffset :: (Float, Float)
---iconOffset = (-16,11.5)
---
---iconReset :: Transform
---iconReset = Transform (V2 16 (-11.5)) 1 0
---
---instance Hashable Icon where
---    hashWithSalt s (Icon t c) = s `hashWithSalt` t `hashWithSalt` c
---
---data Icon = Icon { _iconString :: String
---                 , _iconColor  :: Color
---                 } deriving (Show, Eq)
---makeLenses ''Icon
---------------------------------------------------------------------------------
--- PlainText
---------------------------------------------------------------------------------
---instance Primitive PlainText where
---    type PrimM PlainText = IO
---    type PrimR PlainText = Rez
---    type PrimT PlainText = Transform
---    compilePrimitive (Rez sh win font _) (PlainText str fc) = do
---        let geom = _shGeometry sh
---            bz = _shBezier sh
---        Rendering f c <- stringRendering win geom bz font str fc (0,32)
---        return (c,f)
---
---instance Hashable PlainText where
---    hashWithSalt s PlainText{..} =
---        s `hashWithSalt` _plainTextString `hashWithSalt` _plainTextColor
---
---data PlainText = PlainText { _plainTextString :: String
---                           , _plainTextColor  :: Color
---                           } deriving (Show, Eq, Generic)
---makeLenses ''PlainText
---
---emptyPlainText :: PlainText
---emptyPlainText = PlainText { _plainTextString = ""
---                           , _plainTextColor = 0
---                           }
---------------------------------------------------------------------------------
--- TextInput
---------------------------------------------------------------------------------
---newtype TabIndex = TabIndex { _tabIndex :: Int }
---makeLenses ''TabIndex
---
---data TextInput = TextInput { _textInputText      :: (Transform, PlainText)
---                           , _textInputBox       :: (Transform, Box)
---                           , _textInputPos       :: Int
---                           , _textInputActive    :: Bool
---                           } deriving (Show, Eq, Typeable)
---makeLenses ''TextInput
-
---textInputPath :: TextInput -> Path
---textInputPath TextInput{..} = transformPoly t $ boxPath $ _boxSize box
---    where (t,box) = _textInputBox
---
---textInputOutline :: TextInput -> Polyline
---textInputOutline t@TextInput{..} = Polyline 1 0.5 (zip (textInputPath t) (repeat white)) (LineCapSquare, LineCapSquare)
-
---emptyTextInput :: TextInput
---emptyTextInput = TextInput { _textInputText = (mempty, emptyPlainText)
---                           , _textInputBox = (mempty, emptyBox)
---                           , _textInputPos = 0
---                           , _textInputActive = False
---                           }
-
---instance Composite TextInput [] IO Rez Transform where
---    composite txt@TextInput{..} =
---        [ Element <$> _textInputBox
---        , Element <$> _textInputText
---        ] ++ [(mempty, Element poly) | _textInputActive]
---            where poly = textInputOutline txt
-
---------------------------------------------------------------------------------
--- TextField
---------------------------------------------------------------------------------
---data TextField = TextField { _textFieldLabel :: (Transform, PlainText)
---                           , _textFieldInput :: TextInput
---                           , _textFieldError :: (Transform, PlainText)
---                           } deriving (Show, Eq)
---makeLenses ''TextField
---
---emptyTextField :: TextField
---emptyTextField = TextField { _textFieldLabel = (mempty, emptyPlainText)
---                           , _textFieldInput = emptyTextInput
---                           , _textFieldError = (mempty, emptyPlainText)
---                           }
-
---instance Composite TextField [] IO Rez Transform where
---    composite TextField{..} =
---       (fst _textFieldLabel, Element $ snd _textFieldLabel)
---       : composite _textFieldInput
---       ++
---       [ (fst _textFieldError, Element $ snd _textFieldError) ]
---------------------------------------------------------------------------------
--- TextForm
---------------------------------------------------------------------------------
---data TextForm = TextForm { _textFormFields   :: [TextField]
---                         , _textFormButton   :: TextInput
---                         , _textFormTabIndex :: Int
---                         }
---makeLenses ''TextForm
