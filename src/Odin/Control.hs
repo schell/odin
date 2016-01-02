@@ -30,13 +30,13 @@ import Data.Renderable
 import Data.Time.Clock
 import System.Exit
 
-linePic :: Picture ()
+linePic,rectPic,hello :: Picture ()
 linePic = do
     withFill (FillColor fill) line
     withStroke [StrokeColor white, StrokeFeather 1, StrokeWidth 4] $ do
         line
         withTransform (Transform (V2 20 100) 1 0) $
-            letters (FontDescriptor "Arial" $ FontStyle False False) 16 "Hello!"
+            letters 16 "Hello!"
     where line = polyline [V2 0 0, V2 100 100, V2 200 30, V2 400 50]
           fill (V2 x y) = V4 0 (x/400) (y/100) 1
 
@@ -48,13 +48,20 @@ rectPic =
 hello =
     withTransform (Transform 100 1 0) $ do
         withFill (solid white) $
-            letters (FontDescriptor "Arial" $ FontStyle False False) 64 "Hello."
+            letters 64 "Hello."
         withStroke [StrokeColor red, StrokeWidth 2, StrokeFeather 1] $
-            letters (FontDescriptor "Arial" $ FontStyle False False) 64 "Hello."
+            letters 64 "Hello."
 
 network :: SplineOf InputEvent (Picture ()) ()
 network = do
-    spline blank $ always hello--graph ~> onWhen (const True)
+    let ariald = FontDescriptor "Arial" $ FontStyle False False
+        hackd = FontDescriptor "Hack" $ FontStyle False False
+    (_,arial) <- pure rectPic `untilEvent` getFont ariald
+    (_,hack) <- pure rectPic `untilEvent` getFont hackd
+    spline blank $ always $ do
+        let (w,h)
+        withFont arial hello --graph ~> onWhen (const True)
+        withFont arial linePic
     network
 
 time :: MonadIO m => Var m a Float

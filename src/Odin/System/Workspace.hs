@@ -30,16 +30,13 @@ runWorkspace net = newWorkspace >>= step net
             events <- getWorkspaceInput ws
             let input = foldl addInputEvent (wsRead ws) events
                 ws' = ws{ wsRead = input }
-                st  = wsState ws
-            ((Step (Event ui) _, n'), st',_) <- runRWST (stepMany events $ runSplineT n)
-                                                        input
-                                                        st
+                unfulfilledRequests = wsRequests ws'
+            ((Step (Event ui) _, n'),_,newRequests) <- runRWST (stepMany events $ runSplineT n)
+                                                               input
+                                                               ()
 
-            when (_statePrintUISteps st') $
-                putStrLn $ "UI\n" ++ show ui
-
-            ws'' <- renderFrame (ws'{wsState = st'}) ui
-            step (SplineT n') ws''
+            ws'' <- renderFrame (ws'{wsRequests=unfulfilledRequests ++ newRequests}) ui
+            step (SplineT n') ws''{wsRead = input{_readResources = wsRez ws''}}
           addInputEvent input (CursorMoveEvent x y) =
               let v = realToFrac <$> V2 x y
               in input{ _readCursorPos = v }
@@ -50,23 +47,28 @@ stepMany ([e]) y = runVar y e
 stepMany (e:es) y = execVar y e >>= stepMany es
 stepMany []     y = runVar y mempty
 
-getFonts :: [FontDescriptor] -> Rez -> IO Rez
-getFonts [] rz = return rz
+getFonts :: [FontDescriptor] -> Rez -> IO (Rez, [Request])
+getFonts [] rz = return (rz, [])
 getFonts (fd:fds) rz
     | Just _ <- M.lookup fd (rezFonts rz) = getFonts fds rz
     | otherwise = do
-    mrz <- withFontAsync (rezFontCache rz) fd $ \font -> do
+    mrz <- usingFontAsync (rezFontCache rz) fd $ \font -> do
         putStrLn $ "found font " ++ show fd
-        return $ rz{ rezFonts = M.insert fd font $ rezFonts rz }
-    let rz' = fromMaybe rz mrz
-    getFonts fds rz'
+        return (rz{ rezFonts = M.insert fd font $ rezFonts rz }, [])
+    let (rz',reqs) = fromMaybe (rz, [RequestFont fd]) mrz
+    (rz'', reqs') <- getFonts fds rz'
+    return (rz'', reqs ++ reqs')
+
+neededFonts :: [Request] -> [FontDescriptor]
+neededFonts [] = []
+neededFonts (RequestFont f:rs) = f:neededFonts rs
 
 renderFrame :: Workspace -> Picture () -> IO Workspace
 renderFrame ws pic = do
-    let fonts = neededFonts pic
+    let fonts = neededFonts $ wsRequests ws
         old = wsCache ws
 
-    rz  <- getFonts fonts $ wsRez ws
+    (rz,reqs) <- getFonts fonts $ wsRez ws
 
     (fbw,fbh) <- getFramebufferSize $ rezWindow rz
     glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
@@ -80,8 +82,7 @@ renderFrame ws pic = do
     if shouldClose
     then exitSuccess
     else threadDelay 100
-
-    return $ ws { wsCache = new, wsRez = rz }
+    return $ ws { wsCache = new, wsRez = rz, wsRequests = reqs }
 
 getWorkspaceInput :: Workspace -> IO [InputEvent]
 getWorkspaceInput ws = do
@@ -95,7 +96,7 @@ newWorkspace :: IO Workspace
 newWorkspace = do
     True <- initGelatin
     w    <- newWindow 800 600 "Odin" Nothing Nothing
-    setWindowPos w 925 800
+    setWindowPos w 400 400
 
     rez <- odinRez w
 
@@ -137,5 +138,4 @@ newWorkspace = do
                      , _readResources = rez
                      , _readDpi = dpi
                      }
-        s = StateData { _statePrintUISteps = False }
-    return $ Workspace Nothing rez mempty ref i s
+    return $ Workspace Nothing rez mempty ref i []

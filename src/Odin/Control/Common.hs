@@ -11,6 +11,7 @@ import Graphics.UI.GLFW hiding (init)
 import Graphics.Text.TrueType
 import Gelatin.Core.Triangulation.Common
 import Data.Time.Clock
+import qualified Data.Map as M
 import Linear
 import Control.Varying
 import Control.Monad.Trans.RWS.Strict
@@ -141,6 +142,16 @@ cursorMoved :: Monad m => Var m InputEvent (Event (V2 Float))
 cursorMoved = var f ~> onJust
     where f (CursorMoveEvent x y) = Just $ realToFrac <$> V2 x y
           f _ = Nothing
+
+getFont :: MonadIO m
+        => FontDescriptor -> Var (RWST ReadData [Request] s m) a (Event Font)
+getFont fd = Var $ \_ -> do
+    m <- asks (rezFonts . _readResources)
+    case M.lookup fd m of
+        Nothing -> pass $ do liftIO $ putStrLn "requesting font"
+                             return ((NoEvent, getFont fd), (RequestFont fd:))
+        Just f -> do liftIO $ putStrLn "got font"
+                     return (Event f, always f)
 
 --textSize :: (Monad m, Monoid w) => String -> (RWST ReadData w s m) (V2 Float)
 --textSize s = do

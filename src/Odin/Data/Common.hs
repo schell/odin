@@ -113,10 +113,10 @@ data ReadData = ReadData { _readCursorPos :: V2 Float
                          }
 makeLenses ''ReadData
 
-data StateData = StateData { _statePrintUISteps :: Bool }
-makeLenses ''StateData
+data Request = RequestFont FontDescriptor
+             deriving (Show)
 
-type ControlM = RWST ReadData () StateData IO
+type ControlM = RWST ReadData [Request] () IO
 type Odin = SplineT [] InputEvent Component ControlM
 type Varying = Var ControlM InputEvent
 type VaryingOn = Var ControlM
@@ -184,8 +184,11 @@ instance BoundedByBox Path where
     boundingBox _ (Path ps) = boundingBox () ps
 
 data PathPrimitives = Paths [Path]
-                    | PathText FontDescriptor Float String
+                    | PathText Font Float String
                     deriving (Generic, Show)
+
+instance Hashable Font where
+    hashWithSalt s _ = s `hashWithSalt` "Font"
 
 instance Hashable PathPrimitives
 --------------------------------------------------------------------------------
@@ -206,31 +209,29 @@ newtype Size = Size (V2 Float)
 -- Decomposing things into paths
 --------------------------------------------------------------------------------
 class ToPaths a where
-    toPaths :: FontMap -> a -> [Path]
+    toPaths :: a -> [Path]
 
 instance ToPaths [V2 Float] where
-    toPaths _ vs = [Path vs]
+    toPaths vs = [Path vs]
 
 instance ToPaths Size where
-    toPaths _ (Size sz) = [boxPath sz]
+    toPaths (Size sz) = [boxPath sz]
 
 instance ToPaths Path where
-    toPaths _ p = [p]
+    toPaths p = [p]
 
 instance ToPaths PathPrimitives where
-    toPaths _ (Paths ps) = ps
-    toPaths m (PathText fd px str) =
-        case M.lookup fd m of
-            Nothing -> []
-            Just f  -> let qs = fontCurves 72 f px str
-                           sub = subdivideAdaptive 100 0
-                           mkPath = Path . cleanSeqDupes . concat . fmap sub
-                       in concat $ fmap (fmap mkPath) qs
+    toPaths (Paths ps) = ps
+    toPaths (PathText f px str) =
+        let qs = fontCurves 72 f px str
+            sub = subdivideAdaptive 100 0
+            mkPath = Path . cleanSeqDupes . concat . fmap sub
+            in concat $ fmap (fmap mkPath) qs
 
-instance BoundedByBox PathPrimitives where
-    type BoundingBoxR PathPrimitives = FontMap
-    type BoundingBox PathPrimitives = (V2 Float, V2 Float)
-    boundingBox m prims = boundingBox () $ concatMap unPath $ toPaths m prims
+--instance BoundedByBox PathPrimitives where
+--    type BoundingBoxR PathPrimitives = FontMap
+--    type BoundingBox PathPrimitives = (V2 Float, V2 Float)
+--    boundingBox m prims = boundingBox () $ concatMap unPath $ toPaths m prims
 --------------------------------------------------------------------------------
 -- Stroke
 --------------------------------------------------------------------------------
@@ -255,9 +256,9 @@ instance ToPaths a => Primitive (Stroked a) where
     type PrimM (Stroked a) = IO
     type PrimR (Stroked a) = Rez
     type PrimT (Stroked a) = Transform
-    canAllocPrimitive (Rez _ _ _ m) (Stroked _ p) = not $ null $ toPaths m p
-    compilePrimitive (Rez sh win _ m) (Stroked (Stroke c w f cp) p) = do
-        let ps = toPaths m p
+    canAllocPrimitive (Rez _ _ _ _) (Stroked _ p) = not $ null $ toPaths p
+    compilePrimitive (Rez sh win _ _) (Stroked (Stroke c w f cp) p) = do
+        let ps = toPaths p
             cs = repeat c
             shader = _shProjectedPolyline sh
         rs <- forM ps $ \(Path vs) ->
@@ -265,12 +266,12 @@ instance ToPaths a => Primitive (Stroked a) where
         let Rendering a b = foldl (<>) mempty rs
         return (b, a)
 
-instance ToPaths a => BoundedByBox (Stroked a) where
-    type BoundingBoxR (Stroked a) = FontMap
-    type BoundingBox (Stroked a) = (V2 Float, V2 Float)
-    boundingBox m (Stroked (Stroke _ w _ _) p) = (tl - v, br + v)
-        where v = 0.5 ^* w
-              (tl,br) = boundingBox () $ concatMap unPath $ toPaths m p
+--instance ToPaths a => BoundedByBox (Stroked a) where
+--    type BoundingBoxR (Stroked a) = FontMap
+--    type BoundingBox (Stroked a) = (V2 Float, V2 Float)
+--    boundingBox m (Stroked (Stroke _ w _ _) p) = (tl - v, br + v)
+--        where v = 0.5 ^* w
+--              (tl,br) = boundingBox () $ concatMap unPath $ toPaths m p
 --------------------------------------------------------------------------------
 -- Decomposing things into triangles
 --------------------------------------------------------------------------------
@@ -299,7 +300,7 @@ instance Hashable a => Hashable (Triangle a) where
 data FillPrimitives = FillBeziers Fill [Bezier (V2 Float)]
                     | FillTriangles Fill [Triangle (V2 Float)]
                     | FillPaths Fill [Path]
-                    | FillText Fill FontDescriptor Float String
+                    | FillText Fill Font Float String
 
 fillPrimsString :: FillPrimitives -> String
 fillPrimsString (FillBeziers _ _) = "FillBeziers"
@@ -331,7 +332,7 @@ instance Hashable FontDescriptor
 instance Hashable FillPrimitives where
     hashWithSalt s (FillText f fd px str) =
             s `hashWithSalt` "FillText"
-                `hashWithSalt` show f `hashWithSalt` fd
+                `hashWithSalt` show f `hashWithSalt` show fd
                     `hashWithSalt` px `hashWithSalt` str
     hashWithSalt s fp
         | FillColor f <- fillPrimsFill fp =
@@ -356,24 +357,19 @@ path2ConcavePoly (Path vs)
     , x:xs <- vs = zipWith (Triangle x) xs (drop 1 xs)
     | otherwise = []
 
-instance BoundedByBox FillPrimitives where
-    type BoundingBoxR FillPrimitives = FontMap
-    type BoundingBox FillPrimitives = BBox
-    boundingBox m (FillText _ fd w s) = boundingBox m $ PathText fd w s
-    boundingBox _ prims = boundingBox () $ concat $ fillPrimsPoints prims
+--instance BoundedByBox FillPrimitives where
+--    type BoundingBoxR FillPrimitives = FontMap
+--    type BoundingBox FillPrimitives = BBox
+--    boundingBox m (FillText _ fd w s) = boundingBox m $ PathText fd w s
+--    boundingBox _ prims = boundingBox () $ concat $ fillPrimsPoints prims
 
 instance Primitive FillPrimitives where
     type PrimM FillPrimitives = IO
     type PrimR FillPrimitives = Rez
     type PrimT FillPrimitives = Transform
-    canAllocPrimitive (Rez _ _ _ m) (FillText _ fd _ _) =
-        case M.lookup fd m of
-            Just _  -> True
-            Nothing -> False
     canAllocPrimitive _ _ = True
-    compilePrimitive (Rez sh win _ fm) (FillText fill fd px str)
-        | FillColor f <- fill
-        , Just font <- M.lookup fd fm = do
+    compilePrimitive (Rez sh win _ _) (FillText fill font px str)
+        | FillColor f <- fill = do
             let gsh = _shGeometry sh
                 bsh = _shBezier sh
             Rendering r c <- colorFontRendering win gsh bsh
@@ -438,6 +434,6 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            -- ^ The input ioref
                            , wsRead  :: ReadData
                            -- ^ The readable data for our control structures
-                           , wsState :: StateData
+                           , wsRequests :: [Request]
                            -- ^ The mutable data for our control structures
                            }

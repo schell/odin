@@ -47,7 +47,7 @@ cabal-version:       >=1.10
 
 
 executable odin
-  ghc-options:         -threaded -Wall -fprof-auto
+  ghc-options:         -Wall -fprof-auto
   -- .hs or .lhs file containing the Main module.
   main-is:             Main.hs
 
