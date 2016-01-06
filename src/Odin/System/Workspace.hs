@@ -30,12 +30,10 @@ runWorkspace net = newWorkspace >>= step net
             events <- getWorkspaceInput ws
             let input = foldl addInputEvent (wsRead ws) events
                 ws' = ws{ wsRead = input }
-                unfulfilledRequests = wsRequests ws'
-            ((Step (Event ui) _, n'),_,newRequests) <- runRWST (stepMany events $ runSplineT n)
-                                                               input
-                                                               ()
+                rwst = stepMany events $ runSplineT n
+            ((Step (Event ui) _, n'),_,_) <- runRWST rwst input ()
 
-            ws'' <- renderFrame (ws'{wsRequests=unfulfilledRequests ++ newRequests}) ui
+            ws'' <- renderFrame ws' ui
             step (SplineT n') ws''{wsRead = input{_readResources = wsRez ws''}}
           addInputEvent input (CursorMoveEvent x y) =
               let v = realToFrac <$> V2 x y
@@ -47,28 +45,11 @@ stepMany ([e]) y = runVar y e
 stepMany (e:es) y = execVar y e >>= stepMany es
 stepMany []     y = runVar y mempty
 
-getFonts :: [FontDescriptor] -> Rez -> IO (Rez, [Request])
-getFonts [] rz = return (rz, [])
-getFonts (fd:fds) rz
-    | Just _ <- M.lookup fd (rezFonts rz) = getFonts fds rz
-    | otherwise = do
-    mrz <- usingFontAsync (rezFontCache rz) fd $ \font -> do
-        putStrLn $ "found font " ++ show fd
-        return (rz{ rezFonts = M.insert fd font $ rezFonts rz }, [])
-    let (rz',reqs) = fromMaybe (rz, [RequestFont fd]) mrz
-    (rz'', reqs') <- getFonts fds rz'
-    return (rz'', reqs ++ reqs')
-
-neededFonts :: [Request] -> [FontDescriptor]
-neededFonts [] = []
-neededFonts (RequestFont f:rs) = f:neededFonts rs
 
 renderFrame :: Workspace -> Picture () -> IO Workspace
 renderFrame ws pic = do
-    let fonts = neededFonts $ wsRequests ws
-        old = wsCache ws
-
-    (rz,reqs) <- getFonts fonts $ wsRez ws
+    let old = wsCache ws
+        rz = wsRez ws
 
     (fbw,fbh) <- getFramebufferSize $ rezWindow rz
     glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
@@ -82,7 +63,7 @@ renderFrame ws pic = do
     if shouldClose
     then exitSuccess
     else threadDelay 100
-    return $ ws { wsCache = new, wsRez = rz, wsRequests = reqs }
+    return $ ws { wsCache = new, wsRez = rz }
 
 getWorkspaceInput :: Workspace -> IO [InputEvent]
 getWorkspaceInput ws = do
@@ -138,4 +119,4 @@ newWorkspace = do
                      , _readResources = rez
                      , _readDpi = dpi
                      }
-    return $ Workspace Nothing rez mempty ref i []
+    return $ Workspace Nothing rez mempty ref i

@@ -34,12 +34,9 @@ import Control.Concurrent.Async
 
 newtype AttachedRenderings = Attached { attached :: Cache IO Transform }
 
-type FontMap = Map FontDescriptor Font
-
 data Rez = Rez { rezShader :: SumShader
                , rezWindow :: Window
                , rezFontCache :: Async FontCache
-               , rezFonts  :: FontMap
                } deriving (Typeable)
 
 data Clip = Clip { clipTopLeft     :: V2 Int
@@ -113,10 +110,7 @@ data ReadData = ReadData { _readCursorPos :: V2 Float
                          }
 makeLenses ''ReadData
 
-data Request = RequestFont FontDescriptor
-             deriving (Show)
-
-type ControlM = RWST ReadData [Request] () IO
+type ControlM = RWST ReadData () () IO
 type Odin = SplineT [] InputEvent Component ControlM
 type Varying = Var ControlM InputEvent
 type VaryingOn = Var ControlM
@@ -188,7 +182,7 @@ data PathPrimitives = Paths [Path]
                     deriving (Generic, Show)
 
 instance Hashable Font where
-    hashWithSalt s _ = s `hashWithSalt` "Font"
+    hashWithSalt s = (hashWithSalt s) . descriptorOf
 
 instance Hashable PathPrimitives
 --------------------------------------------------------------------------------
@@ -197,10 +191,11 @@ instance Hashable PathPrimitives
 boxPath :: V2 Float -> Path
 boxPath (V2 w h) = Path poly
     where poly = [V2 x1 y1, V2 x2 y1, V2 x2 y2, V2 x1 y2, V2 x1 y1]
-          x1 = 0
-          x2 = w
-          y1 = 0
-          y2 = h
+          (hw,hh) = (w/2,h/2)
+          x1 = -hw
+          x2 = hw
+          y1 = -hh
+          y2 = hh
 --------------------------------------------------------------------------------
 -- Picture Helpers
 --------------------------------------------------------------------------------
@@ -235,15 +230,16 @@ instance ToPaths PathPrimitives where
 --------------------------------------------------------------------------------
 -- Stroke
 --------------------------------------------------------------------------------
-data Stroke = Stroke { _strokeColor   :: Color
-                     , _strokeWidth   :: Float
-                     , _strokeFeather :: Float
-                     , _strokeLineCaps:: (LineCap,LineCap)
+data Stroke = Stroke { _strokeColor    :: Color
+                     , _strokeColors   :: [Color]
+                     , _strokeWidth    :: Float
+                     , _strokeFeather  :: Float
+                     , _strokeLineCaps :: (LineCap,LineCap)
                      } deriving (Show, Generic)
 makeLenses ''Stroke
 
 emptyStroke :: Stroke
-emptyStroke = Stroke 0 2 1 (LineCapRound,LineCapRound)
+emptyStroke = Stroke 0 [] 2 1 (LineCapRound,LineCapRound)
 
 data Stroked a = Stroked Stroke a deriving (Show, Generic)
 
@@ -256,13 +252,15 @@ instance ToPaths a => Primitive (Stroked a) where
     type PrimM (Stroked a) = IO
     type PrimR (Stroked a) = Rez
     type PrimT (Stroked a) = Transform
-    canAllocPrimitive (Rez _ _ _ _) (Stroked _ p) = not $ null $ toPaths p
-    compilePrimitive (Rez sh win _ _) (Stroked (Stroke c w f cp) p) = do
+    canAllocPrimitive _ (Stroked _ p) = not $ null $ toPaths p
+    compilePrimitive (Rez sh win _) (Stroked (Stroke c cs w f cp) p) = do
         let ps = toPaths p
-            cs = repeat c
             shader = _shProjectedPolyline sh
-        rs <- forM ps $ \(Path vs) ->
-            projectedPolylineRendering win shader w f cp vs cs
+        rs <- forM ps $ \(Path vs) -> do
+            let cs' = if null cs then repeat c else gradient
+                gradient = [deCasteljau n cs | n <- map (/len) [0..len - 1]]
+                len = realToFrac $ length vs
+            projectedPolylineRendering win shader w f cp vs cs'
         let Rendering a b = foldl (<>) mempty rs
         return (b, a)
 
@@ -277,7 +275,8 @@ instance ToPaths a => Primitive (Stroked a) where
 --------------------------------------------------------------------------------
 sizeToTris :: Size -> [Triangle (V2 Float)]
 sizeToTris (Size (V2 w h)) = [Triangle a b c, Triangle a c d]
-    where [a,b,c,d] = [V2 0 0, V2 w 0, V2 w h, V2 0 h]
+    where [a,b,c,d] = [V2 (-hw) (-hh), V2 hw (-hh), V2 hw hh, V2 (-hw) hh]
+          (hw,hh) = (w/2,h/2)
 
 class ToTriangles a where
     toTriangles :: a -> [Triangle (V2 Float)]
@@ -332,16 +331,16 @@ instance Hashable FontDescriptor
 instance Hashable FillPrimitives where
     hashWithSalt s (FillText f fd px str) =
             s `hashWithSalt` "FillText"
-                `hashWithSalt` show f `hashWithSalt` show fd
+                `hashWithSalt` show f `hashWithSalt` fd
                     `hashWithSalt` px `hashWithSalt` str
     hashWithSalt s fp
         | FillColor f <- fillPrimsFill fp =
             s `hashWithSalt` fillPrimsString fp
-                `hashWithSalt` show (FillColor f)
+                `hashWithSalt` "FillColor"
                     `hashWithSalt` map (map f) (fillPrimsPoints fp)
         | FillTexture p f <- fillPrimsFill fp =
             s `hashWithSalt` fillPrimsString fp
-                `hashWithSalt` show (FillTexture p f)
+                `hashWithSalt` p
                     `hashWithSalt` p
                         `hashWithSalt` map (map f) (fillPrimsPoints fp)
         | otherwise = s
@@ -368,7 +367,7 @@ instance Primitive FillPrimitives where
     type PrimR FillPrimitives = Rez
     type PrimT FillPrimitives = Transform
     canAllocPrimitive _ _ = True
-    compilePrimitive (Rez sh win _ _) (FillText fill font px str)
+    compilePrimitive (Rez sh win _) (FillText fill font px str)
         | FillColor f <- fill = do
             let gsh = _shGeometry sh
                 bsh = _shBezier sh
@@ -378,15 +377,15 @@ instance Primitive FillPrimitives where
             return (c, r)
         -- TODO: FillText with texture fill
         | otherwise = return (return (), const $ return ())
-    compilePrimitive (Rez sh win _ _) (FillBeziers fill bs) = do
+    compilePrimitive (Rez sh win _) (FillBeziers fill bs) = do
         let bsh = _shBezier sh
         Rendering f c <- filledBezierRendering win bsh bs fill
         return (c, f)
-    compilePrimitive (Rez sh win _ _) (FillTriangles fill ts) = do
+    compilePrimitive (Rez sh win _) (FillTriangles fill ts) = do
         let gsh = _shGeometry sh
         Rendering f c <- filledTriangleRendering win gsh ts fill
         return (c, f)
-    compilePrimitive (Rez sh win _ _) (FillPaths fill ps) = do
+    compilePrimitive (Rez sh win _) (FillPaths fill ps) = do
         -- We use a filled concave polygon technique instead of
         -- triangulating the path.
         -- http://www.glprogramming.com/red/chapter14.html#name13
@@ -434,6 +433,4 @@ data Workspace = Workspace { wsFile  :: Maybe FilePath
                            -- ^ The input ioref
                            , wsRead  :: ReadData
                            -- ^ The readable data for our control structures
-                           , wsRequests :: [Request]
-                           -- ^ The mutable data for our control structures
                            }

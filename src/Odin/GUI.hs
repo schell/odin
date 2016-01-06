@@ -6,12 +6,10 @@
 {-# LANGUAGE TupleSections #-}
 module Odin.GUI where
 
-import Control.Monad
 import Control.Monad.Free
 import Control.Monad.Free.Church
 import Control.Monad.Reader
-import Control.Varying
-import Control.Arrow (first,second)
+import Control.Arrow (second)
 import Control.Lens hiding (transform)
 import Data.Renderable
 import Odin.Data.Common
@@ -20,18 +18,12 @@ import Gelatin.Core.Rendering.Bezier
 import Gelatin.Core.Rendering.Shape as Shape
 import Graphics.Text.TrueType
 import Linear
-
--- | Some type synonyms.
-type Radians = Float
-type RadiansDelta = Float
-
--- | Start angle plus delta radians to turn to reach final angle.
-data Angles = Angles Radians RadiansDelta deriving (Show, Eq)
 --------------------------------------------------------------------------------
 -- Stroke
 --------------------------------------------------------------------------------
 data StrokeAttr = StrokeNone
                 | StrokeColor Color
+                | StrokeColors [Color]
                 | StrokeWidth Float
                 | StrokeFeather Float
                 | StrokeCaps (LineCap,LineCap)
@@ -41,6 +33,7 @@ strokeAttr :: Maybe Stroke -> StrokeAttr -> Maybe Stroke
 strokeAttr _ StrokeNone = Nothing
 strokeAttr Nothing c = strokeAttr (Just emptyStroke) c
 strokeAttr (Just s) (StrokeColor c) = Just $ s & strokeColor .~ c
+strokeAttr (Just s) (StrokeColors cs) = Just $ s & strokeColors .~ cs
 strokeAttr (Just s) (StrokeWidth w) = Just $ s & strokeWidth .~ w
 strokeAttr (Just s) (StrokeFeather t) = Just $ s & strokeFeather .~ t
 strokeAttr (Just s) (StrokeCaps cs) = Just $ s & strokeLineCaps .~ cs
@@ -63,9 +56,9 @@ data PictureCmd f where
     Polyline      :: [V2 Float] -> f -> PictureCmd f
     Rectangle     :: V2 Float -> f -> PictureCmd f
     Curve         :: V2 Float -> V2 Float -> V2 Float -> f -> PictureCmd f
+    --Arc           :: V2 Float -> Float -> Float -> f PictureCmd f
     Ellipse       :: V2 Float -> f -> PictureCmd f
     Circle        :: Float -> f -> PictureCmd f
-    --Arc         :: V2 Float -> Angles -> f -> PictureCmd f
     Letters       :: Float -> String -> f -> PictureCmd f
     WithStroke    :: [StrokeAttr] -> Picture () -> f -> PictureCmd f
     WithFill      :: Fill -> Picture () -> f -> PictureCmd f
@@ -79,7 +72,6 @@ instance Functor PictureCmd where
     fmap f (Curve a b c n) = Curve a b c $ f n
     fmap f (Ellipse v n) = Ellipse v $ f n
     fmap f (Circle r n) = Circle r $ f n
-    --fmap f (Arc v a n) = Arc v a $ f n
     fmap f (Letters px s n) = Letters px s $ f n
     fmap f (WithStroke as p n) = WithStroke as p $ f n
     fmap f (WithFill fill p n) = WithFill fill p $ f n
@@ -88,6 +80,10 @@ instance Functor PictureCmd where
 
 type Picture = F PictureCmd
 
+instance Monoid (Picture ()) where
+    mempty = blank
+    mappend = (>>)
+
 data CompileData = CompileData { cdFont :: Maybe Font
                                , cdTransform :: Transform
                                , cdFill :: Fill
@@ -95,10 +91,61 @@ data CompileData = CompileData { cdFont :: Maybe Font
 
 emptyCompileData :: CompileData
 emptyCompileData = CompileData Nothing mempty $ FillColor $ const 0
+--------------------------------------------------------------------------------
+-- Creating Pictures
+--------------------------------------------------------------------------------
+blank :: Picture ()
+blank = liftF $ Blank ()
 
+line :: V2 Float -> Picture ()
+line sz = liftF $ Polyline [sz] ()
+
+polyline :: [V2 Float] -> Picture ()
+polyline vs = liftF $ Polyline vs ()
+
+rectangle :: V2 Float -> Picture ()
+rectangle sz = liftF $ Rectangle sz ()
+
+curve :: V2 Float -> V2 Float -> V2 Float -> Picture ()
+curve a b c = liftF $ Curve a b c ()
+
+ellipse :: V2 Float -> Picture ()
+ellipse sz = liftF $ Ellipse sz ()
+
+circle :: Float -> Picture ()
+circle r = liftF $ Circle r ()
+
+letters :: Float -> String -> Picture ()
+letters px s = liftF $ Letters px s ()
+
+withStroke :: [StrokeAttr] -> Picture () -> Picture ()
+withStroke attrs pic = liftF $ WithStroke attrs pic ()
+
+withFill :: Fill -> Picture () -> Picture ()
+withFill f pic = liftF $ WithFill f pic ()
+
+withTransform :: Transform -> Picture () -> Picture ()
+withTransform t pic = liftF $ WithTransform t pic ()
+
+withFont :: Font -> Picture () -> Picture ()
+withFont f pic = liftF $ WithFont f pic ()
+
+move :: V2 Float -> Picture () -> Picture ()
+move v = withTransform (Transform v 1 0)
+
+scale :: V2 Float -> Picture () -> Picture ()
+scale v = withTransform (Transform 0 v 0)
+
+rotate :: Float -> Picture () -> Picture ()
+rotate r = withTransform (Transform 0 1 r)
+--------------------------------------------------------------------------------
+-- Measuring pictures
+--------------------------------------------------------------------------------
 instance BoundedByBox (Free PictureCmd ()) where
     type BoundingBoxR (Free PictureCmd ()) = CompileData
     type BoundingBox (Free PictureCmd ()) = BBox
+    boundingBox _ (Pure ()) = (0,0)
+    boundingBox cd (Free (Blank n)) = boundingBox cd n
     boundingBox cd (Free (Polyline vs n)) =
         let t = cdTransform cd
             vs' = transform t vs
@@ -143,20 +190,39 @@ instance BoundedByBox (Picture ()) where
     type BoundingBoxR (Picture ()) = ()
     type BoundingBox (Picture ()) = BBox
     boundingBox () p = boundingBox emptyCompileData (fromF p :: Free PictureCmd ())
+
+-- Returns the bounding box of the picture.
+pictureBounds :: Picture () -> BBox
+pictureBounds = boundingBox ()
+
+-- Returns the size of the picuter.
+pictureSize :: Picture () -> V2 Float
+pictureSize p =
+    let (tl,br) = pictureBounds p
+    in br - tl
+
+-- Returns the leftmost, uppermost point of the picture.
+pictureOrigin :: Picture () -> V2 Float
+pictureOrigin = fst . pictureBounds
 --------------------------------------------------------------------------------
--- Extracting needed fonts
+-- Compiling pictures
 --------------------------------------------------------------------------------
---neededFonts :: Picture () -> [FontDescriptor]
---neededFonts = f . fromF
---    where f (Pure ()) = []
---          f (Free (Letters fd _ _ n)) = fd : f n
---          f (Free (WithTransform _ p n)) = neededFonts p ++ f n
---          f (Free (WithStroke _ p n)) = neededFonts p ++ f n
---          f (Free (WithFill _ p n)) = neededFonts p ++ f n
---          f p = f $ nextPicCmd p
---------------------------------------------------------------------------------
--- Picture to Paths
---------------------------------------------------------------------------------
+-- Returns the next picture command.
+nextPicCmd :: Free PictureCmd () -> Free PictureCmd ()
+nextPicCmd (Pure ()) = return ()
+nextPicCmd (Free (Blank n)) = n
+nextPicCmd (Free (Polyline _ n)) = n
+nextPicCmd (Free (Rectangle _ n)) = n
+nextPicCmd (Free (Curve _ _ _ n)) = n
+nextPicCmd (Free (Ellipse _ n)) = n
+nextPicCmd (Free (Circle _ n)) = n
+nextPicCmd (Free (Letters _ _ n)) = n
+nextPicCmd (Free (WithStroke _ _ n)) = n
+nextPicCmd (Free (WithFill _ _ n)) = n
+nextPicCmd (Free (WithTransform _ _ n)) = n
+nextPicCmd (Free (WithFont _ _ n)) = n
+
+-- Compiles a list of paths from a free picture command
 compilePaths :: Free PictureCmd () -> Reader CompileData [(Transform, PathPrimitives)]
 compilePaths (Pure ()) = return []
 compilePaths (Free (Blank n)) = ([] ++) <$> compilePaths n
@@ -199,14 +265,14 @@ compilePaths (Free (WithFill _ p n)) = do
     paths <- compilePaths $ fromF p
     return $ paths ++ prims
 compilePaths (Free (WithTransform t p n)) = do
-    ps <- local (\cd -> cd{cdTransform = t}) (compilePaths $ fromF p)
+    t'  <- asks cdTransform
+    ps <- local (\cd -> cd{cdTransform = t' `mappend` t}) (compilePaths $ fromF p)
     (ps ++) <$> compilePaths n
 compilePaths (Free (WithFont font p n)) = do
     ps <- local (\cd -> cd{cdFont = Just font}) (compilePaths $ fromF p)
     (ps ++) <$> compilePaths n
---------------------------------------------------------------------------------
--- Filling Pictures
---------------------------------------------------------------------------------
+
+-- Compiles a list of fills from a free picture command.
 compileFillPrims :: Free PictureCmd ()
                  -> Reader CompileData [(Transform, FillPrimitives)]
 compileFillPrims (Pure ()) = return []
@@ -251,91 +317,21 @@ compileFillPrims (Free (WithFill f p n)) = do
     fs <- local (\cd -> cd{cdFill = f}) $ compileFillPrims $ fromF p
     (fs ++) <$> compileFillPrims n
 compileFillPrims (Free (WithTransform t p n)) = do
-    prims <- local (\cd -> cd{cdTransform = t}) (compileFillPrims $ fromF p)
+    t'    <- asks cdTransform
+    prims <- local (\cd -> cd{cdTransform = t' `mappend` t}) (compileFillPrims $ fromF p)
     (prims ++) <$> compileFillPrims n
 compileFillPrims (Free (WithFont font p n)) = do
     ps <- local (\cd -> cd{cdFont = Just font}) $ compileFillPrims $ fromF p
     (ps ++) <$> compileFillPrims n
---------------------------------------------------------------------------------
--- Creating Pictures
---------------------------------------------------------------------------------
-blank :: Picture ()
-blank = liftF $ Blank ()
-
---point :: Picture ()
---point = liftF $ Point ()
-
-line :: V2 Float -> Picture ()
-line sz = liftF $ Polyline [sz] ()
-
-polyline :: [V2 Float] -> Picture ()
-polyline vs = liftF $ Polyline vs ()
-
-rectangle :: V2 Float -> Picture ()
-rectangle sz = liftF $ Rectangle sz ()
-
---raster :: Texture -> Picture ()
---raster tx = liftF $ Raster tx ()
-
-curve :: V2 Float -> V2 Float -> V2 Float -> Picture ()
-curve a b c = liftF $ Curve a b c ()
-
-ellipse :: V2 Float -> Picture ()
-ellipse sz = liftF $ Ellipse sz ()
-
-circle :: Float -> Picture ()
-circle r = liftF $ Circle r ()
-
-letters :: Float -> String -> Picture ()
-letters px s = liftF $ Letters px s ()
-
-withStroke :: [StrokeAttr] -> Picture () -> Picture ()
-withStroke attrs pic = liftF $ WithStroke attrs pic ()
-
-withFill :: Fill -> Picture () -> Picture ()
-withFill f pic = liftF $ WithFill f pic ()
-
-withTransform :: Transform -> Picture () -> Picture ()
-withTransform t pic = liftF $ WithTransform t pic ()
-
-withFont :: Font -> Picture () -> Picture ()
-withFont f pic = liftF $ WithFont f pic ()
-
---arc :: V2 Float -> Angles -> Picture ()
---arc sz a = liftF $ Arc sz a ()
---
-
-pictureBounds :: Picture () -> BBox
-pictureBounds = boundingBox ()
-
-pictureSize :: Picture () -> V2 Float
-pictureSize p =
-    let (tl,br) = pictureBounds p
-    in br - tl
-
-pictureOrigin :: Picture () -> V2 Float
-pictureOrigin = fst . pictureBounds
-
-nextPicCmd :: Free PictureCmd () -> Free PictureCmd ()
-nextPicCmd (Pure ()) = return ()
-nextPicCmd (Free (Blank n)) = n
-nextPicCmd (Free (Polyline _ n)) = n
-nextPicCmd (Free (Rectangle _ n)) = n
-nextPicCmd (Free (Curve _ _ _ n)) = n
-nextPicCmd (Free (Ellipse _ n)) = n
-nextPicCmd (Free (Circle _ n)) = n
-nextPicCmd (Free (Letters _ _ n)) = n
-nextPicCmd (Free (WithStroke _ _ n)) = n
-nextPicCmd (Free (WithFill _ _ n)) = n
-nextPicCmd (Free (WithTransform _ _ n)) = n
-nextPicCmd (Free (WithFont _ _ n)) = n
 
 -- | Compile the picture commands into a list of renderable primitives.
 compilePrimitives :: Free PictureCmd ()
                   -> Reader CompileData [(Transform, Element IO Rez Transform)]
 compilePrimitives (Pure ()) = return []
 compilePrimitives (Free (WithTransform t p n)) = do
-    prims <- local (\cd -> cd{cdTransform = t}) $ compilePrimitives $ fromF p
+    t' <- asks cdTransform
+    let f = compilePrimitives $ fromF p
+    prims <- local (\cd -> cd{cdTransform = t `mappend` t'}) f
     (prims ++) <$> compilePrimitives n
 compilePrimitives (Free (WithStroke attrs p n)) = do
     paths <- compilePaths $ fromF p
@@ -388,54 +384,7 @@ compileString (Free (WithTransform t p n)) = do
     compileLine n $ "withTransform " ++ show t ++ "\n" ++ s
 compileString (Free (WithFont f p n)) = do
     s <- local (+1) $ compileString $ fromF p
-    compileLine n $ "withFont " ++ "\n" ++ s
+    compileLine n $ "withFont " ++ show (descriptorOf f) ++ "\n" ++ s
 
 instance Show (Picture ()) where
     show pic = runReader (compileString $ fromF pic) 0
-
---------------------------------------------------------------------------------
--- $creation
--- In order to create a spline you must first have a datatype with a 'Composite'
--- instance. Then you must create a 'varying' value of that datatype
--- describing how it will change over the domain of user input and time.
--- Also needed is an event stream that eventually ends the user's interaction.
--- The idea is that your interface varies over time and user input but
--- eventually produces a result value that can be used in a monadic
--- sequence.
---------------------------------------------------------------------------------
--- | Create a spline describing an interface that eventually produces a value.
--- The type used to represent the user interface must have a 'Composite'
--- instance. This allows GUIs to be layered graphically since separate
--- GUI's iteration values can all be combined after being broken down into
--- transformed primitives.
-gui :: (Monad m, Monad n, Monoid (f (t, Element n r t)), Composite a f n r t)
-    => Var m i a
-    -- ^ The stream of a changing user interface.
-    -> Var m i (Event b)
-    -- ^ The event stream that concludes a user\'s interaction. When this
-    -- stream produces an event the interaction will end and the spline
-    -- will conclude.
-    -> SplineT f i (t, Element n r t) m (a,b)
-gui v ve = SplineT $ t ~> var (uncurry f)
-    where t = (,) <$> v <*> ve
-          f a e = let ui = composite a
-                  in case e of
-                         NoEvent -> Step ui NoEvent
-                         Event b -> Step ui $ Event (a, b)
-
-wait :: (Monad m, Monad n, Monoid (f (t, Element n r t)), Composite a f n r t)
-     => Int -> a -> SplineT f i (t, Element n r t) m ()
-wait n b = void $ gui (pure b) $ dropE n $ always ()
-
---------------------------------------------------------------------------------
--- $transformation
--- Simply put - here we are applying some kind of transformation to your
--- renderable interface. This most likely a standard two or three dimensional
--- affine transformation. Since the transformation also changes over the
--- same domain it\'s possible to tween GUIs.
---------------------------------------------------------------------------------
--- | Transforms a GUI.
-transformGUI :: (Monad m, Monoid t, Functor f, Monoid (f (t,d)))
-             => Var m i t -> SplineT f i (t, d) m b -> SplineT f i (t, d) m b
-transformGUI vt = mapOutput $ vt ~> var f
-    where f t = fmap (first (mappend t))

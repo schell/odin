@@ -2,3 +2,4 @@
 *.sw[a-z]
 cabal.sandbox.config
 dist/
+*.prof
