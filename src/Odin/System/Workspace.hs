@@ -2,29 +2,24 @@
 module Odin.System.Workspace where
 
 import Odin.Data.Common
-import Odin.Data
-import Odin.System
-import Odin.GUI
+
+import Gelatin.GLFW
+import Gelatin.Picture
 
 import Data.Renderable
 import Data.IORef
 import Data.Bits
 import Data.Proxy
-import Data.Maybe
-import qualified Data.Map.Strict as M
 import Graphics.UI.GLFW
 import Graphics.GL.Core33
 import Graphics.Text.TrueType
-import Gelatin.Core.Rendering
 import Control.Varying
-import Control.Monad
 import Control.Concurrent
-import Control.Concurrent.Async
 import Control.Monad.Trans.RWS.Strict
 import System.Exit
 import Linear
 
-runWorkspace :: SplineOf InputEvent (Picture ()) () -> IO ()
+runWorkspace :: SplineOf InputEvent (Picture Font ()) () -> IO ()
 runWorkspace net = newWorkspace >>= step net
     where step n ws = do
             events <- getWorkspaceInput ws
@@ -46,7 +41,7 @@ stepMany (e:es) y = execVar y e >>= stepMany es
 stepMany []     y = runVar y mempty
 
 
-renderFrame :: Workspace -> Picture () -> IO Workspace
+renderFrame :: Workspace -> Picture Font () -> IO Workspace
 renderFrame ws pic = do
     let old = wsCache ws
         rz = wsRez ws
@@ -75,11 +70,9 @@ getWorkspaceInput ws = do
 
 newWorkspace :: IO Workspace
 newWorkspace = do
-    True <- initGelatin
-    w    <- newWindow 800 600 "Odin" Nothing Nothing
+    rez <- startupGLFWBackend 800 600 "Odin" Nothing Nothing
+    let w = rezWindow rez
     setWindowPos w 400 400
-
-    rez <- odinRez w
 
     glEnable GL_BLEND
     glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
@@ -113,10 +106,9 @@ newWorkspace = do
     --    putStrLn $ "Got files:\n" ++ unlines fs
     --    input $ FileDropEvent fs
 
-    dpi <- calculateDpi
     let i = ReadData { _readCursorPos = 0
                      , _readWindowSize = V2 800 600
                      , _readResources = rez
-                     , _readDpi = dpi
+                     , _readDpi = 72
                      }
     return $ Workspace Nothing rez mempty ref i

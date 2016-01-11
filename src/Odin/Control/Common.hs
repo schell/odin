@@ -5,16 +5,13 @@ module Odin.Control.Common where
 
 import Odin.Data
 import Odin.Data.Common
+import Gelatin.Picture
 import Servant.Client
-import Control.Concurrent.Async
-import Gelatin.Core.Rendering
 import Graphics.UI.GLFW hiding (init)
 import Graphics.Text.TrueType
-import Gelatin.Core.Triangulation.Common
 import Data.Time.Clock
 import qualified Data.Map as M
 import Linear
-import Odin.GUI
 import Control.Concurrent.Async
 import Control.Exception (SomeException)
 import Control.Varying
@@ -22,7 +19,7 @@ import Control.Monad.Trans.RWS.Strict
 import Control.Monad.State
 import Control.Monad.Trans.Either
 
-type App a = Spline InputEvent (Picture ()) ControlM a
+type App a = Spline InputEvent (Picture Font ()) ControlM a
 
 initialize :: s -> State s () -> s
 initialize s f = execState f s
