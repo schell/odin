@@ -10,22 +10,11 @@ module Odin.Control (
 --import Odin.Control.TextField
 --import Odin.Control.TextForm
 --import Odin.Control.Button
+import Jello.GLFW
+import Odin.Control.Button
 import Odin.Control.Common as C
-import Odin.Data
-import Odin.Data.Common
-import Odin.Control.File
-import Linear hiding (trace, el, point, rotate)
-import Gelatin.Picture
-import Gelatin.Core
-import Graphics.Text.TrueType
-import Control.Varying
-import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans
-import Control.Monad.Trans.RWS.Strict
-import Control.Lens hiding (transform)
-import Data.Maybe
-import Data.Time.Clock
 import System.Exit
 
 rect :: Picture f ()
@@ -66,7 +55,7 @@ spinner =
            <*> (pure $ withStroke [ StrokeWidth 4, StrokeFeather 1
                                   , StrokeColors [white `alpha` 0, white]
                                   ] $
-                   polyline $ bez4sToPath 100 0 $ arc 10 10 0 (2*pi - pi/4))
+                   arc 10 0 (2*pi - pi/4))
 
 getFontsOrDie :: App (Font,Font,FontCache)
 getFontsOrDie = do
@@ -87,33 +76,25 @@ arialDescriptor = FontDescriptor "Arial" $ FontStyle False False
 hackDescriptor :: FontDescriptor
 hackDescriptor = FontDescriptor "Hack" $ FontStyle False False
 
-loadJustArialAndHack :: IO (Font,Font)
-loadJustArialAndHack = do
-    marialp <- findFontOfFamily "Arial" $ FontStyle False False
-    mhackp <- findFontOfFamily "Hack" $ FontStyle False False
-    mearial <- sequence (loadFontFile <$> marialp)
-    mehack  <- sequence (loadFontFile <$> mhackp)
-
-    let f mefont = case mefont of
-                       Just (Left str) -> do putStrLn str
-                                             exitFailure
-                       Just (Right fnt) -> return fnt
-                       Nothing -> exitFailure
-    arial <- f mearial
-    hack  <- f mehack
-    return (arial,hack)
-
 mapApp :: (Picture Font () -> Picture Font ()) -> App a -> App a
 mapApp f = mapOutput (pure f)
 
+rendererReadOut :: Font -> Var (RWST (ReadData UserData) () s IO) a GLPic
+rendererReadOut fnt = readout <$> windowSize <*> currentNumberOfRenderers
+    where readout (V2 _ h) n =
+            let pic = withFill (solid white) $ withFont fnt $
+                        letters 16 $ "Renderers: " ++ show n
+            in move (V2 0 h) pic
+
 network :: App ()
 network = do
-    sz <- lift $ asks _readWindowSize
+    sz <- lift $ asks readWindowSize
 
-    (arial,hack,fc) <- mapApp (move $ sz/2) getFontsOrDie
+    (arial,hack,_) <- mapApp (move $ sz/2) getFontsOrDie
 
     let arialText = withFont arial $ letters 16 "This is Arial."
         hackText = withFont hack $ letters 16 "This is Hack."
+
         text = do move 100 $ boundedPic arialText
                   move (V2 100 120) $ boundedPic hackText
                   let r = 10
@@ -121,12 +102,20 @@ network = do
                   move p $ withFill (solid pink) $ circle 10
                   move (sz/2) $ withStroke [ StrokeWidth 4
                                            , StrokeFeather 1
-                                           , StrokeColors [white,yellow,orange,red]
+                                           , StrokeColors [cyan,magenta]
                                            ] $
                     do (circle 100)
-                       let line = bez4sToPath 100 0 $ arc 100 50 (pi - pi/8) $ (2*pi - pi/8)
-                       move 50 $ polyline line
+                       let erc = arc (V2 100 50) (pi - pi/8) (2*pi - pi/8)
+                       move 50 erc
+        textAndReadout = (text >>) <$> rendererReadOut hack
 
-    _ <- pure text `untilEvent` enter
+    let loop = do (pic,_) <- textAndReadout `untilEvent` enter
+                  _ <- output pic
+                  (pic',_) <- rendererReadOut hack `untilEvent` enter
+                  _ <- output pic'
+                  loop
+
+
+    loop
 
     liftIO exitSuccess

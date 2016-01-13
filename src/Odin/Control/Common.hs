@@ -3,23 +3,19 @@
 {-# LANGUAGE TupleSections #-}
 module Odin.Control.Common where
 
-import Odin.Data
-import Odin.Data.Common
-import Gelatin.Picture
-import Servant.Client
-import Graphics.UI.GLFW hiding (init)
-import Graphics.Text.TrueType
+import Jello.GLFW
 import Data.Time.Clock
-import qualified Data.Map as M
-import Linear
 import Control.Concurrent.Async
 import Control.Exception (SomeException)
-import Control.Varying
-import Control.Monad.Trans.RWS.Strict
 import Control.Monad.State
-import Control.Monad.Trans.Either
+import qualified Data.IntMap as IM
 
-type App a = Spline InputEvent (Picture Font ()) ControlM a
+type UserData = Cache IO Transform
+type App a = Spline InputEvent (Picture Font ()) (RWST (ReadData UserData) () () IO) a
+
+data KeyInput = KeyChar Char
+              | KeyMod Int
+              deriving (Show, Eq)
 
 initialize :: s -> State s () -> s
 initialize s f = execState f s
@@ -35,23 +31,30 @@ typingBufferOn :: Monad m
                -> Var m InputEvent String
 typingBufferOn ss on =
     ((>>) <$> on <*> keyInput) ~> foldStream f ss
-    where f s (KeyChar c) = s ++ [c]
-          f s (KeyMod Key'Delete) = if null s then [] else init s
-          f s (KeyMod Key'Backspace) = f s (KeyMod Key'Delete)
-          f s _ = s
+    where f s k
+           | KeyChar c <- k = s ++ [c]
+           | KeyMod key <- k
+           , True <- key == deleteKey = if null s then [] else init s
+           | KeyMod key <- k
+           , True <- key == backspaceKey = f s (KeyMod deleteKey)
+           | otherwise = s
 
 tabCount :: Monad m => Var m InputEvent Int
 tabCount = ((1 <$) <$> tab) ~> foldStream (+) 0
 
 tab :: Monad m => Var m InputEvent (Event ())
 tab = f <$> keyInput
-    where f (Event (KeyMod Key'Tab)) = Event ()
-          f _ = NoEvent
+    where f e
+           | (Event (KeyMod k)) <- e
+           , True <- tabKey == k = Event ()
+           | otherwise = NoEvent
 
 enter :: Monad m => Var m InputEvent (Event ())
 enter = f <$> keyInput
-    where f (Event (KeyMod Key'Enter)) = Event ()
-          f _ = NoEvent
+    where f e
+           | (Event (KeyMod k)) <- e
+           , True <- enterKey == k = Event ()
+           | otherwise = NoEvent
 
 time :: MonadIO m => Var m a Float
 time = delta (liftIO getCurrentTime) (\a b -> realToFrac $ diffUTCTime a b)
@@ -62,10 +65,13 @@ keyInput = var check ~> onJust
             | (CharEvent c) <- e
             = Just $ KeyChar c
             | (KeyEvent k _ ks _) <- e
-            , True <- keyPressed ks
+            , True <- keyIsPressed ks
             = Just $ KeyMod k
             | otherwise = Nothing
-          keyPressed k = k == KeyState'Pressed || k == KeyState'Repeating
+
+currentNumberOfRenderers :: (Monad m, Monoid w)
+                         => Var (RWST (ReadData UserData) w s m) a Int
+currentNumberOfRenderers = varM $ const $ asks (IM.size . readUserData)
 
 --untilEvent :: Monad m
 --           => Var m a b -> (Var m a (Event c), c -> b -> Var m a b) -> Var m a b
@@ -76,32 +82,11 @@ keyInput = var check ~> onJust
 --       Event c -> runVar (f c b) a
 --       NoEvent -> return (b, untilEvent va' (ve', f))
 
-caltrops :: (Show b, MonadIO m)
-         => EitherT ServantError IO b -> Var m a (Event (Either String b))
-caltrops f = Var $ \_ -> do
-    e <- liftIO $ async $ runEitherT f
-    return (NoEvent, checkAsync e)
+windowSize :: (Monad m, Monoid w) => Var (RWST (ReadData u) w s m) i (V2 Float)
+windowSize = varM $ const $ asks readWindowSize
 
-checkAsync :: (Show b, MonadIO m)
-           => Async (Either ServantError b)
-           -> Var m a (Event (Either String b))
-checkAsync a = Var $ \_ -> do
-    r <- liftIO $ poll a
-    case r of
-        Nothing -> return (NoEvent, checkAsync a)
-        Just e  -> case e of
-            Left err -> liftIO $ print err >> return (NoEvent, never)
-            Right r' -> let x = either (Left . show) Right r'--case r' of
-                        in return (Event x, always x)
-
-localhost :: BaseUrl
-localhost = BaseUrl Http "localhost" 8081
-
-windowSize :: (Monad m, Monoid w) => Var (RWST ReadData w s m) i (V2 Float)
-windowSize = varM $ const $ asks _readWindowSize
-
-cursorPos :: (Monad m, Monoid w) => Var (RWST ReadData w s m) i (V2 Float)
-cursorPos = varM $ const $ asks _readCursorPos
+cursorPos :: (Monad m, Monoid w) => Var (RWST (ReadData u) w s m) i (V2 Float)
+cursorPos = varM $ const $ asks readCursorPos
 
 --isCursorInPath :: (Monad m, Monoid w)
 --               => Var (RWST ReadData w s m) i Path
@@ -133,12 +118,12 @@ cursorPos = varM $ const $ asks _readCursorPos
 --          f _ _ = False
 
 leftClickPos :: (Monad m, Monoid w)
-             => Var (RWST ReadData w s m) InputEvent (Event (V2 Float))
+             => Var (RWST (ReadData u) w s m) InputEvent (Event (V2 Float))
 leftClickPos = (<$) <$> cursorPos <*> leftClick
 
 leftClick :: Monad m => Var m InputEvent (Event ())
 leftClick = var f ~> onTrue
-    where f (MouseButtonEvent MouseButton'1 MouseButtonState'Released _) = True
+    where f (MouseButtonEvent 0 False _) = True
           f _ = False
 
 cursorMoved :: Monad m => Var m InputEvent (Event (V2 Float))
@@ -150,14 +135,14 @@ varPoll :: MonadIO m => Async b -> Var m a (Event (Either SomeException b))
 varPoll a = Var $ \_ -> do
     mea <- liftIO $ poll a
     case mea of
-        Nothing -> -- thread still running
+        Nothing -> -- thread still running, poll next frame
                    return (NoEvent, varPoll a)
         Just ea -> return (Event ea, always ea)
 
 newFontCacheLoaded :: MonadIO m
                    => Var m a (Event (Either SomeException FontCache))
 newFontCacheLoaded = Var $ \_ -> do
-   afc <- liftIO $ async $ buildCache
+   afc <- liftIO $ async buildCache
    return (NoEvent, varPoll afc)
 
 --textSize :: (Monad m, Monoid w) => String -> (RWST ReadData w s m) (V2 Float)
