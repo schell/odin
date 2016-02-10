@@ -1,0 +1,6 @@
+- patterns:
+  - .*\.l?hs$
+  commands:
+  - stack build
+  - hlint \0
+  - stack exec part-one 

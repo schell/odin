@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Odin.System where
+module Odin.Font where
 
-import Graphics.Text.TrueType
+import Gelatin.GLFW
 import System.Directory
 import System.FilePath
 
@@ -10,3 +10,9 @@ odinFont fp = do
     cwd <- getCurrentDirectory
     let path = cwd </> "fonts" </> fp
     loadFontFile path
+
+arialDescriptor :: FontDescriptor
+arialDescriptor = FontDescriptor "Arial" $ FontStyle False False
+
+hackDescriptor :: FontDescriptor
+hackDescriptor = FontDescriptor "Hack" $ FontStyle False False
