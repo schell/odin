@@ -10,4 +10,4 @@ Welcome to the odin series of zyghost.com articles.
 
 * [Part One - Infrastructure][1] - Setting up core types, the FRP network and our game loop.
 
-[1]: /articles/Odin-Part-One
+[1]: /articles/The-Odin-Series/Part-One
