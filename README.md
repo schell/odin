@@ -1,6 +1,6 @@
 ---
 title: Odin
-description: This is an ongoing zyghost.com series about writing a roguelike with FRP.  
+description: Learn how to write a roguelike with FRP.  
 date: 2016-02-11
 ---
 
