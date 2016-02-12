@@ -534,7 +534,7 @@ organize your code. It encourages very granular functions and by providing a
 small feedback mechanism you can remedy some of the bitter taste of constant 
 rendering.  
 
-Hopefully this tutorial has been helpful. Please comment at HN or Reddit,
+Hopefully this tutorial has been helpful. Please comment at [HN](https://news.ycombinator.com/item?id=11090457) or [Reddit](https://www.reddit.com/r/haskell/comments/45gsbw/learning_me_a_haskell_frp_game_infrastructure/),
 constructive or not! You can say things like "I hate me an FRP" or "I learn me
 some streams, hot dang." Thanks for reading :)
 
