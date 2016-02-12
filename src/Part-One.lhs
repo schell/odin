@@ -5,6 +5,8 @@ date: 2016-02-03
 description: Creating the infrastructure for Odin
 ---
 
+Intro
+================================================================================
 I'd like to learn how to write a push based FRP implementation and so I decided
 I would take a stab at flipping my pull based FRP into a pushy one. My FRP is
 called [varying][1]. It's very simple and inspired by [netwire][4]. It uses 
@@ -14,12 +16,12 @@ the core concepts of varying check out the [hackage docs][varying core].
 fun and simple. In this article we'll be building a quick demo 'game' to 
 demonstrate how to set up the infrastructure needed for a bigger application. 
 
+Get the Code
+--------------------------------------------------------------------------------
 This is a Literate Haskell file which can be downloaded from the 
-[github repo][odin]. To build, etc just run `stack build` from the project
+[github repo][odin]. To build, run `stack build` from the project
 directory. [Go here](http://docs.haskellstack.org/en/stable/README.html) 
 for help with `stack`.
-
-We'll start with our imports and stuff.
 
 Main
 ================================================================================
@@ -29,7 +31,7 @@ Main
 > --   Copyright:  (c) 2015 Schell Scivally
 > --   License:    MIT
 > --
-> --   The entrypoint to our nifty app.
+> --   The entrypoint to part-one of the odin series. 
 > module Main where
 
 Our first import is [varying][1], which allows us to describe values 
