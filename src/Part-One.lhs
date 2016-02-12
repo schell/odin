@@ -5,13 +5,16 @@ date: 2016-02-12
 description: Creating the infrastructure for Odin
 ---
 
+*tl;dr* This is part of a series where we'll be writing a roguelike using FRP 
+and Haskell. This first article is about setting up the main loop and rendering.  
+
 Intro
 ================================================================================
 I'd like to learn how to write a push based FRP implementation and so I decided
-I would take a stab at flipping my pull based FRP into a pushy one. My FRP is
-called [varying][1]. It's very simple and inspired by [netwire][4]. It uses 
-automatons to generate a stream of varying values - hence the name. For info on 
-the core concepts of varying check out the [hackage docs][varying core]. 
+I would first take a stab at flipping my pull based FRP into a pushy one. My 
+FRP is called [varying][1]. It's very simple and inspired by [netwire][4]. It 
+uses automatons to generate a stream of varying values - hence the name. For 
+info on the core concepts of varying check out the [hackage docs][varying core]. 
 [varying][1] is a rather squishy FRP (and I use the term FRP liberally) but it's 
 fun and simple. In this article we'll be building a quick demo 'game' to 
 demonstrate how to set up the infrastructure needed for a bigger application. 
