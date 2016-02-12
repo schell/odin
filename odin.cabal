@@ -14,8 +14,8 @@ synopsis:            An experimental game.
 
 -- A longer description of the package.
 description:         A experimental architecture and roguelike game, 
-                     demonstrated as a blog series with literate haskell.
-                     http://zyghost.com/articles.html
+                     demonstrated as a blog series hosted at 
+                     http://zyghost.com/series/odin
 
 -- URL for the project homepage or repository.
 homepage:            http://zyghost.com/articles.html
@@ -51,7 +51,7 @@ cabal-version:       >=1.10
 executable part-one 
   ghc-options:         -threaded -Wall -rtsopts -fprof-auto
   -- .hs or .lhs file containing the Main module.
-  main-is:             Push-Pull-Part-One.lhs
+  main-is:             Part-One.lhs
 
   -- Modules included in this executable, other than Main.
   -- other-modules:

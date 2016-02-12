@@ -2,7 +2,6 @@
 title: Part One - Infrastructure
 has-toc: yes
 date: 2016-02-03
-series: odin
 description: Creating the infrastructure for Odin
 ---
 
@@ -12,9 +11,15 @@ called [varying][1]. It's very simple and inspired by [netwire][4]. It uses
 automatons to generate a stream of varying values - hence the name. For info on 
 the core concepts of varying check out the [hackage docs][varying core]. 
 [varying][1] is a rather squishy FRP (and I use the term FRP liberally) but it's 
-fun and simple. In this article, which is a literate Haskell file, we'll be 
-building a quick demo 'game' to demonstrate how to set up the infrastructure
-needed for a bigger application. We'll start with our imports and stuff.
+fun and simple. In this article we'll be building a quick demo 'game' to 
+demonstrate how to set up the infrastructure needed for a bigger application. 
+
+This is a Literate Haskell file which can be downloaded from the 
+[github repo][odin]. To build, etc just run `stack build` from the project
+directory. [Go here](http://docs.haskellstack.org/en/stable/README.html) 
+for help with `stack`.
+
+We'll start with our imports and stuff.
 
 Main
 ================================================================================
@@ -27,7 +32,7 @@ Main
 > --   The entrypoint to our nifty app.
 > module Main where
 
-Our first import is our FRP, [varying][1], which allows us to describe values 
+Our first import is [varying][1], which allows us to describe values 
 that change over time and user input.
 
 > import Control.Varying
@@ -75,37 +80,40 @@ our game or display logic needs to know about it, it should be covered by
 >                deriving (Show)
 
 `UserInput` is a monoid of sorts - each new event replaces an old one unless
-the new one is `InputUnknown`. An empty event is `InputUnknown`. This will come
-in handy later when we have many events to step over, or if we have none and 
-need to do only a time step.
+the new one is `InputUnknown`. An empty event is `InputUnknown`. We need this
+to use `stepMany` during [the network step][#the-network-step], because 
+`stepMany` requires a Monoid instance.
 
 > instance Monoid UserInput where
 >     mappend a (InputUnknown _) = a
 >     mappend _ b = b
 >     mempty = InputUnknown ""
 
-And we'll use an `OutputEvent` (along with `WriterT`) to allow entities within
+We use `OutputEvent` with `WriterT` to allow entities within
 our network to have a very managed effect on the network as a whole.
 
 > data OutputEvent = OutputEventUnknown String
 >                  | OutputNeedsUpdate
 >                  deriving (Ord, Eq)
 
-> type Effect = WriterT [OutputEvent] IO
+> type Effect = Writer [OutputEvent]
 
-We'll be rendering `Picture`s from [gelatin-picture][2] using `Font`s provided by
-[FontyFruity][fonty]. [FontyFruity][fonty] is also re-exported by gelatin's glfw
-backend. We'll talk more about rendering in the next section.
+We'll be rendering `Picture`s from [gelatin-picture][2] using `Font`s provided
+by [FontyFruity][fonty]. [FontyFruity][fonty] is also re-exported by gelatin's 
+glfw backend. We'll talk more about rendering in the [rendering][#rendering] 
+section.
 
 > type Pic = Picture Font ()
 
-The `Network` is a varying value. This means that it represets a value that
+The `Network` is a varying value. This means that it represents a value that
 changes over some domain. When you see the type of a varying value as 
-`VarT m a b` it means that within an effect `m`, types of `b` are created with
-types of `a` as input. [varying][1] is an arrowized FRP implementation with
-a twist, so if you've ever used [netwire][4] you'll be a bit familiar. The biggest
-difference between [varying][1] and [netwire][4] is that [varying][1]'s 
-inhibition is explicit using the type `VarT m a (Event b)`. 
+`VarT m a b` it means that an output value `b` varies over input `a` within an 
+effect `m`. [varying][1] is an arrowized FRP implementation with a twist, so if 
+you've ever used [netwire][4] you'll be a bit familiar. Some differences 
+between [varying][1] and [netwire][4] are
+
+* [varying][1]'s inhibition is explicit using the type `VarT m a (Event b)`. 
+* [varying][1]'s time is not encoded in its type.
 
 Here our `Network` is defined as a varying value that depends on `UserInput`s
 and produces a `Pic` inside the `Effect` monad. The `Effect` monad allows
@@ -132,15 +140,14 @@ before updating the screen.
 >   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
 >   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
-And now for the headline act, `renderPrimitives` and `pictureToR2Primitives`.
-Defined in [renderable][5] and [gelatin-picture][2] respectively, they do most 
-of the heavy lifting for us. `pictureToR2Primitives` turns our `Pic` into
-renderable primitives - mainly colored and textured lines and triangles. 
-`renderPrimitives` renders the list of primitives and returns a new cache,
-allocating new renderings for us on-the-fly and cleaning up resources previously
-allocated by now stale renderers.
+Now we render our data using `renderPrims` and `pictureToR2Primitives`.  Defined 
+in [renderable][5] and [gelatin-picture][2] respectively, they do most of the 
+heavy lifting for us. `pictureToR2Primitives` turns our `Pic` into renderable 
+primitives - colored and textured lines and triangles. `renderPrims` renders the 
+list of primitives and returns a new cache, allocating new renderings for us 
+on-the-fly and cleaning up resources previously allocated by now stale renderers.
 
->   newCache <- renderPrimitives rez cache $ pictureToR2Primitives pic
+>   newCache <- renderPrims rez cache $ pictureToR2Primitives pic
 
 Now swap the buffers on our OpenGL window and return the new cache.
 
@@ -169,21 +176,22 @@ circle that follows the mouse, changing shape and color over time.
 
 Cursor Move Events
 --------------------------------------------------------------------------------
-In order to do this we'll first need a stream of cursor move events. 
+In order to do this we'll first need a stream of cursor move events. We'll be 
+using `V2 Float` from [linear][linear] to represent our points.
     
 > cursorMoved :: (Applicative m, Monad m) => VarT m UserInput (Event (V2 Float))
 
 This type signature shows that our stream will 'consume' user input and 'emit'
-position events. We can use the `var` constructor to turn a pure function into 
+position events. 
+
+For the implementation we use the `var` constructor to turn a pure function into 
 a stream 
 
 > cursorMoved = var f -- :: VarT m InputEvent (Maybe (V2 Float))
 
 and then combine that with the event generator `onJust` which takes a `Maybe a` 
-as input and produces a stream of `Event a`. 
-
-We use the plug right `~>` combinator to plug the output of `var f`
-into the input of `onJust`.
+as input and produces a stream of `Event a`. We also use the plug right `~>` 
+combinator to plug the output of `var f` into the input of `onJust`.
 
 >     ~> onJust
 
@@ -194,8 +202,9 @@ And now we write our function that maps input values to `Maybe (V2 Float)`.
 
 Cursor Position
 --------------------------------------------------------------------------------
-Now we can create a stream that produces the current cursor position each frame.
-We use `V2 -1 -1` as a default position before the cursor has moved.
+Next we need a stream that produces the current cursor position each frame. 
+Until the cursor moves we need a default cursor position. `V2 -1 -1` seems 
+pretty good.
 
 > cursorPosition :: (Applicative m, Monad m) => VarT m UserInput (V2 Float)
 > cursorPosition = cursorMoved ~> foldStream (\_ v -> v) (-1)
@@ -206,12 +215,15 @@ the latest cursor position.
 
 Time Deltas
 --------------------------------------------------------------------------------
-To demonstrate that our pull network can be turned into a push network we'll
-describe a circle that follows the cursor *and* changes shape and color over 
-time.  So far we have a stream for the cursor position but now we'll need a 
+To demonstrate that our pull network can be run on demand we'll describe a 
+circle that follows the cursor *and* changes shape and color over time. 
+Eventually the circle will stop changing shape and color so unless there's an 
+input event we should see the network *go to sleep*. 
+
+So far we have a stream for the cursor position but now we'll need a 
 stream of time deltas. The reason we need deltas is that we'll use some 
-tweening streams from `varying` that require deltas as input. This breaks some 
-of the rules of hard FRP - we're not supposed to deal in deltas, but I think 
+tweening streams from [varying][1] that require deltas as input. This breaks 
+some of the rules of hard FRP - we're not supposed to deal in deltas, but I think 
 you'll find that once it's done we don't have to use deltas for anything more 
 than a plug. 
 
@@ -232,13 +244,12 @@ Requesting Updates
 --------------------------------------------------------------------------------
 In order to have smooth animation over time we need to know that the network 
 requires frequent updates. In our main loop we'll block until user input 
-happens, or the network requests through the Writer monad that itself be 
-updated.  
+happens or until the network requests that itself be updated.  
 
-We'll use the monadic constructor `varM` in order to write a stream that can 
-reach out to the Writer monad, make the request and pass whatever input it 
-received through as output. It's a bit hacky as far as FRP goes, but this is 
-what's required to use our system in a pushy fashion.
+Using the monadic constructor `varM` we write a stream that can reach out to the 
+Writer monad, make the request and pass whatever input it received through as 
+output. It's a bit hacky as far as FRP goes (we're only using its side-effect), 
+but this is what's required to use our system in a pushy fashion.
 
 > requestUpdate :: VarT Effect a a
 > requestUpdate = varM $ \input -> do
@@ -253,10 +264,9 @@ constructors in the [varying docs][varying constructors].
 Time
 --------------------------------------------------------------------------------
 We'll combine our `deltas` stream and `requestUpdate` in order to create a 
-`time` stream. Whenever a part of our network depends on time we can plug `time`
-into it, and it will simultaneously provide a time signal and request that the
-network be update often. If no part of the network depends on time, our main
-loop will only render on user input.
+`time` stream. Whenever a part of our network depends on `time` the underlying 
+infrastructure should receive a request that the network be updated. If no part 
+of the network depends on time our main loop will only render on user input.
 
 > time :: VarT Effect UserInput Float
 > time = deltas ~> requestUpdate
@@ -279,7 +289,7 @@ in the last tweened output value, `Float`. We'll want to change the duration of
 the spline so we'll write a function that takes the duration and returns our
 spline.
 
-> easeInOutSpline :: (Applicative m, MonadIO m) 
+> easeInOutSpline :: (Applicative m, Monad m) 
 >                 => Float -> SplineT Float Float m Float
 > easeInOutSpline t = do
 >     halfway <- tween easeInExpo 1 0 $ t/2
@@ -287,11 +297,9 @@ spline.
 Above we tween from `1` to `0` over `t/2` seconds using an easing function.
 The spline produces the interpolated values until `t/2` seconds, and then 
 results in the last interpolated value, which is either `0` or very close to 
-`0`. Since our spline is monadic we can check by printing it to our console.
+`0`. 
 
->     liftIO $ putStrLn $ "halfway done tweening at " ++ show halfway
-
-And then complete the tween.
+Now we complete the tween.
 
 >     tween linear halfway 1 $ t/2
 
@@ -311,7 +319,7 @@ produce the values of the `Spline` until the `Spline` concludes. Once the
 `Spline` terminates the `VarT` will use the last value forever. If the spline 
 *never* produces, the initial value will be produced forever. 
 
-> easeInOutExpo :: (Applicative m, MonadIO m) => Float -> VarT m Float Float 
+> easeInOutExpo :: (Applicative m, Monad m) => Float -> VarT m Float Float 
 > easeInOutExpo = outputStream 1 . easeInOutSpline
 
 We'd like to demonstrate that the network "turns off" when time is no longer
@@ -423,6 +431,8 @@ event this is also a good place to render the frame and update our cache.
 Above we print the current time just so we know the app is stepping in the 
 console.
 
+The Network Step
+----------------
 Now we'll run the network. A little magic happens here. `stepMany` takes a list
 of input to iterate your network over, returning the last value. The magic part
 and the reason for `UserInput`s `Monoid` instance is that stepMany runs over
@@ -433,7 +443,7 @@ the `mempty` event. Ultimately, if you fed your network an empty list of events,
 >             AppData net cache events lastUTC <- readTVarIO tvar
 >             let dt = max oneFrame $ realToFrac $ diffUTCTime t lastUTC 
 >                 evs = InputTime dt : events
->             ((pic, nextNet), outs) <- runWriterT $ stepMany evs net 
+>                 ((pic, nextNet), outs) = runWriter $ stepMany evs net 
 
 Now we can render our `Pic`.
 
@@ -511,6 +521,7 @@ and run in standard cabal fasion.
 [4]: http://hackage.haskell.org/package/netwire
 [5]: http://hackage.haskell.org/package/renderable
 
+[odin]: https://github.com/schell/odin
 [fonty]: http://hackage.haskell.org/package/FontyFruity
 [linear]: http://hackage.haskell.org/package/linear
 [glfw-b]: http://hackage.haskell.org/package/GLFW-b
