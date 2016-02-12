@@ -1,9 +1,9 @@
 ---
-title: A Push Pull FRP - Part One - Infrastructure
+title: Part One - Infrastructure
 has-toc: yes
 date: 2016-02-03
 series: odin
-description: An introduction to varying and gelatin-picture
+description: Creating the infrastructure for Odin
 ---
 
 I'd like to learn how to write a push based FRP implementation and so I decided
