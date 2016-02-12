@@ -1,7 +1,7 @@
 ---
 title: Part One - Infrastructure
 has-toc: yes
-date: 2016-02-03
+date: 2016-02-12
 description: Creating the infrastructure for Odin
 ---
 
@@ -225,9 +225,9 @@ input event we should see the network *go to sleep*.
 So far we have a stream for the cursor position but now we'll need a 
 stream of time deltas. The reason we need deltas is that we'll use some 
 tweening streams from [varying][1] that require deltas as input. This breaks 
-some of the rules of hard FRP - we're not supposed to deal in deltas, but I think 
-you'll find that once it's done we don't have to use deltas for anything more 
-than a plug. 
+some of the rules of hard FRP - we're not supposed to deal in deltas, but I 
+think you'll find that once it's done we don't have to use deltas for 
+anything more than a plug. 
 
 > timeUpdated :: (Applicative m, Monad m) => VarT m UserInput (Event Float)
 > timeUpdated = var f ~> onJust
@@ -265,10 +265,11 @@ constructors in the [varying docs][varying constructors].
 
 Time
 --------------------------------------------------------------------------------
-We'll combine our `deltas` stream and `requestUpdate` in order to create a 
-`time` stream. Whenever a part of our network depends on `time` the underlying 
+Combining our `deltas` and `requestUpdate` streams gives us our main `time` 
+stream. Whenever a part of our network depends on `time` the underlying 
 infrastructure should receive a request that the network be updated. If no part 
-of the network depends on time our main loop will only render on user input.
+of the network depends on time our main loop will sleep and only wake to 
+render on user input.
 
 > time :: VarT Effect UserInput Float
 > time = deltas ~> requestUpdate
@@ -280,16 +281,16 @@ only defined over a select domain. These are called splines.
 
 Tweening With Splines
 --------------------------------------------------------------------------------
-In [varying][1] a spline is a temporary changing value that has an end
-result. Splines are essentially chains of event streams - when an event stream
-stops producing, the current spline terminates and the next event stream takes 
-over. The input, output and result value of a spline are encoded in the spline's 
-type signature. A 'Spline a b m c' describes a spline that takes 'a's as input,
+A spline is a temporary changing value that has an end result. Splines are 
+essentially chains of event streams. When an event stream stops producing the 
+current spline terminates and the next event stream takes over. The input, 
+output and result value of a spline are encoded in the spline's type signature. 
+A 'Spline a b m c' describes a spline that takes 'a's as input,
 produces 'b's as output - runs in the 'm' monad and results in 'c'. Our tweening
-spline will take time (`Float`) as input, return `Float` as output and result
-in the last tweened output value, `Float`. We'll want to change the duration of
-the spline so we'll write a function that takes the duration and returns our
-spline.
+spline will take time (`Float`) as input, give `Float` as output and result
+in the last tweened output value, also `Float`. We'll want to be able to change 
+the duration of the spline so we'll write a function that takes the duration and 
+returns our spline.
 
 > easeInOutSpline :: (Applicative m, Monad m) 
 >                 => Float -> SplineT Float Float m Float
@@ -305,26 +306,27 @@ Now we complete the tween.
 
 >     tween linear halfway 1 $ t/2
 
-As you can see, with splines we can use a monadic notation. Since a spline is 
+As you can see, with splines we can use monadic notation. Since a spline is 
 only defined over a certain domain it can be considered to terminate, giving an 
 end result and allowing you to chain another spline. This chaining or sequencing 
-is what makes splines monadic. 
+is what makes splines so useful for defining a signals behavior over events. 
 
 Actually Using Splines
 --------------------------------------------------------------------------------
-So we've got a spline that represents a tweened number over time, but splines
-are only continuous over a domain and we'd like to use a completely continuous
-signal to tween our `Pic`. `Spline` runs at one level of abstraction above `VarT`
-and as such, we can run the `Spline` to turn it back into a `VarT`. All we need
-is to use `execSpline` and give it an initial value. The resulting `VarT` will
-produce the values of the `Spline` until the `Spline` concludes. Once the 
-`Spline` terminates the `VarT` will use the last value forever. If the spline 
-*never* produces, the initial value will be produced forever. 
+Our tweening spline represents a number over time but splines are only 
+continuous over a finite domain, which is in this case `t` seconds. We'd like to 
+use a completely continuous signal (a `Var m InputEvent Pic`) to tween our 
+`Pic`. `Spline` runs at one level of abstraction above `VarT` and as such, we 
+can create an output stream of the spline, turning it back into a `VarT`. All 
+we need is to use `outputStream` along with an initial value. The resulting 
+stream will produce the values of the spline until the it concludes. 
+Once the spline terminates the stream will repeat the last known value forever. 
+If the spline *never* produces, the initial value will be produced forever. 
 
 > easeInOutExpo :: (Applicative m, Monad m) => Float -> VarT m Float Float 
 > easeInOutExpo = outputStream 1 . easeInOutSpline
 
-We'd like to demonstrate that the network "turns off" when time is no longer
+We'd like to demonstrate that the network sleeps when time is no longer
 a dependency, which means we'll have to set up a network that depends on time
 for a while and then moves on. Since this sounds like sequencing event streams
 we'll use splines again.
@@ -332,7 +334,8 @@ we'll use splines again.
 > multSequence :: Float -> SplineT UserInput Float Effect Float
 
 Note how the type signature now contains `Effect` since we'll need to use time,
-which requires the ability to write out update requests.
+which requires the ability to access the `Writer` monad to write out update 
+requests.
 
 > multSequence t = do
 >     (val,_) <- (time ~> easeInOutExpo t) `untilEvent` (time ~> after t)
@@ -359,7 +362,7 @@ Lastly we'll turn that spline into a continuous stream.
 
 The Big Picture
 --------------------------------------------------------------------------------
-Now we can combine our network. We can start by writing a pure function that 
+Now we can combine our network. We start by writing a pure function that 
 takes a position, scale, red, green and blue parameters and returns a `Pic`. 
 This `Pic` is what we'll render each frame.
 
@@ -378,11 +381,17 @@ We put it all together with [varying][1]s Applicative instance to construct our
 >                   <*> multOverTime 3
 >                   <*> multOverTime 1 <*> multOverTime 2 <*> multOverTime 3
 
+What this bit of code says is that our network is a picture that follows the
+cursor position changing scale over three seconds, changing its red color 
+channel over one second, its green over two seconds and its blue over three 
+seconds. This will all happen in parallel so all time-based animation should 
+conclude after three seconds. At that point the circle will be white 
+(multOverTime ends on `1.0`), with a radius of `100` and following the cursor.
+
 Our Game Loop
 ================================================================================
 In our main loop we need to make a window and write functions for pushing input
-and time into our network. We'll sample our network in one of these functions 
-and render it.
+into our network. We'll also sample our network and render it.
 
 > main :: IO ()
 > main = do
@@ -395,7 +404,7 @@ and some shaders.
 >     let window = rezWindow rez
 >     setWindowPos window 400 400
 
-Next we'll need a tvar to contain our app data - that way we can access and 
+Next we'll need a `TVar` to contain our app data - that way we can access and 
 modify it from any thread. This is going to be a big part of turning our pull
 based FRP network into a push-esque system, where we only render what and when
 we need. 
@@ -407,66 +416,78 @@ we need.
 >                                         , appUTC     = t0
 >                                         }
 
-[varying][1] is a pull based FRP implementation. This (roughly) means that as the 
+[varying][1] is a pull based FRP implementation. This roughly means that as the 
 programmer you describe a network using various streams, combining them together 
-until you have one final stream that you can "pull" or sample from each frame. 
-Your final game data type will essentially just fall out of the network every
-frame. The downside to a pull network is that you have to sample it often, 
+until you have one final stream that you can "pull" or sample from **each 
+frame**. Your per-frame game data will essentially just fall out of the network 
+every frame. The downside to a pull network is that you have to sample it often, 
 typically every frame - regardless of whether or not anything has changed. This
 is what we are trying to avoid. 
 
-In an attempt to remedy that situation we'll only run the network when we receive 
-an event from glfw - or if our network requests that we run it. Let's define the 
-function we'll use to "push" a user event into our app. 
+In an attempt to remedy that situation we'll only run the network when we 
+receive an event from glfw - or if our network requests that we run it. Let's 
+define the function we'll use to "push" a user event into our app. 
 
 >     let push input = atomically $ modifyTVar' tvar $ \app -> 
 >                          app{ appEvents = appEvents app ++ [input] }
 
-Separately we need a function to input time. We'll run this any time glfw
-receives an event of any kind. Since we'll do this any time glfw receives an
-event this is also a good place to render the frame and update our cache.
+That's it! We simply use `atomically $ modifyTVar'` to update the app's 
+`appEvent` slot, adding the new input at the end of the list. Haskell makes 
+threading suuuuper easy.
+
+Separately we need a function to sample and render. We'll run this any time glfw
+receives an event of any kind. Actually we'll run this any time glfw wakes the
+main thread but that's almost the same thing.
 
 >         step = do  
 >             t <- getCurrentTime
 >             putStrLn $ "Stepping " ++ show t
 
 Above we print the current time just so we know the app is stepping in the 
-console.
+console. We can use this to verify that we're only running the step function
+when an event occurs.
 
 The Network Step
 ----------------
-Now we'll run the network. A little magic happens here. `stepMany` takes a list
-of input to iterate your network over, returning the last value. The magic part
-and the reason for `UserInput`s `Monoid` instance is that stepMany runs over
-each item of the list until it gets to `[]`. Then it runs one more time using
-the `mempty` event. Ultimately, if you fed your network an empty list of events, 
-`stepMany` would create one and step your network over it. 
+Now we'll run the network. We keep track of the last time we ran the network
+and create a new time `InputEvent` to step our time based streams with, then
+we add that on to the end of our stored events and sample the network using
+`stepMany`. 
+
+`stepMany` takes a list of input to iterate your network over, returning the 
+last sample. Earlier I mentioned that `UserInput` needs a `Monoid` instance. 
+The reason for this is that stepMany runs over each item of the list until it 
+gets to the empty list. It then runs one more time using the `mempty` event. 
+Ultimately, if you fed your network an empty list of events, `stepMany` would 
+create one and step your network over it. If that sounds funky don't worry, 
+there are other strategies to use for sampling, but this makes the most sense 
+here.  
 
 >             AppData net cache events lastUTC <- readTVarIO tvar
 >             let dt = max oneFrame $ realToFrac $ diffUTCTime t lastUTC 
->                 evs = InputTime dt : events
+>                 evs = events ++ [InputTime dt] 
 >                 ((pic, nextNet), outs) = runWriter $ stepMany evs net 
 
 Now we can render our `Pic`.
 
 >             newCache <- renderFrame rez cache pic
 
-And write our new app state.
+And write our new app state, making sure to clear out our events.
 
 >             atomically $ writeTVar tvar $ AppData nextNet newCache [] t
 
-And apply our network's requests. We fold our output using a `Set` since we only 
-want unique requests. We don't want time going super fast just because more 
-network nodes request it. Time...woah.
+Then apply our network's requests. We fold our output using a `Set` since we 
+only want unique requests. We don't want time going super fast just because 
+more network nodes request it. Time...woah.
 
 >             let requests = S.toList $ foldr S.insert S.empty outs
 >             mapM_ applyOutput requests 
 
 Here's where the update request magic happens. We spawn a new thread to wait a 
 duration, whatever we see fit. In this case it's `oneFrame`, or one thirtieth of 
-a second. Then we `push` a `InputTime` event into our app and call glfw's 
+a second. Then we `push` an `InputTime` event into our app and call glfw's
 `postEmptyEvent`. `postEmptyEvent` will wake up the main thread from 
-`waitEvents`, which you'll see later.
+`waitEvents`, which you'll see later.  
 
 >         oneFrame = 1/30 
 >         applyOutput OutputNeedsUpdate = void $ async $ do 
@@ -474,8 +495,8 @@ a second. Then we `push` a `InputTime` event into our app and call glfw's
 >             postEmptyEvent
 >         applyOutput _ = return ()
                         
-What about our user input events? I'm glad you asked. For this we can wire up
-glfw's nifty callbacks. They'll simply push some events in our event queue.
+But what about our user input events? For this we can wire up glfw's nifty 
+callbacks. They'll simply push some events in our event queue.  
 
 >     setCursorPosCallback window $ Just $ \_ x y ->
 >         push $ InputCursor (realToFrac x) (realToFrac y)
@@ -484,7 +505,7 @@ glfw's nifty callbacks. They'll simply push some events in our event queue.
 >         print ("window size",w,h)
 >         push $ InputWindowSize w h
 
-Here is a nifty hack. In this callback we won't push an event, we'll just call
+Next is a nifty hack. In this callback we won't push an event, we'll just call
 `step` to update our app while the window is refreshing. This gives the app the
 ability to run even when the window is actively being resized.
 
@@ -505,17 +526,17 @@ to recurse.
 
 Conclusion
 --------------------------------------------------------------------------------
-FRP is a pretty cool thing. It's got some great ideas and its (mostly) a nice
-way to organize your code. It encourages very granular functions and by 
-providing a small feedback mechanism you can remedy some of the bitter taste of
-constant rendering. 
+FRP is a pretty cool thing. It's got some great ideas and its a nice way to 
+organize your code. It encourages very granular functions and by providing a 
+small feedback mechanism you can remedy some of the bitter taste of constant 
+rendering.  
 
 Hopefully this tutorial has been helpful. Please comment at HN or Reddit,
 constructive or not! You can say things like "I hate me an FRP" or "I learn me
 some streams, hot dang." Thanks for reading :)
 
-Oh - also - don't forget that this is a literate haskell file and can be built 
-and run in standard cabal fasion.
+[Oh - also - don't forget that this is a literate haskell file and can be built 
+and run in standard cabal or stack fasion][odin].
 
 [1]: http://hackage.haskell.org/package/varying
 [2]: http://github.com/gelatin/gelatin-picture
