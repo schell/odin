@@ -542,8 +542,8 @@ some streams, hot dang." Thanks for reading :)
 and run in standard cabal or stack fasion][odin].
 
 [1]: http://hackage.haskell.org/package/varying
-[2]: http://github.com/gelatin/gelatin-picture
-[3]: http://github.com/gelatin/gelatin-glfw
+[2]: http://github.com/schell/gelatin/tree/master/gelatin-picture
+[3]: http://github.com/schell/gelatin/tree/master/gelatin-glfw
 [4]: http://hackage.haskell.org/package/netwire
 [5]: http://hackage.haskell.org/package/renderable
 
