@@ -60,7 +60,6 @@ network entities to reach out to the world and each other.
 > import Control.Monad.STM
 > import Control.Monad.Trans.Writer.Strict
 > import Control.Monad
-> import Control.Monad.IO.Class
 
 Lastly we'll need some miscellaneous bits and pieces.
 
@@ -129,19 +128,19 @@ side-effects to the network as a whole through our `WriterT` monad stack.
 
 Rendering
 ================================================================================
-In order to render a frame we'll need a function that uses our cache of 
-renderers and the window reference in `Rez` to paint a `Pic` to the screen. The 
-pic is created by our network each frame and each time we paint a frame update 
-we'll get back a cache of updated renderers. 
+In order to render a frame we'll need a function that uses our resources the 
+window reference to paint a `Pic` to the screen. The pic is created by our 
+network each frame and each time we paint a frame update we'll get back a cache 
+of updated renderers. 
 
-> renderFrame :: Rez -> Cache IO Transform -> Pic 
+> renderFrame :: Window -> Rez -> Cache IO Transform -> Pic 
 >             -> IO (Cache IO Transform)
-> renderFrame rez cache pic = do
+> renderFrame window rez cache pic = do
 
 Just like any other opengl app we need to set the viewport and clear our buffers 
 before updating the screen.
 
->   (fbw,fbh) <- getFramebufferSize $ rezWindow rez
+>   (fbw,fbh) <- ctxFramebufferSize $ rezContext rez 
 >   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
 >   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
@@ -156,8 +155,8 @@ on-the-fly and cleaning up resources previously allocated by now stale renderers
 
 Now swap the buffers on our OpenGL window and return the new cache.
 
->   swapBuffers $ rezWindow rez
->   shouldClose <- windowShouldClose $ rezWindow rez
+>   swapBuffers window 
+>   shouldClose <- windowShouldClose window 
 >   if shouldClose then exitSuccess else threadDelay 100
 >   return newCache 
  
@@ -403,8 +402,7 @@ Start up glfw, receiving a `Rez`. A `Rez` is a type of resource that
 [gelatin-glfw][3] uses to render. It's a composite type containing a glfw window
 and some shaders.
 
->     rez <- startupGLFWBackend 800 600 "Push Pull" Nothing Nothing 
->     let window = rezWindow rez
+>     (rez,window) <- startupGLFWBackend 800 600 "Odin Part One - GLFW" Nothing Nothing 
 >     setWindowPos window 400 400
 
 Next we'll need a `TVar` to contain our app data - that way we can access and 
@@ -473,7 +471,7 @@ here.
 
 Now we can render our `Pic`.
 
->             newCache <- renderFrame rez cache pic
+>             newCache <- renderFrame window rez cache pic
 
 And write our new app state, making sure to clear out our events.
 

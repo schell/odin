@@ -1,6 +1,8 @@
 flags: {}
 packages: 
 - '.'
+
+
 - location:
     git: https://github.com/schell/FontyFruity.git
     commit: 99c143ebb569c286aa5252587923f8c34423e969
@@ -15,12 +17,14 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/schell/gelatin.git
-    commit: 3602e3859de68c662d1cf7193f6afc763e12effc    
+    commit: a9666640fd2a025f4b8e3c2f45de53ae3e083a93    
   extra-dep: true
   subdirs:
   - gelatin-core
   - gelatin-picture
+  - gelatin-gl
   - gelatin-glfw
+  - gelatin-sdl2
 
 extra-deps: []
 resolver: lts-5.2

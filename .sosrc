@@ -3,4 +3,4 @@
   commands:
   - stack build
   - hlint \0
-  - stack exec part-one 
+  - stack exec part-one-sdl2 
