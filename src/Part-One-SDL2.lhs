@@ -5,13 +5,13 @@ date: 2016-02-16
 description: Creating the infrastructure for Odin using SDL2
 ---
 
-tl;dr
+Intro
 ================================================================================
 This is part of a series where we'll be writing a roguelike using FRP 
 and Haskell. This article is about setting up the main loop and rendering.  
 This version of the article uses SDL2 for the gelatin backend and only 
-addresses the differences between GLFW and SDL2. Please see the 
-[part one][part-one] for thorough tutorial.
+addresses the differences between GLFW and SDL2. Please see [part one][part-one] 
+for thorough tutorial.  
 
 Get the Code
 --------------------------------------------------------------------------------
@@ -22,10 +22,6 @@ for help with `stack`.
 
 Main
 ================================================================================
-For the SDL2 version our imports are identical except we switch out the backend.
-You can see that `SDL` introduces some conflicts with `Control.Varying` that we
-need to work around using qualified imports and hiding.
-
 > -- |
 > --   Module:     Main
 > --   Copyright:  (c) 2015 Schell Scivally
@@ -34,8 +30,14 @@ need to work around using qualified imports and hiding.
 > module Main where
 > import Control.Varying
 
+For the SDL2 version our imports are identical except we switch out the backend.
+You can see that `SDL` introduces some conflicts with `Control.Varying` that we
+need to work around using qualified imports and hiding.
+
 > import Gelatin.SDL2 hiding (Event, time)
 > import qualified SDL
+
+Everything else here is business as usual :)
 
 > import Control.Concurrent
 > import Control.Concurrent.Async
@@ -168,26 +170,22 @@ complicated, but not bad. Most of our setup is the same.
 > main = do
 >     (rez,window) <- startupSDL2Backend 800 600 "Odin Part One - SDL2"
 >     setWindowPosition window $ Absolute $ P $ V2 400 400
-
 >     t0   <- getCurrentTime
 >     tvar <- atomically $ newTVar AppData{ appNetwork = network 
 >                                         , appCache   = mempty
 >                                         , appEvents  = []
 >                                         , appUTC     = t0
 >                                         }
-
 >     let push input = atomically $ modifyTVar' tvar $ \app -> 
 >                          app{ appEvents = appEvents app ++ [input] }
 
 One expected difference is in how SDL2 handles input. GLFW allows you to set a
 callback and then wait for events to come in, keeping you from having to poll. 
-
 GLFW could be polling under the hood, but with SDL2 that polling is explicit. 
-Instead of using callbacks we'll write a function that handles our special 
-input cases or simply `push`s our input.
 
-The special case to handle is when the window manager requests the window be 
-closed.
+Instead of using callbacks we'll write a function that handles our special 
+input cases or simply `push`s our input. The special case to handle is when 
+the window manager requests that the window should close.
 
 >         addInput InputWindowClosed = exitSuccess
 
@@ -195,10 +193,10 @@ All other input can simply be pushed into our queue.
 
 >         addInput input = push input
 
-We also need a function that unwraps SDL events and turns them into our game
-events. You'll see here that SDL gives us much more information than GLFW. Most
-of this function is unwrapping the event. We return a list so we can `concatMap`
-this function over all of SDL's events in one fell swoop.
+Instead of callbacks we need a function that unwraps SDL events and turns them 
+into our game events. You'll see here that SDL gives us much more information 
+than GLFW. Most of this function is unwrapping the event. We return a list so 
+we can `concatMap` this function over all of SDL's events in one fell swoop.
 
 >         fevent (SDL.Event _ 
 >                 (MouseMotionEvent 
@@ -234,7 +232,7 @@ events.
 >             when (null allEvents) $ do threadDelay 10 
 >                                        wait
 
-Our step function is identical to [Part One][part-one]. Weeee!
+Our step function is identical to [part one][part-one]. Weeee!
 
 >         step = do  
 >             t <- getCurrentTime
