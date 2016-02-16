@@ -1,8 +1,8 @@
 ---
-title: Part One - Infrastructure
+title: Part One - Infrastructure with GLFW
 has-toc: yes
 date: 2016-02-12
-description: Creating the infrastructure for Odin
+description: Creating the infrastructure for Odin using GLFW
 ---
 
 *tl;dr* This is part of a series where we'll be writing a roguelike using FRP 
