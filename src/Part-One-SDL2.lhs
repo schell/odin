@@ -23,6 +23,8 @@ for help with `stack`.
 Main
 ================================================================================
 For the SDL2 version our imports are identical except we switch out the backend.
+You can see that `SDL` introduces some conflicts with `Control.Varying` that we
+need to work around using qualified imports and hiding.
 
 > -- |
 > --   Module:     Main
@@ -31,8 +33,10 @@ For the SDL2 version our imports are identical except we switch out the backend.
 > --
 > module Main where
 > import Control.Varying
+
 > import Gelatin.SDL2 hiding (Event, time)
 > import qualified SDL
+
 > import Control.Concurrent
 > import Control.Concurrent.Async
 > import Control.Concurrent.STM.TVar
