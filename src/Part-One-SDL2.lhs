@@ -287,8 +287,8 @@ type system is a real friend.
 
 Comments
 --------------------------------------------------------------------------------
-Please comment at [HN](https://news.ycombinator.com/item?id=11090457) 
-or [Reddit](https://www.reddit.com/r/haskell/comments/45gsbw/learning_me_a_haskell_frp_game_infrastructure/)
+Please comment at [HN](https://news.ycombinator.com/item?id=11112599) 
+or [Reddit](https://www.reddit.com/r/haskell/comments/4647er/refactoring_our_haskell_frp_from_glfw_to_sdl2/)
 
 [1]: http://hackage.haskell.org/package/varying
 [2]: http://github.com/schell/gelatin/tree/master/gelatin-picture
