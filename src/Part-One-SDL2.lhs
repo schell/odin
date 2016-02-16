@@ -115,47 +115,47 @@ all. Score one for FRP and Haskell in general.
 > cursorMoved = var f ~> onJust
 >     where f (InputCursor x y) = Just $ V2 x y
 >           f _ = Nothing
-
+>
 > cursorPosition :: (Applicative m, Monad m) => VarT m UserInput (V2 Float)
 > cursorPosition = cursorMoved ~> foldStream (\_ v -> v) (-1)
-
+>
 > timeUpdated :: (Applicative m, Monad m) => VarT m UserInput (Event Float)
 > timeUpdated = var f ~> onJust
 >     where f (InputTime t) = Just t
 >           f _ = Nothing
-
+>
 > deltas :: (Applicative m, Monad m) => VarT m UserInput Float
 > deltas = 0 `orE` timeUpdated
-
+>
 > requestUpdate :: VarT Effect a a
 > requestUpdate = varM $ \input -> do
 >     tell [OutputNeedsUpdate] 
 >     return input
-
+>
 > time :: VarT Effect UserInput Float
 > time = deltas ~> requestUpdate
-
+>
 > easeInOutSpline :: (Applicative m, Monad m) 
 >                 => Float -> SplineT Float Float m Float
 > easeInOutSpline t = do
 >     halfway <- tween easeInExpo 1 0 $ t/2
 >     tween linear halfway 1 $ t/2
-
+>
 > easeInOutExpo :: (Applicative m, Monad m) => Float -> VarT m Float Float 
 > easeInOutExpo = outputStream 1 . easeInOutSpline
-
+>
 > multSequence :: Float -> SplineT UserInput Float Effect Float
 > multSequence t = do
 >     (val,_) <- (time ~> easeInOutExpo t) `untilEvent` (time ~> after t)
 >     return val
-
+>
 > multOverTime :: Float -> VarT Effect UserInput Float
 > multOverTime = outputStream 0 . multSequence 
-
+>
 > picture :: V2 Float -> Float -> Float -> Float -> Float -> Pic
 > picture cursor s r g b = 
 >     move cursor $ scale (V2 s s) $ withFill (solid $ V4 r g b 1) $ circle 100 
-
+>
 > network :: VarT Effect UserInput Pic
 > network = picture <$> cursorPosition 
 >                   <*> multOverTime 3
@@ -284,6 +284,11 @@ the total absence of fear during refactoring. At no point was I afraid I would
 edit myself into a corner and have to `git stash; git drop` my changes and 
 restart. That happens to me sometimes in lesser typed languages, but Haskell's
 type system is a real friend.
+
+Comments
+--------------------------------------------------------------------------------
+Please comment at [HN](https://news.ycombinator.com/item?id=11090457) 
+or [Reddit](https://www.reddit.com/r/haskell/comments/45gsbw/learning_me_a_haskell_frp_game_infrastructure/)
 
 [1]: http://hackage.haskell.org/package/varying
 [2]: http://github.com/schell/gelatin/tree/master/gelatin-picture
