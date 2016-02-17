@@ -1,6 +1,7 @@
 - patterns:
   - .*\.l?hs$
+  - .*\.cabal$
   commands:
-  - stack build
+  - stack build :part-two
   - hlint \0
-  - stack exec part-one-sdl2 
+  - stack exec part-two

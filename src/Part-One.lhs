@@ -373,7 +373,8 @@ a circle of radius 100.
 
 > picture :: V2 Float -> Float -> Float -> Float -> Float -> Pic
 > picture cursor s r g b = 
->     move cursor $ scale (V2 s s) $ withFill (solid $ V4 r g b 1) $ circle 100 
+>     move cursor $ scale (V2 s s) $ withFill (FillColor $ V4 r g b 1) 
+>         $ circle 100 
 
 We put it all together with [varying][1]s Applicative instance to construct our 
 `Pic` stream.

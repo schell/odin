@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Odin.Font where
 
-import Gelatin.GLFW
+import Gelatin.GL
 import System.Directory
 import System.FilePath
 

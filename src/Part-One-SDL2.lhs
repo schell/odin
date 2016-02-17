@@ -22,6 +22,7 @@ for help with `stack`.
 
 Main
 ================================================================================
+
 > -- |
 > --   Module:     Main
 > --   Copyright:  (c) 2015 Schell Scivally
@@ -45,7 +46,6 @@ Everything else here is business as usual :)
 > import Control.Monad.STM
 > import Control.Monad.Trans.Writer.Strict
 > import Control.Monad
-> import Control.Monad.IO.Class
 > import Data.Bits ((.|.))
 > import Data.Time.Clock
 > import qualified Data.Set as S
@@ -154,7 +154,8 @@ all. Score one for FRP and Haskell in general.
 >
 > picture :: V2 Float -> Float -> Float -> Float -> Float -> Pic
 > picture cursor s r g b = 
->     move cursor $ scale (V2 s s) $ withFill (solid $ V4 r g b 1) $ circle 100 
+>     move cursor $ scale (V2 s s) $ withFill (FillColor $ V4 r g b 1) 
+>         $ circle 100 
 >
 > network :: VarT Effect UserInput Pic
 > network = picture <$> cursorPosition 
