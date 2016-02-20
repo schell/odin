@@ -12,11 +12,8 @@ data StartScreen = StartScreenOn
 
 drawStartScreen :: FontData -> FontData -> StartScreen -> Pic
 drawStartScreen hdr rdr StartScreenOn = do
-    let logo = withFont hdr $ withFill (fromColors [ (V2 0 0,red)
-                                                   , (V2 0 100,red)
-                                                   , (V2 100 0,white)
-                                                   , (V2 100 100,white)
-                                                   ]) $ letters 128 64 "Odin"
+    let fill = FillColor $ \(V2 x y) -> V4 (x/100) (y/100) 1 1 
+        logo = withFont hdr $ withFill fill $ letters 128 64 "Odin"
         instructions = withFont rdr $ withFill (solid grey) $ 
                          letters 128 16 "Press any key to play" 
     move (V2 0 64) logo
