@@ -3,20 +3,33 @@
 --   Copyright:  (c) 2015 Schell Scivally
 --   License:    MIT
 --
-module Odin.Infrastructure where
+module Odin.Infrastructure (
+    UserInput(..),
+    Effect,
+    Pic,
+    Network,
+    cursorMoved,
+    cursorPosition,
+    time,
+    logStr,
+    getWindowSize,
+    windowSize,
+    run
+) where
 
 import Control.Varying
-import Gelatin.SDL2 hiding (Event, time)
+import Gelatin.SDL2 hiding (Event, time, windowSize)
 import qualified SDL
 import Control.Concurrent
 import Control.Concurrent.Async
-import Control.Concurrent.STM.TVar
 import Control.Monad.STM
-import Control.Monad.Trans.Writer.Strict
 import Control.Monad
+import Control.Concurrent.STM.TVar
+import Control.Monad.Trans.RWS.Strict
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Identity
+import Control.Monad.IO.Class
 import Data.Bits ((.|.))
-import Data.Time.Clock
-import qualified Data.Set as S
 import System.Exit
 import Linear.Affine (Point(..))
 --------------------------------------------------------------------------------
@@ -33,22 +46,28 @@ data UserInput = InputUnknown String
                           }
                deriving (Show)
 
-instance Monoid UserInput where
-    mappend a (InputUnknown _) = a
-    mappend _ b = b
-    mempty = InputUnknown ""
-
 data OutputEvent = OutputEventUnknown String
                  | OutputNeedsUpdate
+                 | OutputPutStrLn String
+                 | OutputQuit
                  deriving (Ord, Eq)
 
-type Effect = WriterT [OutputEvent] IO
-type Pic = Picture Font ()
+type WrapIO = IdentityT IO
+type Effect = RWST Window [OutputEvent] () WrapIO
+type Pic = Picture ()
 type Network = VarT Effect UserInput Pic
 data AppData = AppData { appNetwork :: Network
                        , appCache   :: Cache IO Transform
                        , appEvents  :: [UserInput]
                        }
+--------------------------------------------------------------------------------
+-- Utilities
+--------------------------------------------------------------------------------
+queryWindowSize :: Effect (V2 Int)
+queryWindowSize = do
+    window <- ask 
+    size   <- liftIO $ SDL.get $ SDL.windowSize window
+    return $ fromIntegral <$> size 
 --------------------------------------------------------------------------------
 -- Rendering
 --------------------------------------------------------------------------------
@@ -58,11 +77,11 @@ renderFrame window rez cache pic = do
   (fbw,fbh) <- ctxFramebufferSize $ rezContext rez 
   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
-  newCache <- renderPrims rez cache $ pictureToR2Primitives pic
+  newCache <- renderPrims rez cache $ toPaintedPrimitives pic
   glSwapWindow window 
   return newCache 
 --------------------------------------------------------------------------------
--- Network
+-- Network Streams
 --------------------------------------------------------------------------------
 cursorMoved :: (Applicative m, Monad m) => VarT m UserInput (Event (V2 Float))
 cursorMoved = var f ~> onJust
@@ -87,6 +106,17 @@ requestUpdate = varM $ \input -> do
 
 time :: VarT Effect UserInput Float
 time = deltas ~> requestUpdate
+
+windowSize :: VarT Effect a (V2 Int)
+windowSize = varM $ const queryWindowSize
+--------------------------------------------------------------------------------
+-- Network Splines
+--------------------------------------------------------------------------------
+logStr :: Monad m => String -> SplineT a b (RWST r [OutputEvent] s m) ()
+logStr = lift . tell . (:[]) . OutputPutStrLn
+
+getWindowSize :: SplineT a b Effect (V2 Int)
+getWindowSize = lift queryWindowSize
 --------------------------------------------------------------------------------
 --  
 --------------------------------------------------------------------------------
@@ -136,17 +166,29 @@ applyOutput :: TVar AppData -> OutputEvent -> IO ()
 applyOutput tvar OutputNeedsUpdate = void $ async $ do 
     threadDelay $ round (oneFrame * 1000) 
     push tvar $ InputTime oneFrame 
+applyOutput _ (OutputPutStrLn str) = putStrLn str
+applyOutput _ OutputQuit = exitSuccess
 applyOutput _ _ = return ()
 
 stepOdin :: TVar AppData -> Rez -> Window -> IO ()
 stepOdin tvar rez window = do  
     AppData net cache events <- readTVarIO tvar
-    let evs = events
-    ((pic, nextNet), outs) <- runWriterT $ stepMany evs net 
+
+    let (e,es) = case events of
+                     e:es -> (e,es)
+                     []   -> (InputUnknown "no events", [])
+
+    ((pic, nextNet), (), outs) <- runIdentityT $ runRWST (stepMany es e net) 
+                                                         window ()
+
     newCache <- renderFrame window rez cache pic
     atomically $ writeTVar tvar $ AppData nextNet newCache []
-    let requests = S.toList $ foldr S.insert S.empty outs
+
+    let needsUpdate = OutputNeedsUpdate `elem` outs
+        requests = filter (/= OutputNeedsUpdate) outs 
+
     mapM_ (applyOutput tvar) requests 
+    when needsUpdate $ applyOutput tvar OutputNeedsUpdate
 
 waitOdin :: TVar AppData -> IO () 
 waitOdin tvar = do
@@ -163,7 +205,7 @@ waitOdin tvar = do
 
 run :: VarT Effect UserInput Pic -> IO ()
 run myNet = do
-    (rez,window) <- startupSDL2Backend 800 600 "Odin"
+    (rez,window) <- startupSDL2Backend 800 600 "Odin" True
     setWindowPosition window $ Absolute $ P $ V2 400 400
     tvar <- atomically $ newTVar AppData{ appNetwork = myNet 
                                         , appCache   = mempty

@@ -4,24 +4,28 @@ import Odin.Infrastructure
 import Odin.Font
 import Gelatin.GL
 import Control.Varying
-import Control.Monad.IO.Class
 import System.Exit
 import SDL.Event hiding (Event)
 
 data StartScreen = StartScreenOn
                  | StartScreenOff Float
 
-drawStartScreen :: Font -> Font -> StartScreen -> Pic
-drawStartScreen hdr rdr StartScreenOn = move (V2 0 64) $ do
-    withFont hdr $ withFill (FillColor white) $ letters 64 "Odin"
-    move (V2 0 16) $ 
-        withFont rdr $ withFill (FillColor grey) $ 
-            letters 16 "Press any key to play" 
+drawStartScreen :: FontData -> FontData -> StartScreen -> Pic
+drawStartScreen hdr rdr StartScreenOn = do
+    let logo = withFont hdr $ withFill (fromColors [ (V2 0 0,red)
+                                                   , (V2 0 100,red)
+                                                   , (V2 100 0,white)
+                                                   , (V2 100 100,white)
+                                                   ]) $ letters 128 64 "Odin"
+        instructions = withFont rdr $ withFill (solid grey) $ 
+                         letters 128 16 "Press any key to play" 
+    move (V2 0 64) logo
+    
 drawStartScreen hdr rdr (StartScreenOff a) = 
-    withFill (FillColor $ white `alpha` a) $ 
+    withFill (solid $ white `alpha` a) $ 
         drawStartScreen hdr rdr StartScreenOn
 
-loadFont :: FilePath -> IO Font
+loadFont :: FilePath -> IO FontData
 loadFont fp = do
     efont <- odinFont fp 
     case efont of 
@@ -42,16 +46,20 @@ anyKeydown = var f ~> onJust
 percentageOfSeconds :: Float -> VarT Effect UserInput Float
 percentageOfSeconds s = (/ s) <$> (time ~> accumulate (+) 0)
 
-networkSpline :: Font -> Font -> SplineT UserInput Pic Effect () 
+networkSpline :: FontData -> FontData -> SplineT UserInput Pic Effect () 
 networkSpline deutsch hack = do
-    let drawScreen = drawStartScreen deutsch hack
+    let center wsize pic = move ((wsize / 2) - (pictureSize pic / 2)) pic
+        drawScreen = drawStartScreen deutsch hack
         fadeScreen = drawScreen . StartScreenOff 
+        winFloat = fmap fromIntegral <$> windowSize
 
-    pure (drawScreen StartScreenOn) `untilEvent_` anyKeydown >>= step
-    liftIO $ putStrLn "fading"
-    (fadeScreen <$> (1 - percentageOfSeconds 1 ~> vtrace)) `untilEvent_` anyKeydown >>= step
-    liftIO $ putStrLn "looping"
-    networkSpline deutsch hack
+    pure (drawScreen StartScreenOn) `untilEvent_` 
+        anyKeydown >>= step
+
+    logStr "fading out"
+
+    (center <$> winFloat <*> (fadeScreen <$> (1 - percentageOfSeconds 1))) 
+        `untilEvent_` (time ~> after 1) >>= step
 
 main :: IO ()
 main = do

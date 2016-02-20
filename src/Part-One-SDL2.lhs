@@ -48,7 +48,6 @@ Everything else here is business as usual :)
 > import Control.Monad
 > import Data.Bits ((.|.))
 > import Data.Time.Clock
-> import qualified Data.Set as S
 > import System.Exit
 > import Linear.Affine (Point(..))
 
@@ -68,18 +67,12 @@ but mysterious `windowShouldClose` function.
 
 All other type level stuff stays the same for our refactor.
 
->
-> instance Monoid UserInput where
->     mappend a (InputUnknown _) = a
->     mappend _ b = b
->     mempty = InputUnknown ""
->
 > data OutputEvent = OutputEventUnknown String
 >                  | OutputNeedsUpdate
 >                  deriving (Ord, Eq)
 >
 > type Effect = Writer [OutputEvent]
-> type Pic = Picture Font ()
+> type Pic = Picture ()
 > type Network = VarT Effect UserInput Pic
 > data AppData = AppData { appNetwork :: Network
 >                        , appCache   :: Cache IO Transform
@@ -99,7 +92,7 @@ Rendering is only slightly different - we use `SDL.glSwapWindow` instead of
 >   (fbw,fbh) <- ctxFramebufferSize $ rezContext rez 
 >   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
 >   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
->   newCache <- renderPrims rez cache $ pictureToR2Primitives pic
+>   newCache <- renderPrims rez cache $ toPaintedPrimitives pic
 >   glSwapWindow window 
 >   return newCache 
  
@@ -154,7 +147,7 @@ all. Score one for FRP and Haskell in general.
 >
 > picture :: V2 Float -> Float -> Float -> Float -> Float -> Pic
 > picture cursor s r g b = 
->     move cursor $ scale (V2 s s) $ withFill (FillColor $ V4 r g b 1) 
+>     move cursor $ scale (V2 s s) $ withFill (solid $ V4 r g b 1)
 >         $ circle 100 
 >
 > network :: VarT Effect UserInput Pic
@@ -169,7 +162,7 @@ complicated, but not bad. Most of our setup is the same.
 
 > main :: IO ()
 > main = do
->     (rez,window) <- startupSDL2Backend 800 600 "Odin Part One - SDL2"
+>     (rez,window) <- startupSDL2Backend 800 600 "Odin Part One - SDL2" True
 >     setWindowPosition window $ Absolute $ P $ V2 400 400
 >     t0   <- getCurrentTime
 >     tvar <- atomically $ newTVar AppData{ appNetwork = network 
@@ -240,12 +233,14 @@ Our step function is identical to [part one][part-one]. Weeee!
 >             putStrLn $ "Stepping " ++ show t
 >             AppData net cache events lastUTC <- readTVarIO tvar
 >             let dt = max oneFrame $ realToFrac $ diffUTCTime t lastUTC 
->                 evs = events ++ [InputTime dt] 
->                 ((pic, nextNet), outs) = runWriter $ stepMany evs net 
+>                 ev = InputTime dt 
+>                 ((pic, nextNet), outs) = runWriter $ stepMany events ev net 
 >             newCache <- renderFrame window rez cache pic
 >             atomically $ writeTVar tvar $ AppData nextNet newCache [] t
->             let requests = S.toList $ foldr S.insert S.empty outs
+>             let needsUpdate = OutputNeedsUpdate `elem` outs
+>                 requests = filter (/= OutputNeedsUpdate) outs 
 >             mapM_ applyOutput requests 
+>             when needsUpdate $ applyOutput OutputNeedsUpdate
 
 >         oneFrame = 1/30 
 

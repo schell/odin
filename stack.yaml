@@ -7,15 +7,17 @@ packages:
 - '../gelatin/gelatin-glfw'
 - '../gelatin/gelatin-sdl2'
 - '../renderable'
+- '../varying'
+- '../sdl2'
 
 - location:
     git: https://github.com/schell/FontyFruity.git
     commit: 99c143ebb569c286aa5252587923f8c34423e969
   extra-dep: true
-- location:
-    git: https://github.com/schell/varying.git
-    commit: fb4fdfb83d2dc3c1d12a9e181faf6f0e974c7e01
-  extra-dep: true
+#- location:
+#    git: https://github.com/schell/varying.git
+#    commit: fb4fdfb83d2dc3c1d12a9e181faf6f0e974c7e01
+#  extra-dep: true
 #- location:
 #    git: https://github.com/schell/renderable.git
 #    commit: 743ea68c91daeb4c3000f3c0ce2c73fbac02cacc

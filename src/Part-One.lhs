@@ -65,7 +65,6 @@ Lastly we'll need some miscellaneous bits and pieces.
 
 > import Data.Bits ((.|.))
 > import Data.Time.Clock
-> import qualified Data.Set as S
 > import System.Exit
 
 Types
@@ -83,16 +82,6 @@ our game or display logic needs to know about it, it should be covered by
 >                | InputWindowSize Int Int
 >                deriving (Show)
 
-`UserInput` is a monoid of sorts - each new event replaces an old one unless
-the new one is `InputUnknown`. An empty event is `InputUnknown`. We need this
-to use `stepMany` during [the network step][#the-network-step], because 
-`stepMany` requires a Monoid instance.
-
-> instance Monoid UserInput where
->     mappend a (InputUnknown _) = a
->     mappend _ b = b
->     mempty = InputUnknown ""
-
 We use `OutputEvent` with `WriterT` to allow entities within
 our network to have a very managed effect on the network as a whole.
 
@@ -102,12 +91,11 @@ our network to have a very managed effect on the network as a whole.
 
 > type Effect = Writer [OutputEvent]
 
-We'll be rendering `Picture`s from [gelatin-picture][2] using `Font`s provided
-by [FontyFruity][fonty]. [FontyFruity][fonty] is also re-exported by gelatin's 
-glfw backend. We'll talk more about rendering in the [rendering][#rendering] 
-section.
+We'll be rendering `Picture`s from [gelatin-picture][2]. We'll talk more about 
+rendering in the [rendering][#rendering] section. Here we just do a litty type
+synonym to keep us from having to type "()" all over the place.
 
-> type Pic = Picture Font ()
+> type Pic = Picture ()
 
 The `Network` is a varying value. This means that it represents a value that
 changes over some domain. When you see the type of a varying value as 
@@ -144,14 +132,14 @@ before updating the screen.
 >   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
 >   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
-Now we render our data using `renderPrims` and `pictureToR2Primitives`.  Defined 
+Now we render our data using `renderPrims` and `toPaintedPrimitives`.  Defined 
 in [renderable][5] and [gelatin-picture][2] respectively, they do most of the 
-heavy lifting for us. `pictureToR2Primitives` turns our `Pic` into renderable 
+heavy lifting for us. `toPaintedPrimitives` turns our `Pic` into renderable 
 primitives - colored and textured lines and triangles. `renderPrims` renders the 
 list of primitives and returns a new cache, allocating new renderings for us 
 on-the-fly and cleaning up resources previously allocated by now stale renderers.
 
->   newCache <- renderPrims rez cache $ pictureToR2Primitives pic
+>   newCache <- renderPrims rez cache $ toPaintedPrimitives pic
 
 Now swap the buffers on our OpenGL window and return the new cache.
 
@@ -373,7 +361,7 @@ a circle of radius 100.
 
 > picture :: V2 Float -> Float -> Float -> Float -> Float -> Pic
 > picture cursor s r g b = 
->     move cursor $ scale (V2 s s) $ withFill (FillColor $ V4 r g b 1) 
+>     move cursor $ scale (V2 s s) $ withFill (solid $ V4 r g b 1)
 >         $ circle 100 
 
 We put it all together with [varying][1]s Applicative instance to construct our 
@@ -467,8 +455,8 @@ here.
 
 >             AppData net cache events lastUTC <- readTVarIO tvar
 >             let dt = max oneFrame $ realToFrac $ diffUTCTime t lastUTC 
->                 evs = events ++ [InputTime dt] 
->                 ((pic, nextNet), outs) = runWriter $ stepMany evs net 
+>                 ev = InputTime dt 
+>                 ((pic, nextNet), outs) = runWriter $ stepMany events ev net 
 
 Now we can render our `Pic`.
 
@@ -482,8 +470,10 @@ Then apply our network's requests. We fold our output using a `Set` since we
 only want unique requests. We don't want time going super fast just because 
 more network nodes request it. Time...woah.
 
->             let requests = S.toList $ foldr S.insert S.empty outs
+>             let needsUpdate = OutputNeedsUpdate `elem` outs
+>                 requests = filter (/= OutputNeedsUpdate) outs 
 >             mapM_ applyOutput requests 
+>             when needsUpdate $ applyOutput OutputNeedsUpdate
 
 Here's where the update request magic happens. We spawn a new thread to wait a 
 duration, whatever we see fit. In this case it's `oneFrame`, or one thirtieth of 
