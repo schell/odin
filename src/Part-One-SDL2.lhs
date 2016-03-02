@@ -46,7 +46,6 @@ Everything else here is business as usual :)
 > import Control.Monad.STM
 > import Control.Monad.Trans.Writer.Strict
 > import Control.Monad
-> import Data.Bits ((.|.))
 > import Data.Time.Clock
 > import System.Exit
 > import Linear.Affine (Point(..))
@@ -79,23 +78,6 @@ All other type level stuff stays the same for our refactor.
 >                        , appEvents  :: [UserInput]
 >                        , appUTC     :: UTCTime
 >                        }
-
-
-Rendering
-================================================================================
-Rendering is only slightly different - we use `SDL.glSwapWindow` instead of
-`GLFW.swapBuffers` and we git rid of the window management code.
-
-> renderFrame :: Window -> Rez -> Cache IO Transform -> Pic 
->             -> IO (Cache IO Transform)
-> renderFrame window rez cache pic = do
->   (fbw,fbh) <- ctxFramebufferSize $ rezContext rez 
->   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
->   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
->   newCache <- renderPrims rez cache $ toPaintedPrimitives pic
->   glSwapWindow window 
->   return newCache 
- 
 
 The Network
 ================================================================================
@@ -174,7 +156,7 @@ complicated, but not bad. Most of our setup is the same.
 >                          app{ appEvents = appEvents app ++ [input] }
 
 One expected difference is in how SDL2 handles input. GLFW allows you to set a
-callback and then wait for events to come in, keeping you from having to poll. 
+callback and then waitOdin for events to come in, keeping you from having to poll. 
 GLFW could be polling under the hood, but with SDL2 that polling is explicit. 
 
 Instead of using callbacks we'll write a function that handles our special 
@@ -206,7 +188,7 @@ we can `concatMap` this function over all of SDL's events in one fell swoop.
 >             [InputWindowClosed]
 >         fevent _ = []
 
-Now we write our own version of GLFW's `waitEvents` function. This function 
+Now we write our own version of GLFW's `waitOdinEvents` function. This function 
 reads our app's event queue - if any events have been added from any other 
 threads (like a timer/render request thread) it will exit. If there are no 
 events in total we should delay for ten millis and then loop. In this way we
@@ -215,7 +197,7 @@ Not quite (we're still running the thread and polling) - but good enough. In
 both cases we poll for SDL events and run `addInput` over any newly received 
 events. 
 
->         wait = do
+>         waitOdin = do
 >             pastEvents  <- appEvents <$> readTVarIO tvar
 >             inputEvents <- pollEvents
 >             let newEvents = concatMap fevent inputEvents
@@ -224,18 +206,19 @@ events.
 >             mapM_ addInput newEvents 
 >             -- exit if there are any events, else recurse and poll again
 >             when (null allEvents) $ do threadDelay 10 
->                                        wait
+>                                        waitOdin
 
-Our step function is identical to [part one][part-one]. Weeee!
+Our stepOdin function is near identical to [part one][part-one] but we need to
+swap `renderWithGLFW` with `renderWithSDL2`. 
 
->         step = do  
+>         stepOdin = do  
 >             t <- getCurrentTime
->             putStrLn $ "Stepping " ++ show t
+>             putStrLn $ "stepOdinping " ++ show t
 >             AppData net cache events lastUTC <- readTVarIO tvar
 >             let dt = max oneFrame $ realToFrac $ diffUTCTime t lastUTC 
 >                 ev = InputTime dt 
 >                 ((pic, nextNet), outs) = runWriter $ stepMany events ev net 
->             newCache <- renderFrame window rez cache pic
+>             newCache <- renderWithSDL2 window rez cache pic
 >             atomically $ writeTVar tvar $ AppData nextNet newCache [] t
 >             let needsUpdate = OutputNeedsUpdate `elem` outs
 >                 requests = filter (/= OutputNeedsUpdate) outs 
@@ -244,18 +227,18 @@ Our step function is identical to [part one][part-one]. Weeee!
 
 >         oneFrame = 1/30 
 
-In `applyOutput` we have to push an event in order to get `wait` to find a new
-event in its queue. This will cause `wait` to break and then `loop` will `step`.
-We can use a simple `InputUnknown` as the event.
+In `applyOutput` we have to push an event in order to get `waitOdin` to find a 
+new event in its queue. This will cause `waitOdin` to break and then `loop` will 
+`stepOdin`.  We can use a simple `InputUnknown` as the event.
 
 >         applyOutput OutputNeedsUpdate = void $ async $ do 
 >             threadDelay $ round (oneFrame * 1000)
 >             push $ InputUnknown "wake up" 
 >         applyOutput _ = return ()
 
-Then we stick our wait function in place of GLFW's `waitEvents`.
+Then we stick our waitOdin function in place of GLFW's `waitOdinEvents`.
 
->         loop = step >> wait >> loop
+>         loop = stepOdin >> waitOdin >> loop
 >     loop
 
 Conclusion

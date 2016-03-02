@@ -6,7 +6,7 @@ description: Creating the infrastructure for Odin using GLFW
 ---
 
 *tl;dr* This is part of a series where we'll be writing a roguelike using FRP 
-and Haskell. This first article is about setting up the main loop and rendering.  
+and Haskell. This first article is about setting up the main loop.
 
 Intro
 ================================================================================
@@ -114,40 +114,6 @@ side-effects to the network as a whole through our `WriterT` monad stack.
 
 > type Network = VarT Effect UserInput Pic
 
-Rendering
-================================================================================
-In order to render a frame we'll need a function that uses our resources the 
-window reference to paint a `Pic` to the screen. The pic is created by our 
-network each frame and each time we paint a frame update we'll get back a cache 
-of updated renderers. 
-
-> renderFrame :: Window -> Rez -> Cache IO Transform -> Pic 
->             -> IO (Cache IO Transform)
-> renderFrame window rez cache pic = do
-
-Just like any other opengl app we need to set the viewport and clear our buffers 
-before updating the screen.
-
->   (fbw,fbh) <- ctxFramebufferSize $ rezContext rez 
->   glViewport 0 0 (fromIntegral fbw) (fromIntegral fbh)
->   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
-
-Now we render our data using `renderPrims` and `toPaintedPrimitives`.  Defined 
-in [renderable][5] and [gelatin-picture][2] respectively, they do most of the 
-heavy lifting for us. `toPaintedPrimitives` turns our `Pic` into renderable 
-primitives - colored and textured lines and triangles. `renderPrims` renders the 
-list of primitives and returns a new cache, allocating new renderings for us 
-on-the-fly and cleaning up resources previously allocated by now stale renderers.
-
->   newCache <- renderPrims rez cache $ toPaintedPrimitives pic
-
-Now swap the buffers on our OpenGL window and return the new cache.
-
->   swapBuffers window 
->   shouldClose <- windowShouldClose window 
->   if shouldClose then exitSuccess else threadDelay 100
->   return newCache 
- 
 A Bit More Infrastructure
 ================================================================================
 Finally we can declare our main infrastructure type, `AppData`. An `AppData`
@@ -460,7 +426,7 @@ here.
 
 Now we can render our `Pic`.
 
->             newCache <- renderFrame window rez cache pic
+>             newCache <- renderWithGLFW window rez cache pic
 
 And write our new app state, making sure to clear out our events.
 
@@ -486,7 +452,7 @@ a second. Then we `push` an `InputTime` event into our app and call glfw's
 >             threadDelay $ round (oneFrame * 1000)
 >             postEmptyEvent
 >         applyOutput _ = return ()
-                        
+
 But what about our user input events? For this we can wire up glfw's nifty 
 callbacks. They'll simply push some events in our event queue.  
 
