@@ -23,6 +23,8 @@ data Action = ActionSetPicRenderer Uid (OdinConfig -> Picture ())
             | ActionSetTransform Uid (Maybe Transform)
             | ActionNone
 
+data AppError = AppImageLoadError Uid FilePath deriving (Show, Eq, Ord)
+
 type Effect = RWS () [Action] Uid
 
 data AppData = AppData { appNextId    :: Uid
@@ -31,16 +33,22 @@ data AppData = AppData { appNextId    :: Uid
                        , appRenderers :: IntMap (Renderer IO Transform)
                        , appConfig    :: OdinConfig
                        , appRez       :: Rez
+                       , appErrors    :: [AppError]
                        }
 
 data AppEvent = AppEventNone
+              | AppKeyEvent { keyMotion :: InputMotion
+                            , keyRepeat :: Bool
+                            , keySym    :: Keysym
+                            }
               | AppDropEvent FilePath
+              | AppErrorEvent AppError
               | AppQuit
               deriving (Show, Eq, Ord)
 
 handleEvent :: EventPayload -> IO AppEvent
-handleEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) =
-  if isQuit k then exitSuccess else return AppEventNone
+handleEvent (KeyboardEvent (KeyboardEventData _ m r k)) =
+  if isQuit k then exitSuccess else return $ AppKeyEvent m r k
 handleEvent (DropEvent (DropEventData cstr)) =
   AppDropEvent <$> peekCString cstr
 handleEvent _ = return AppEventNone
@@ -60,7 +68,8 @@ applyAction app (ActionSetImageRenderer (Uid uid) fp) = do
   mimg <- loadImage fp
   case mimg of
     Nothing  -> do putStrLn $ "Could not load the image " ++ show fp
-                   return app
+                   let errs = appErrors app ++ [AppImageLoadError (Uid uid) fp]
+                   return app { appErrors = errs }
     Just (V2 w h, tex) -> do
       let [w',h'] = map fromIntegral [w,h]
       rs <- mapM (texturePrimsRenderer $ appRez app) $ collectPrims $
@@ -69,11 +78,11 @@ applyAction app (ActionSetImageRenderer (Uid uid) fp) = do
       let (c,r) = foldl appendRenderer emptyRenderer rs
           f t   = bindTexAround tex $ r t
           render= (c,f)
-      return $ app{ appRenderers = IM.insert uid render $ appRenderers app }
+      return app{ appRenderers = IM.insert uid render $ appRenderers app }
 applyAction app (ActionSetTransform (Uid uid) (Just t)) =
-  return $ app{ appTransforms = IM.insert uid t $ appTransforms app }
+  return app{ appTransforms = IM.insert uid t $ appTransforms app }
 applyAction app (ActionSetTransform (Uid uid) Nothing) =
-  return $ app{ appTransforms = IM.delete uid $ appTransforms app }
+  return app{ appTransforms = IM.delete uid $ appTransforms app }
 
 runEvent :: AppData -> AppEvent -> IO AppData
 runEvent app ev = do
@@ -101,8 +110,28 @@ dropEvent = var f ~> onJust
   where f (AppDropEvent fp) = Just fp
         f _ = Nothing
 
+errorEvent :: Monad m => VarT m AppEvent (Event AppError)
+errorEvent = var f ~> onJust
+  where f (AppErrorEvent err) = Just err
+        f _ = Nothing
+
+anyKeydownEvent :: Monad m => VarT m AppEvent (Event ())
+anyKeydownEvent = var f ~> onTrue
+  where f (AppKeyEvent Pressed r k) = True
+        f _ = False
+
+-- | Wait indefinitely for an event to occur.
 waitForEvent :: Monad m => VarT m a (Event b) -> SplineT a () m b
 waitForEvent ev = pure () `_untilEvent` ev
+
+-- | Wait a specific number of frames for an event to occur.
+waitForEventFor :: Monad m
+                => Int -> VarT m a (Event b) -> SplineT a () m (Maybe b)
+waitForEventFor n ev = do
+  e <- race mappend (waitForEvent ev) (pure () `untilEvent_` (1 ~> after (n + 2)))
+  return $ case e of
+    Left err -> Just err
+    Right () -> Nothing
 
 renderPic :: (OdinConfig -> Picture ()) -> SplineT AppEvent () Effect Uid
 renderPic f = do
@@ -135,17 +164,33 @@ rootLogic = do
 
   fp <- pure () `_untilEvent` dropEvent
   deleteEntity pic
-  img <- renderImage fp
+  img  <- renderImage fp
+  merr <- waitForEventFor 1 errorEvent
+  case merr of
+    Just err -> do
+      errPic <- renderPic $ \cfg -> withFont (ocLegibleFont cfg) $
+        withFill (solid red) $ do
+          move 16 $ letters 128 16 $ show err
+          move 32 $ letters 128 16 "Press any key to continue."
+      waitForEvent anyKeydownEvent
+      deleteEntity errPic
+      rootLogic
+    Nothing -> do
+      title <- renderPic $ \cfg -> withFont (ocLegibleFont cfg) $
+        withFill (solid white) $
+          move 16 $ letters 128 16 $ show fp
+      return ()
   return ()
 
 main :: IO ()
 main = do
   (rez,window) <- startupSDL2Backend 800 600 "TileSet Maker v0.0" True
   cfg <- odinConfig
-  loop window $ AppData 1 (outputStream () rootLogic) mempty mempty cfg rez
+  loop window $ AppData 1 (outputStream () rootLogic) mempty mempty cfg rez []
     where loop window app = do
+            let errs = map AppErrorEvent $ appErrors app
             events <- pollEvents >>= mapM (handleEvent . eventPayload)
-            app' <- foldM runEvent app events
+            app' <- foldM runEvent app{ appErrors = []} $ errs ++ events
             renderApp window app'
             loop window app'
 
