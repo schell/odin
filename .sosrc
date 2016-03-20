@@ -2,6 +2,6 @@
   - .*\.l?hs$
   - .*\.cabal$
   commands:
-  - stack build :tileset-maker
+  - stack build 
   - hlint \0
-  - stack exec tileset-maker 
+  - stack exec tileset-maker

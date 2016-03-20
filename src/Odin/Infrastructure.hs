@@ -29,8 +29,6 @@ import Control.Monad
 import Control.Concurrent.STM.TVar
 import Control.Monad.Trans.RWS.Strict
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.Identity
-import Control.Monad.IO.Class
 import System.Exit
 import Linear.Affine (Point(..))
 
@@ -57,8 +55,9 @@ data OutputEvent = OutputEventUnknown String
                  | OutputQuit
                  deriving (Ord, Eq)
 
-type WrapIO = IdentityT IO
-type Effect = RWST Window [OutputEvent] () WrapIO
+data ReadData = ReadData { rdWindowSize :: V2 Int }
+
+type Effect = RWS ReadData [OutputEvent] ()
 type Pic = Picture ()
 type Signal = VarT Effect UserInput
 type Network = Signal Odin
@@ -68,16 +67,12 @@ type Sequence = SplineT UserInput Odin Effect
 --------------------------------------------------------------------------------
 data AppData = AppData { appNetwork :: Network
                        , appEvents  :: [UserInput]
-                       , appRenderer:: OdinRenderer
+                       , appCache   :: Cache IO PictureTransform
+                       , appConfig  :: OdinConfig
                        }
 --------------------------------------------------------------------------------
 -- Utilities
 --------------------------------------------------------------------------------
-queryWindowSize :: Effect (V2 Int)
-queryWindowSize = do
-    window <- ask
-    size   <- liftIO $ SDL.get $ SDL.windowSize window
-    return $ fromIntegral <$> size
 --------------------------------------------------------------------------------
 -- Network Streams
 --------------------------------------------------------------------------------
@@ -106,15 +101,16 @@ time :: VarT Effect UserInput Float
 time = deltas ~> requestUpdate
 
 windowSize :: VarT Effect a (V2 Int)
-windowSize = varM $ const queryWindowSize
+windowSize = varM $ const $ asks rdWindowSize
 --------------------------------------------------------------------------------
 -- Network Splines
 --------------------------------------------------------------------------------
-logStr :: Monad m => String -> SplineT a b (RWST r [OutputEvent] s m) ()
+logStr :: (Monad m, Monoid b)
+       => String -> SplineT a b (RWST r [OutputEvent] s m) ()
 logStr = lift . tell . (:[]) . OutputPutStrLn
 
-getWindowSize :: SplineT a b Effect (V2 Int)
-getWindowSize = lift queryWindowSize
+getWindowSize :: Monoid b => SplineT a b Effect (V2 Int)
+getWindowSize = lift $ asks rdWindowSize
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
@@ -162,19 +158,19 @@ applyOutput _ _ = return ()
 
 stepOdin :: TVar AppData -> Rez -> Window -> IO ()
 stepOdin tvar rez window = do
-    AppData net events renderer <- readTVarIO tvar
+    AppData net events cache cfg <- readTVarIO tvar
+    wsize <- uncurry V2 <$> (ctxWindowSize $ rezContext rez)
 
     let (e,es) = case events of
                      x:xs -> (x,xs)
                      []   -> (InputUnknown "no events", [])
+        readData = ReadData { rdWindowSize = wsize }
 
-    ((frame, nextNet), (), outs) <- runIdentityT $ runRWST (stepMany es e net)
-                                                           window ()
-    clearFrame rez
-    renderOdin renderer frame
-    updateWindowSDL2 window
+        ((frame, nextNet), (), outs) = runRWS (stepMany net es e) readData ()
 
-    atomically $ writeTVar tvar $ AppData nextNet [] renderer
+    newCache <- renderWithSDL2 window rez cache $ odinPic cfg frame
+
+    atomically $ writeTVar tvar $ AppData nextNet [] newCache cfg
 
     let needsUpdate = OutputNeedsUpdate `elem` outs
         requests = filter (/= OutputNeedsUpdate) outs
@@ -201,10 +197,10 @@ run myNet = do
     (rez,window) <- startupSDL2Backend 800 600 "Odin" True
     setWindowPosition window $ Absolute $ P $ V2 400 400
     cfg <- odinConfig
-    o   <- makeOdinRenderer rez cfg
-    tvar <- atomically $ newTVar AppData{ appNetwork  = myNet
-                                        , appRenderer = o
-                                        , appEvents   = []
+    tvar <- atomically $ newTVar AppData{ appNetwork = myNet
+                                        , appCache   = mempty
+                                        , appEvents  = []
+                                        , appConfig  = cfg
                                         }
     let loop = stepOdin tvar rez window >> waitOdin tvar >> loop
     loop

@@ -33,6 +33,5 @@ packages:
 #  - gelatin-glfw
 #  - gelatin-sdl2
 
-extra-deps: 
-- reactive-banana-1.1.0.0 
+extra-deps: []
 resolver: lts-5.2

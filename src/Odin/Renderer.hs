@@ -1,61 +1,48 @@
 module Odin.Renderer where
 
 import Gelatin.SDL2
-
 import Odin.Common
+import qualified Data.IntMap as IM
 
---renderStartScreen :: StartScreen
 --------------------------------------------------------------------------------
 -- Our big renderer
 --------------------------------------------------------------------------------
-data OdinRenderer = OdinRenderer
-  { orStartScreen :: Transform -> IO ()
-  , orGameOver :: Transform -> IO ()
-  , orPic :: Picture () -> IO ()
-  }
+odinPic :: OdinConfig -> Odin -> Picture GLuint ()
+odinPic cfg (OdinStart s) = startScreen cfg s
+odinPic cfg (OdinRun b) = boardScreen cfg b
+odinPic cfg (OdinEnd s) = gameOver cfg s
+odinPic cfg (OdinPic f) = f cfg
 --------------------------------------------------------------------------------
--- Start screen
+-- Screens
 --------------------------------------------------------------------------------
-startScreenPic :: OdinConfig -> Picture ()
-startScreenPic cfg = do
+startScreen :: OdinConfig -> StartScreen -> Picture GLuint ()
+startScreen cfg _ = do
   let fill = FillColor $ \(V2 _ y) -> V4 (abs y/70) (abs y/70) (abs y/70) 1
-      text = letters 128 64 "Odin"
-      logo = withFill fill $ withFont (ocFancyFont cfg) $ withFill fill text
-      instructions = withFont (ocLegibleFont cfg) $ withFill (solid grey) $
-                       letters 128 16 "Press any key to play"
-  move (V2 0 64) logo
-  move (V2 0 68) instructions
+      logo = letters $ filled (Name 0) (ocFancyFont cfg) 128 64
+               "Odin" fill
+      instructions = letters $ filled (Name 0) (ocLegibleFont cfg) 128 16
+                       "Press any key to play" $ solid grey
+  move (V2 0 64) $ draw logo
+  move (V2 0 68) $ draw instructions
 
-gameOverPic :: OdinConfig -> Picture ()
-gameOverPic cfg = do
-  move (V2 0 64) $ withFill (solid red) $ withFont (ocFancyFont cfg) $
-    letters 128 64 "Game Over"
-  move (V2 0 68) $ withFill (solid grey) $ withFont (ocLegibleFont cfg) $
-    letters 128 16 "Press any key to play again :)"
+drawInterface :: OdinConfig -> Interface -> Picture GLuint ()
+drawInterface cfg Interface = move (V2 10 16) $ withLetters $
+  filled (Name 0) (ocLegibleFont cfg) 128 16 "The interface" $ solid white
 
-makeStartScreen :: Rez -> OdinConfig -> IO (Transform -> IO ())
-makeStartScreen rez cfg =
-  snd <$> compileRenderer rez (startScreenPic cfg)
+drawBoardMap :: OdinConfig -> BoardMap -> V2 Int -> Picture GLuint ()
+drawBoardMap cfg (BoardMap m) size = withColor $ do
+  let V2 ww wh = fromIntegral <$> size
+  rectangle (V2 10 16) (V2 (ww - 10) (wh - 10)) $ const white
+  rectangle (V2 14 20) (V2 (ww - 14) (wh - 14)) $ const black
 
-makeGameOverScreen :: Rez -> OdinConfig -> IO (Transform -> IO ())
-makeGameOverScreen rez cfg =
-  snd <$> compileRenderer rez (gameOverPic cfg)
+boardScreen :: OdinConfig -> Board -> Picture GLuint ()
+boardScreen cfg (Board iface bmap size) = do
+  drawInterface cfg iface
+  drawBoardMap cfg bmap size
 
-makePicScreen :: Rez -> IO (Picture () -> IO ())
-makePicScreen rez = return $ \pic -> do
-  rc <- compileRenderer rez pic
-  snd rc mempty
-  fst rc
-
--- | Create the entire sum renderer.
-makeOdinRenderer :: Rez -> OdinConfig -> IO OdinRenderer
-makeOdinRenderer rez cfg =
-  OdinRenderer <$> (makeStartScreen rez cfg)
-               <*> (makeGameOverScreen rez cfg)
-               <*> (makePicScreen rez)
-
--- | Render the game.
-renderOdin :: OdinRenderer -> Odin -> IO ()
-renderOdin o (OdinStart _) = orStartScreen o mempty
-renderOdin o (OdinGameOver _) = orGameOver o mempty
-renderOdin o (OdinPic p) = orPic o p
+gameOver :: OdinConfig -> GameOverScreen -> Picture GLuint ()
+gameOver cfg _ = do
+  move (V2 0 64) $ withLetters $ filled (Name 0) (ocFancyFont cfg) 128 64
+    "Game Over" $ solid red
+  move (V2 0 68) $ withLetters $ filled (Name 0) (ocLegibleFont cfg) 128 16
+    "Press any key to play again :)" $ solid grey

@@ -2,14 +2,21 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Main where
 
-import           Gelatin.SDL2 as SDL2 hiding (get, Event)
+import           Gelatin.SDL2 hiding (get, Event, time, windowSize)
+import           Codec.Picture
+import           Codec.Picture.Types
 import           Control.Varying
 import           Control.Concurrent (threadDelay)
 import           Control.Monad
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.RWS.Strict
-import qualified Data.IntMap as IM
+import           Control.Monad.IO.Class (liftIO, MonadIO)
+import           Control.Concurrent.Async
+import qualified Data.IntMap.Strict as IM
 import           Data.IntMap (IntMap)
+import           Data.Time.Clock
+import           Data.Either (either)
+import           Data.Foldable (foldl')
 import           System.Exit (exitSuccess)
 import           Foreign.C.String (peekCString)
 
@@ -17,34 +24,64 @@ import           Odin.Common
 
 newtype Uid = Uid { unUid :: Int } deriving (Show, Eq, Ord, Enum, Num)
 
-data Action = ActionSetPicRenderer Uid (OdinConfig -> Picture ())
-            | ActionSetImageRenderer Uid FilePath
-            | ActionDeleteRenderer Uid
-            | ActionSetTransform Uid (Maybe Transform)
-            | ActionNone
+newtype Parent = Parent Uid
 
-data AppError = AppImageLoadError Uid FilePath deriving (Show, Eq, Ord)
+data LogLevel = LogLevelInfo
+              | LogLevelWarn
+              | LogLevelError
+              deriving (Show, Eq, Ord, Bounded, Enum)
 
-type Effect = RWS () [Action] Uid
+data Action = ActionNone
+            | ActionLog LogLevel String
+            | ActionGetImageSize Uid FilePath
 
-data AppData = AppData { appNextId    :: Uid
-                       , appLogic     :: VarT Effect AppEvent ()
-                       , appTransforms:: IntMap Transform
-                       , appRenderers :: IntMap (Renderer IO Transform)
-                       , appConfig    :: OdinConfig
-                       , appRez       :: Rez
-                       , appErrors    :: [AppError]
-                       }
+applyAction :: Action -> IO ()
+applyAction ActionNone = return ()
+applyAction (ActionLog lvl str) = putStrLn $ concat [show lvl, ": ", str]
+
+data AppData = AppData
+  { appNextId :: Uid
+  , appLogic  :: VarT Effect AppEvent (Picture GLuint ())
+  , appCache  :: Cache IO PictureTransform
+  , appUTC    :: UTCTime
+  , appConfig :: OdinConfig
+  , appRez    :: Rez
+  }
+
+appData :: OdinConfig -> Rez -> UTCTime -> AppData
+appData cfg rez utc =
+  AppData { appNextId = 0
+          , appLogic  = pure blank
+          , appUTC    = utc
+          , appCache  = mempty
+          , appConfig = cfg
+          , appRez    = rez
+          }
+
+data ReadData = ReadData { rdWindowSize :: V2 Int
+                         , rdOdinConfig :: OdinConfig
+                         }
+
+type StateData = Uid
+
+type Effect = RWST ReadData [Action] StateData IO
+
 
 data AppEvent = AppEventNone
+              | AppEventTime Float
+              | AppEventFrame
               | AppKeyEvent { keyMotion :: InputMotion
                             , keyRepeat :: Bool
                             , keySym    :: Keysym
                             }
               | AppDropEvent FilePath
-              | AppErrorEvent AppError
               | AppQuit
-              deriving (Show, Eq, Ord)
+
+data Delta = DeltaTime Float
+           | DeltaFrames Int
+
+type AppSequence = SplineT AppEvent (Picture GLuint ()) Effect
+type AppSignal = VarT Effect AppEvent
 
 handleEvent :: EventPayload -> IO AppEvent
 handleEvent (KeyboardEvent (KeyboardEventData _ m r k)) =
@@ -53,144 +90,157 @@ handleEvent (DropEvent (DropEventData cstr)) =
   AppDropEvent <$> peekCString cstr
 handleEvent _ = return AppEventNone
 
-applyAction :: AppData -> Action -> IO AppData
-applyAction app ActionNone = return app
-applyAction app (ActionDeleteRenderer (Uid uid)) =
-  case IM.lookup uid $ appRenderers app of
-    Nothing -> do putStrLn $ "Could not clean renderer for " ++ show (Uid uid)
-                  return app
-    Just r  -> do fst r
-                  return app{ appRenderers = IM.delete uid $ appRenderers app }
-applyAction app (ActionSetPicRenderer (Uid uid) f) = do
-  r <- compileRenderer (appRez app) $ f (appConfig app)
-  return $ app{ appRenderers = IM.insert uid r $ appRenderers app }
-applyAction app (ActionSetImageRenderer (Uid uid) fp) = do
-  mimg <- loadImage fp
-  case mimg of
-    Nothing  -> do putStrLn $ "Could not load the image " ++ show fp
-                   let errs = appErrors app ++ [AppImageLoadError (Uid uid) fp]
-                   return app { appErrors = errs }
-    Just (V2 w h, tex) -> do
-      let [w',h'] = map fromIntegral [w,h]
-      rs <- mapM (texturePrimsRenderer $ appRez app) $ collectPrims $
-        fan (V2 0 0, V2 0 0) (V2 w' 0, V2 1 0) (V2 w' h', V2 1 1)
-            [(V2 0 h', V2 0 1)]
-      let (c,r) = foldl appendRenderer emptyRenderer rs
-          f t   = bindTexAround tex $ r t
-          render= (c,f)
-      return app{ appRenderers = IM.insert uid render $ appRenderers app }
-applyAction app (ActionSetTransform (Uid uid) (Just t)) =
-  return app{ appTransforms = IM.insert uid t $ appTransforms app }
-applyAction app (ActionSetTransform (Uid uid) Nothing) =
-  return app{ appTransforms = IM.delete uid $ appTransforms app }
-
-runEvent :: AppData -> AppEvent -> IO AppData
-runEvent app ev = do
-  let (((),v),uid,actions) = runRWS (runVarT (appLogic app) ev) () (appNextId app)
-  foldM applyAction app{ appNextId = uid, appLogic = v } actions
-
-renderApp :: Window -> AppData -> IO ()
-renderApp window app = do
-  let transforms = appTransforms app
-      renderers  = snd <$> appRenderers app
-      tfs = IM.elems $ IM.intersectionWith (,) transforms renderers
-  clearFrame $ appRez app
-  mapM_ (\(t,r) -> r t) tfs
-  updateWindowSDL2 window
-  threadDelay 100
-
-fresh :: SplineT a b Effect Uid
-fresh = lift $ do
+fresh :: Effect Uid
+fresh = do
   uid <- get
   modify (+1)
   return uid
+
+infoStr :: String -> AppSequence ()
+infoStr str = lift $ tell [ActionLog LogLevelInfo str]
+
+getIconFont :: Effect FontData
+getIconFont = asks (ocIconFont . rdOdinConfig)
+
+getFancyFont :: Effect FontData
+getFancyFont = asks (ocFancyFont . rdOdinConfig)
+
+getLegibleFont :: Effect FontData
+getLegibleFont = asks (ocLegibleFont . rdOdinConfig)
+
+asyncEvent :: MonadIO m => IO b -> VarT m a (Event (Either String b))
+asyncEvent f = flip resultStream () $ do
+  a <- liftIO $ async f
+  let ev = varM (const $ liftIO $ poll a) ~> onJust
+  meb <- pure () `_untilEvent` ev
+  return $ case meb of
+    Left exc -> Left $ show exc
+    Right b -> Right b
+
+reqImage :: FilePath -> AppSignal (Event (Either String (V2 Int, GLuint)))
+reqImage fp = flip resultStream () $ do
+  eimg <- pure () `_untilEvent` asyncEvent (readImage fp)
+  case join eimg of
+    Left err  -> return $ Left err
+    Right img -> Right <$> liftIO (loadTexture img)
 
 dropEvent :: Monad m => VarT m AppEvent (Event FilePath)
 dropEvent = var f ~> onJust
   where f (AppDropEvent fp) = Just fp
         f _ = Nothing
 
-errorEvent :: Monad m => VarT m AppEvent (Event AppError)
-errorEvent = var f ~> onJust
-  where f (AppErrorEvent err) = Just err
-        f _ = Nothing
-
 anyKeydownEvent :: Monad m => VarT m AppEvent (Event ())
 anyKeydownEvent = var f ~> onTrue
-  where f (AppKeyEvent Pressed r k) = True
+  where f (AppKeyEvent Pressed _ _) = True
         f _ = False
 
--- | Wait indefinitely for an event to occur.
-waitForEvent :: Monad m => VarT m a (Event b) -> SplineT a () m b
-waitForEvent ev = pure () `_untilEvent` ev
+windowSize :: VarT Effect a (V2 Int)
+windowSize = varM $ const $ asks rdWindowSize
 
--- | Wait a specific number of frames for an event to occur.
-waitForEventFor :: Monad m
-                => Int -> VarT m a (Event b) -> SplineT a () m (Maybe b)
-waitForEventFor n ev = do
-  e <- race mappend (waitForEvent ev) (pure () `untilEvent_` (1 ~> after (n + 2)))
-  return $ case e of
-    Left err -> Just err
-    Right () -> Nothing
+halfWindowSize :: VarT Effect a (V2 Float)
+halfWindowSize = (fmap fromIntegral <$> windowSize) / 2
 
-renderPic :: (OdinConfig -> Picture ()) -> SplineT AppEvent () Effect Uid
-renderPic f = do
-  uid <- fresh
-  lift $ tell [ ActionSetPicRenderer uid f
-              , ActionSetTransform uid $ Just mempty
-              ]
-  step ()
-  return uid
+time :: Monad m => VarT m AppEvent Float
+time = var f ~> onJust ~> foldStream (+) 0
+  where f (AppEventTime dt) = Just dt
+        f _ = Nothing
 
-renderImage :: FilePath -> SplineT AppEvent () Effect Uid
-renderImage fp = do
-  uid <- fresh
-  lift $ tell [ ActionSetImageRenderer uid fp
-              , ActionSetTransform uid $ Just mempty
-              ]
-  step ()
-  return uid
+frames :: Monad m => VarT m AppEvent Int
+frames = var f ~> accumulate (+) 0 ~> vstrace "frames: "
+  where f AppEventFrame = 1
+        f _ = 0
 
-deleteEntity :: Uid -> SplineT AppEvent () Effect ()
-deleteEntity uid = do
-  lift $ tell [ActionDeleteRenderer uid, ActionSetTransform uid Nothing]
-  step ()
+faPlusSquareO :: Char
+faPlusSquareO = '\xf196'
 
-rootLogic :: SplineT AppEvent () Effect ()
+faCircleONotch :: Char
+faCircleONotch = '\xf1ce'
+
+crosshair :: V2 Float -> Picture GLuint ()
+crosshair vec = move vec $ draw $ polylines [StrokeWidth 3, StrokeFeather 1] $
+  do let len = 50
+         c   = white `alpha` 0.75
+     lineStart (0,c) $ lineTo (V2 len    0, c)
+     lineStart (0,c) $ lineTo (V2 (-len) 0, c)
+     lineStart (0,c) $ lineTo (V2 0    len, c)
+     lineStart (0,c) $ lineTo (V2 0 (-len), c)
+
+spinner :: Float -> V2 Float -> Picture GLuint ()
+spinner t = rotate (pi * t) . crosshair
+
+rootLogic :: AppSequence ()
 rootLogic = do
-  pic <- renderPic $ \cfg -> withFont (ocFancyFont cfg) $
-    withFill (solid white) $ move 32 $
-      letters 128 32 "Drag an image to the window to start a new tileset."
+  fancy <- lift getFancyFont
+  icons <- lift getIconFont
 
-  fp <- pure () `_untilEvent` dropEvent
-  deleteEntity pic
-  img  <- renderImage fp
-  merr <- waitForEventFor 1 errorEvent
-  case merr of
-    Just err -> do
-      errPic <- renderPic $ \cfg -> withFont (ocLegibleFont cfg) $
-        withFill (solid red) $ do
-          move 16 $ letters 128 16 $ show err
-          move 32 $ letters 128 16 "Press any key to continue."
-      waitForEvent anyKeydownEvent
-      deleteEntity errPic
+  let text = "Drag and drop an image to start a new tileset."
+      instructions = move (V2 0 32) $ draw $ letters $
+                       filled (Name 0) fancy 128 32 text $ solid white
+  fp <- pure instructions `_untilEvent` dropEvent
+  infoStr $ "Dropped file " ++ fp
+  markupImage fp
+  rootLogic
+
+markupImage :: FilePath -> AppSequence ()
+markupImage fp = do
+  eimg <- (spinner <$> time <*> halfWindowSize) `_untilEvent` reqImage fp
+  infoStr $ "Got file " ++ fp
+  legible <- lift $ asks (ocLegibleFont . rdOdinConfig)
+  case eimg of
+    Left err -> do
+      let errText = do let errStr = show err
+                           goStr  = "Press any key to continue."
+                       move 16 $ draw $ letters $
+                         filled (Name 0) legible 128 16 errStr $ solid red
+                       move 32 $ draw $ letters $
+                         filled (Name 0) legible 128 16 goStr $ solid red
+      pure errText `_untilEvent_` anyKeydownEvent
       rootLogic
-    Nothing -> do
-      title <- renderPic $ \cfg -> withFont (ocLegibleFont cfg) $
-        withFill (solid white) $
-          move 16 $ letters 128 16 $ show fp
-      return ()
-  return ()
+    Right (V2 iw0 ih0, tx) -> do
+      let [iw,ih] = map fromIntegral [iw0,ih0]
+          title = unwords [ show fp, concat ["(",show iw,"x", show ih, ")"]]
+          text (V2 _ h) = move (V2 8 (fromIntegral h) - 8) $ draw $ letters $
+                            filled (Name 0) legible 128 16 title $ solid white
+
+          img = draw $ textured tx $
+                  fan (0,0) (V2 iw 0,V2 1 0) (V2 iw ih, V2 1 1)
+                      [(V2 0 ih, V2 0 1)]
+          pic ws = text ws >> img
+      (pic <$> windowSize) `_untilEvent_` anyKeydownEvent
+  step blank
+  (spinner <$> time <*> halfWindowSize) `_untilEvent_` anyKeydownEvent
 
 main :: IO ()
 main = do
   (rez,window) <- startupSDL2Backend 800 600 "TileSet Maker v0.0" True
   cfg <- odinConfig
-  loop window $ AppData 1 (outputStream () rootLogic) mempty mempty cfg rez []
-    where loop window app = do
-            let errs = map AppErrorEvent $ appErrors app
-            events <- pollEvents >>= mapM (handleEvent . eventPayload)
-            app' <- foldM runEvent app{ appErrors = []} $ errs ++ events
-            renderApp window app'
-            loop window app'
+  utc <- getCurrentTime
+  let app = (appData cfg rez utc){ appLogic = outputStream rootLogic blank }
+  loop window [] app
+
+    where loop window actions app = do
+            threadDelay 100
+            mapM_ applyAction actions
+            events  <- pollEvents >>= mapM (handleEvent . eventPayload)
+
+            wsize <- ctxWindowSize $ rezContext $ appRez app
+            newUtc <- getCurrentTime
+
+            let readData  = ReadData { rdWindowSize = uncurry V2 wsize
+                                     , rdOdinConfig = appConfig app
+                                     }
+                stateData = appNextId app
+                evs = events ++ [AppEventFrame]
+                dt  = realToFrac $ diffUTCTime newUtc $ appUTC app
+                ev  = AppEventTime dt
+                net = stepMany (appLogic app) evs ev
+
+            ((ui,v),uid,actions1) <- runRWST net readData stateData
+            cache <- renderWithSDL2 window (appRez app) (appCache app) ui
+
+            loop window actions1 app{ appNextId = uid
+                                    , appLogic = v
+                                    , appCache = cache
+                                    , appUTC = newUtc
+                                    }
 

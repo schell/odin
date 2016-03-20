@@ -4,8 +4,16 @@ import Gelatin.SDL2 hiding (Event)
 import System.FilePath
 import System.Directory
 import System.Exit
-import Control.Varying
-import Control.Monad (void)
+import Data.Map (Map)
+
+loadTileSet :: FilePath -> FilePath -> FilePath -> IO (Either String TileSet)
+loadTileSet iface terrain avatar = do
+  ma <- loadImageAsTexture iface
+  mb <- loadImageAsTexture terrain
+  mc <- loadImageAsTexture avatar
+  return $ case TileSet <$> ma <*> mb <*> mc of
+    Nothing -> Left "Could not load tileset."
+    Just ts -> Right ts
 
 odinConfig :: IO OdinConfig
 odinConfig = do
@@ -15,24 +23,27 @@ odinConfig = do
     let fonts = assets </> "fonts"
     ed <- loadFont $ fonts </> "Deutsch.ttf"
     eh <- loadFont $ fonts </> "Hack-Regular.ttf"
-    (deutsch, hack) <- case (,) <$> ed <*> eh of
+    ef <- loadFont $ fonts </> "fontawesome-webfont.ttf"
+    (deutsch, hack, awe) <- case (,,) <$> ed <*> eh <*> ef of
         Left err -> do print err
                        exitFailure
         Right fs -> return fs
     -- Define our tileset
-    let images = assets </> "images"
-        tileset  = TileSet { tsInterface = images </> "Interface.png"
-                           , tsTerrain = images </> "Terrain.png"
-                           , tsAvatar = images </> "Avatar.png"
-                           }
+    let images = assets </> "images" </> "oryx_roguelike_2.0"
+        iface = images </> "Interface.png"
+        terrain = images </> "Terrain.png"
+        avatar = images </> "Avatar.png"
+    tileset <- do ets <- loadTileSet iface terrain avatar
+                  case ets of
+                    Left err -> do putStrLn err
+                                   exitFailure
+                    Right ts -> return ts
+
     return OdinConfig { ocFancyFont = deutsch
                  , ocLegibleFont = hack
+                 , ocIconFont = awe
                  , ocTileSet = tileset
                  }
-
-
-_untilEvent_ :: Monad m => VarT m a b -> VarT m a (Event c) -> SplineT a b m ()
-_untilEvent_ = (void .) . untilEvent
 
 isQuit :: Keysym -> Bool
 isQuit (Keysym (Scancode 20) (Keycode 113) m) = any ($ m)
@@ -45,16 +56,17 @@ isQuit _ = False
 --------------------------------------------------------------------------------
 -- A tileset for our renderer
 --------------------------------------------------------------------------------
-data TileSet = TileSet { tsInterface :: FilePath
-                       , tsTerrain   :: FilePath
-                       , tsAvatar    :: FilePath
+data TileSet = TileSet { tsInterface :: GLuint
+                       , tsTerrain   :: GLuint
+                       , tsAvatar    :: GLuint
                        }
 --------------------------------------------------------------------------------
 -- A configuration type for displaying Odin
 --------------------------------------------------------------------------------
-data OdinConfig = OdinConfig { ocFancyFont :: FontData
+data OdinConfig = OdinConfig { ocFancyFont   :: FontData
                              , ocLegibleFont :: FontData
-                             , ocTileSet :: TileSet
+                             , ocIconFont    :: FontData
+                             , ocTileSet     :: TileSet
                              }
 --------------------------------------------------------------------------------
 -- The startup screen
@@ -65,9 +77,30 @@ data StartScreen = StartScreenWait
 --------------------------------------------------------------------------------
 data GameOverScreen = GameOverScreen
 --------------------------------------------------------------------------------
+-- The character select screen
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- The main game
+--------------------------------------------------------------------------------
+data Interface = Interface
+data Tile = TileStone
+          | TileWater
+
+newtype BoardMap = BoardMap { unBoardMap :: Map (Int,Int) Tile }
+
+instance Monoid BoardMap where
+  mempty = BoardMap mempty
+  mappend (BoardMap a) (BoardMap b) = BoardMap $ a `mappend` b
+
+data Board = Board { bInterface :: Interface
+                   , bMap       :: BoardMap
+                   , bSize      :: V2 Int
+                   }
+--------------------------------------------------------------------------------
 -- The entire sum type
 --------------------------------------------------------------------------------
 data Odin = OdinStart StartScreen
-          | OdinGameOver GameOverScreen
-          | OdinPic (Picture ())
+          | OdinRun Board
+          | OdinEnd GameOverScreen
+          | OdinPic (OdinConfig -> Picture GLuint ())
 
