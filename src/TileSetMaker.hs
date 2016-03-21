@@ -7,16 +7,17 @@ import           Codec.Picture
 import           Codec.Picture.Types
 import           Control.Varying
 import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Async hiding (race)
 import           Control.Monad
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.RWS.Strict
 import           Control.Monad.IO.Class (liftIO, MonadIO)
-import           Control.Concurrent.Async
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap (IntMap)
 import           Data.Time.Clock
 import           Data.Either (either)
 import           Data.Foldable (foldl')
+import           Data.Monoid ((<>))
 import           System.Exit (exitSuccess)
 import           Foreign.C.String (peekCString)
 
@@ -70,11 +71,12 @@ type Effect = RWST ReadData [Action] StateData IO
 data AppEvent = AppEventNone
               | AppEventTime Float
               | AppEventFrame
-              | AppKeyEvent { keyMotion :: InputMotion
+              | AppEventKey { keyMotion :: InputMotion
                             , keyRepeat :: Bool
                             , keySym    :: Keysym
                             }
-              | AppDropEvent FilePath
+              | AppEventDrop FilePath
+              | AppEventWheel (V2 Int)
               | AppQuit
 
 data Delta = DeltaTime Float
@@ -85,9 +87,11 @@ type AppSignal = VarT Effect AppEvent
 
 handleEvent :: EventPayload -> IO AppEvent
 handleEvent (KeyboardEvent (KeyboardEventData _ m r k)) =
-  if isQuit k then exitSuccess else return $ AppKeyEvent m r k
+  if isQuit k then exitSuccess else return $ AppEventKey m r k
 handleEvent (DropEvent (DropEventData cstr)) =
-  AppDropEvent <$> peekCString cstr
+  AppEventDrop <$> peekCString cstr
+handleEvent (MouseWheelEvent (MouseWheelEventData _ _ v)) =
+  return $ AppEventWheel (fromIntegral <$> v)
 handleEvent _ = return AppEventNone
 
 fresh :: Effect Uid
@@ -126,13 +130,18 @@ reqImage fp = flip resultStream () $ do
 
 dropEvent :: Monad m => VarT m AppEvent (Event FilePath)
 dropEvent = var f ~> onJust
-  where f (AppDropEvent fp) = Just fp
+  where f (AppEventDrop fp) = Just fp
         f _ = Nothing
 
 anyKeydownEvent :: Monad m => VarT m AppEvent (Event ())
 anyKeydownEvent = var f ~> onTrue
-  where f (AppKeyEvent Pressed _ _) = True
+  where f (AppEventKey Pressed _ _) = True
         f _ = False
+
+scrollEvent :: Monad m => VarT m AppEvent (Event (V2 Int))
+scrollEvent = var f ~> onJust
+  where f (AppEventWheel v) = Just v
+        f _ = Nothing
 
 windowSize :: VarT Effect a (V2 Int)
 windowSize = varM $ const $ asks rdWindowSize
@@ -181,6 +190,14 @@ rootLogic = do
   markupImage fp
   rootLogic
 
+transformPic :: Float -> Picture GLuint () -> AppSequence ()
+transformPic s pic = do
+  let pic1 = scale (V2 s s) pic
+  step pic1
+  V2 _ scroll <- pure pic1 `_untilEvent` scrollEvent
+  let s1 = max 0.02 (s + fromIntegral scroll/20)
+  transformPic s1 pic
+
 markupImage :: FilePath -> AppSequence ()
 markupImage fp = do
   eimg <- (spinner <$> time <*> halfWindowSize) `_untilEvent` reqImage fp
@@ -198,15 +215,16 @@ markupImage fp = do
       rootLogic
     Right (V2 iw0 ih0, tx) -> do
       let [iw,ih] = map fromIntegral [iw0,ih0]
-          title = unwords [ show fp, concat ["(",show iw,"x", show ih, ")"]]
+          title = unwords [concat ["(",show iw,"x", show ih, ")"], show fp]
           text (V2 _ h) = move (V2 8 (fromIntegral h) - 8) $ draw $ letters $
                             filled (Name 0) legible 128 16 title $ solid white
 
           img = draw $ textured tx $
                   fan (0,0) (V2 iw 0,V2 1 0) (V2 iw ih, V2 1 1)
                       [(V2 0 ih, V2 0 1)]
-          pic ws = text ws >> img
-      (pic <$> windowSize) `_untilEvent_` anyKeydownEvent
+      _ <- race (<>) (transformPic 1 img) ((text <$> windowSize) `_untilEvent_` never)
+      return ()
+
   step blank
   (spinner <$> time <*> halfWindowSize) `_untilEvent_` anyKeydownEvent
 
