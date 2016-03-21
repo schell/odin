@@ -3,6 +3,7 @@
 module Main where
 
 import           Gelatin.SDL2 hiding (get, Event, time, windowSize)
+import           Linear.Affine (Point(..))
 import           Codec.Picture
 import           Codec.Picture.Types
 import           Control.Varying
@@ -76,6 +77,8 @@ data AppEvent = AppEventNone
                             , keySym    :: Keysym
                             }
               | AppEventDrop FilePath
+              | AppEventMouseMotion (V2 Int) (V2 Int)
+              | AppEventMouseButton MouseButton InputMotion (V2 Int)
               | AppEventWheel (V2 Int)
               | AppQuit
 
@@ -92,6 +95,10 @@ handleEvent (DropEvent (DropEventData cstr)) =
   AppEventDrop <$> peekCString cstr
 handleEvent (MouseWheelEvent (MouseWheelEventData _ _ v)) =
   return $ AppEventWheel (fromIntegral <$> v)
+handleEvent (MouseMotionEvent (MouseMotionEventData _ _ _ (P p) v)) =
+  return $ AppEventMouseMotion (fromIntegral <$> p) (fromIntegral <$> v)
+handleEvent (MouseButtonEvent (MouseButtonEventData _ i _ btn _ (P v))) =
+  return $ AppEventMouseButton btn i $ fromIntegral <$> v
 handleEvent _ = return AppEventNone
 
 fresh :: Effect Uid
@@ -138,9 +145,23 @@ anyKeydownEvent = var f ~> onTrue
   where f (AppEventKey Pressed _ _) = True
         f _ = False
 
-scrollEvent :: Monad m => VarT m AppEvent (Event (V2 Int))
-scrollEvent = var f ~> onJust
+mouseWheelEvent :: Monad m => VarT m AppEvent (Event (V2 Int))
+mouseWheelEvent = var f ~> onJust
   where f (AppEventWheel v) = Just v
+        f _ = Nothing
+
+mouseButtonEvent :: Monad m
+           => MouseButton -> InputMotion -> VarT m AppEvent (Event (V2 Int))
+mouseButtonEvent btn action = var f ~> onJust
+  where f (AppEventMouseButton btn0 action0 v) =
+          if btn0 == btn && action0 == action
+          then Just v
+          else Nothing
+        f _ = Nothing
+
+mouseMotionEvent :: Monad m => VarT m AppEvent (Event (V2 Int, V2 Int))
+mouseMotionEvent = var f ~> onJust
+  where f (AppEventMouseMotion p v) = Just (p,v)
         f _ = Nothing
 
 windowSize :: VarT Effect a (V2 Int)
@@ -190,13 +211,41 @@ rootLogic = do
   markupImage fp
   rootLogic
 
-transformPic :: Float -> Picture GLuint () -> AppSequence ()
-transformPic s pic = do
-  let pic1 = scale (V2 s s) pic
-  step pic1
-  V2 _ scroll <- pure pic1 `_untilEvent` scrollEvent
-  let s1 = max 0.02 (s + fromIntegral scroll/20)
-  transformPic s1 pic
+data LoadedPic = LoadedPic { lpTex   :: GLuint
+                           , lpSize  :: V2 Int
+                           , lpPos   :: V2 Int
+                           , lpScale :: Float
+                           }
+
+drawLoadedPic :: LoadedPic -> Picture GLuint ()
+drawLoadedPic lp = do
+  let V2 w h = fromIntegral <$> lpSize lp
+      p = fromIntegral <$> lpPos lp
+      s = V2 (lpScale lp) (lpScale lp)
+      t = lpTex lp
+  move p $ scale s $ withTexture t $
+      fan (0,0) (V2 w 0,V2 1 0) (V2 w h, V2 1 1) [(V2 0 h, V2 0 1)]
+
+dragPic :: LoadedPic -> V2 Int -> AppSequence LoadedPic
+dragPic lp offset = do
+  let mouseUp = mouseButtonEvent ButtonLeft Released
+      lp1 = lp{ lpPos = lpPos lp + offset }
+  (p,e) <- pure (drawLoadedPic lp1) `untilEvent` eitherE mouseUp mouseMotionEvent
+  case e of
+    Left _ -> transformPic lp{ lpPos = lpPos lp + offset }
+    Right (_,v) -> step p >> dragPic lp (offset + v)
+
+transformPic :: LoadedPic -> AppSequence LoadedPic
+transformPic lp = do
+  let scaleEvent :: Monad m => VarT m AppEvent (Event Float)
+      scaleEvent = fmap (\(V2 _ y) -> fromIntegral y) <$> mouseWheelEvent
+      clickEvent = mouseButtonEvent ButtonLeft Pressed
+      pic = drawLoadedPic lp
+  step pic
+  e <- pure pic `_untilEvent` eitherE clickEvent scaleEvent
+  case e of
+    Left _ -> dragPic lp 0
+    Right s -> transformPic lp{ lpScale = s/20 + lpScale lp }
 
 markupImage :: FilePath -> AppSequence ()
 markupImage fp = do
@@ -213,16 +262,9 @@ markupImage fp = do
                          filled (Name 0) legible 128 16 goStr $ solid red
       pure errText `_untilEvent_` anyKeydownEvent
       rootLogic
-    Right (V2 iw0 ih0, tx) -> do
-      let [iw,ih] = map fromIntegral [iw0,ih0]
-          title = unwords [concat ["(",show iw,"x", show ih, ")"], show fp]
-          text (V2 _ h) = move (V2 8 (fromIntegral h) - 8) $ draw $ letters $
-                            filled (Name 0) legible 128 16 title $ solid white
-
-          img = draw $ textured tx $
-                  fan (0,0) (V2 iw 0,V2 1 0) (V2 iw ih, V2 1 1)
-                      [(V2 0 ih, V2 0 1)]
-      _ <- race (<>) (transformPic 1 img) ((text <$> windowSize) `_untilEvent_` never)
+    Right (size, tx) -> do
+      let lp = LoadedPic tx (fromIntegral <$> size) 0 1
+      nlp <- transformPic lp
       return ()
 
   step blank
