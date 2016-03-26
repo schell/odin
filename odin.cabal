@@ -63,16 +63,19 @@ executable tileset-maker
                        varying >= 0.5 && < 0.6,
                        gelatin-sdl2 >= 0.0 && < 0.1,
                        gelatin-gl >= 0.0 && < 0.1,
+                       gelatin-picture >= 0.0 && < 0.1,
+                       gelatin-core >= 0.0 && < 0.1,
                        sdl2 >= 2.1 && < 2.2,
                        directory >= 1.2 && < 1.3,
                        filepath >= 1.4 && < 1.5,
                        linear >= 1.20 && < 1.21,
                        FontyFruity >= 0.5.3 && < 0.6,
                        JuicyPixels >= 3.2 && < 3.3,
-                       free >= 4.12 && < 4.13
-
+                       free >= 4.12 && < 4.13,
+                       hashable >= 1.2 && < 1.3
 
 executable part-two
+  buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N
   -- .hs or .lhs file containing the Main module.
   main-is:             Part-Two.hs
