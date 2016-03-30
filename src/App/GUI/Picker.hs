@@ -1,4 +1,4 @@
-module Odin.GUI.Picker where
+module App.GUI.Picker where
 
 import           Gelatin.Picture
 import           Control.Monad (forM_)

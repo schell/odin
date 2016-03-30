@@ -4,4 +4,4 @@
   commands:
   - stack build --executable-profiling --library-profiling --ghc-options="-threaded -rtsopts -fprof-auto -with-rtsopts=-N"
   - hlint \0
-  - stack exec tileset-maker -- +RTS -p
+  - stack exec sandbox -- +RTS -p
