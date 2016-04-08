@@ -1,3 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE LambdaCase #-}
 module App.Framework where
 
 import           Gelatin.SDL2
@@ -5,16 +9,24 @@ import           SDL hiding (windowSize, freeCursor)
 import qualified SDL.Raw.Event as Raw
 import qualified SDL.Raw.Enum as Raw
 import qualified SDL.Raw.Types as Raw
+import           Codec.Picture (readImage)
 import           Linear.Affine (Point(..))
-import Control.Monad (when, foldM)
+import           Control.Monad (when, foldM)
 import           Control.Varying
 import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Async
+import           Control.Concurrent.STM
 import           Control.Monad.Trans.RWS.Strict
 import           Data.Foldable (forM_)
+import           Data.Functor.Identity
 import           Data.Time.Clock
 import qualified Data.Map.Strict as M
-import qualified Data.Text as Text
-import           System.Exit (exitSuccess, exitFailure)
+import qualified Data.IntMap.Strict as IM
+import qualified Data.Vector.Storable.Mutable as MV
+import           Data.Vector.Storable.Mutable (IOVector)
+import qualified Data.Vector as V
+import           Data.Vector (Vector)
+import           System.Exit (exitFailure)
 import           System.FilePath
 import           System.Directory
 import           Foreign.C.String (peekCString)
@@ -34,7 +46,7 @@ cursorToSystem :: CursorType -> Raw.SystemCursor
 cursorToSystem CursorHand = Raw.SDL_SYSTEM_CURSOR_HAND
 
 -- | Apply an action to the outside world and optionally to the app itself.
-applyAction :: AppData -> Action -> IO AppData
+applyAction :: AppData a -> Action -> IO (AppData a)
 applyAction app ActionNone = return app
 applyAction app (ActionLog lvl str) = do
   putStrLn $ concat [show lvl, ": ", str]
@@ -69,13 +81,32 @@ applyAction app (ActionSetTextEditing shouldStart) = do
     then startTextInput $ Raw.Rect 0 0 100 100
     else stopTextInput
   return app
+applyAction app (ActionLoadImage (Uid k) fp) = do
+  a <- async $ readImage fp
+  return app{ appAsyncs = IM.insert k (AsyncThreadImageLoad a) $ appAsyncs app }
 
+-- | Check up on all our async tasks and possibly conclude them, generating
+-- an action.
+checkAsyncs :: AppData a -> IO ([AppEvent], AppData a)
+checkAsyncs app = do
+  (evs,as1) <- (\f -> foldM f ([],mempty) $ IM.toList $ appAsyncs app) $
+    \(evs, as) (k, t@(AsyncThreadImageLoad a)) -> do
+      poll a >>= \case
+        Nothing -> return (evs, IM.insert k t as)
+        Just e  -> do
+          event <- case e of
+            Left exc -> return $ AppEventLoadImage (Uid k) $ Left (show exc)
+            Right (Left str) -> return $ AppEventLoadImage (Uid k) $ Left str
+            Right (Right dyn) ->
+              loadTexture dyn >>= return . AppEventLoadImage (Uid k) . Right
+          return (evs ++ [event], IM.delete k as)
+  return (evs, app{ appAsyncs = as1 })
 
 -- | Handle an incoming SDL2 event payload, generating an in-app event to be
 -- provided to the network.
 handleEvent :: EventPayload -> IO AppEvent
 handleEvent (KeyboardEvent (KeyboardEventData _ m r k)) =
-  if isQuit k then exitSuccess else return $ AppEventKey m r k
+  return $ if isQuit k then AppQuit else AppEventKey m r k
 handleEvent (DropEvent (DropEventData cstr)) =
   AppEventDrop <$> peekCString cstr
 handleEvent (MouseWheelEvent (MouseWheelEventData _ _ v)) =
@@ -86,7 +117,26 @@ handleEvent (MouseButtonEvent (MouseButtonEventData _ i _ btn _ (P v))) =
   return $ AppEventMouseButton btn i $ fromIntegral <$> v
 handleEvent (TextInputEvent (TextInputEventData _ txt)) =
   return $ AppEventTextInput txt
-handleEvent payload = return $ AppEventOther payload
+handleEvent (JoyDeviceEvent (JoyDeviceEventData iid)) = do
+  vjoys <- availableJoysticks
+  let fjoys = V.filter ((== iid) . fromIntegral . joystickDeviceId) vjoys
+  if V.length fjoys >= 1
+    then do j <- openJoystick $ V.head fjoys
+            jid <- getJoystickID j
+            return $ AppEventJoystickAdded jid
+    -- | Totally not sure about this here. We probably need to keep a list
+    -- of opened joysticks so we can close them here, but that would require
+    -- updating handleEvent to modify AppData.
+    else return $ AppEventJoystickRemoved iid
+handleEvent (JoyAxisEvent (JoyAxisEventData jid axis val)) =
+  return $ AppEventJoystickAxis jid axis val
+handleEvent (JoyBallEvent (JoyBallEventData jid ball rel)) =
+  return $ AppEventJoystickBall jid ball rel
+handleEvent (JoyHatEvent (JoyHatEventData jid hat val)) =
+  return $ AppEventJoystickHat jid hat val
+handleEvent (JoyButtonEvent (JoyButtonEventData jid btn st)) =
+  return $ AppEventJoystickButton jid btn st
+handleEvent !payload = return $ AppEventOther payload
 
 -- | Load our standard fonts.
 getFonts :: IO Fonts
@@ -103,38 +153,100 @@ getFonts = do
                        exitFailure
         Right fnts -> return fnts
 
+type AudioCallback t = AudioFormat t -> IOVector t -> IO ()
+
+deviceSpec :: (forall t. AudioFormat t -> IOVector t -> IO ()) -> OpenDeviceSpec
+deviceSpec cb = OpenDeviceSpec
+  { openDeviceFreq     = Desire 44100
+  , openDeviceFormat   = Desire FloatingNativeAudio
+  , openDeviceChannels = Desire Mono
+  , openDeviceSamples  = 1024
+  , openDeviceCallback = cb
+  , openDeviceUsage    = ForPlayback
+  , openDeviceName     = Nothing
+  }
+
+sinWave :: Float -> Float -> Float -> Var Float Float
+sinWave amp freq phase = accumulate (+) 0 ~> var (\t -> (amp * sin (phase + 2 * pi * freq * t)))
+
+audioNetwork :: Var Float Float
+audioNetwork = 0--sinWave 1 440 0
+
+audioCB :: forall t. TVar (Float, Var Float Float) -> AudioFormat t
+        -> IOVector t -> IO ()
+audioCB ref FloatingLEAudio buffer = audioCB ref FloatingNativeAudio buffer
+audioCB ref FloatingNativeAudio buffer = do
+  (dt,v) <- readTVarIO ref
+  let numSamples = MV.length buffer
+      dts = replicate numSamples dt
+      ndxs = take numSamples [0 .. ]
+      fill v1 (t,n) = do
+        let Identity (sample, v2) = runVarT v1 t
+        MV.write buffer n sample
+        return v2
+  v1 <- foldM fill v (zip dts ndxs)
+  atomically $ writeTVar ref (dt,v1)
+
+audioCB _ t _ = putStrLn $ "Unsupported audio type '" ++ show t ++ "'"
+
+exitApp :: AudioDevice -> IO ()
+exitApp device = do
+  closeAudioDevice device
+  quit
+
+type AppRender a = Window -> AppData a -> a -> IO (AppData a)
+
+picAppRender :: Window -> AppData Pic -> Pic -> IO (AppData Pic)
+picAppRender window app ui = do
+  cache <- renderWithSDL2 window (appRez app) (appCache app) ui
+  return app{ appCache = cache }
+
 -- | Run an FRP sequence representing the entire app logic.
-runApp :: String -> AppSequence () -> IO ()
-runApp title network = do
-  (rez,window) <- startupSDL2Backend 800 600 title True
+runApp :: AppRender a -> AppSignal a -> String -> IO ()
+runApp rndr network title = do
+  (rez,window)  <- startupSDL2Backend 800 600 title True
+  ref <- newTVarIO (0,audioNetwork)
+  (device,spec) <- openAudioDevice $ deviceSpec $ audioCB ref
+  let dt = 1 / fromIntegral (audioSpecFreq spec)
+  atomically $ writeTVar ref (dt, audioNetwork)
+  putStrLn $ "Frequency: " ++ show (audioSpecFreq spec)
+  --putStrLn $ "Format:" ++ show (audioSpecFormat spec)
+  putStrLn $ "Channels: " ++ show (audioSpecChannels spec)
+  putStrLn $ "Silence: " ++ show (audioSpecSilence spec)
+  putStrLn $ "Spec Size: " ++ show (audioSpecSize spec)
+  setAudioDevicePlaybackState device Play
+
+  names <- getAudioDeviceNames ForPlayback
+  print names
   fnts <- getFonts
   utc  <- getCurrentTime
-  let app = (appData fnts rez utc){ appLogic = outputStream network blank }
+  let app = appData network fnts rez utc device
   loop window [] app
     where loop window actions app = do
-            threadDelay 100
-            app1 <- foldM applyAction app actions
-            events  <- pollEvents >>= mapM (handleEvent . eventPayload)
-
-            wsize  <- ctxWindowSize $ rezContext $ appRez app1
+            threadDelay 1
+            (aEvs,app1) <- checkAsyncs app
+            app2 <- foldM applyAction app1 actions
+            events <- pollEvents >>= mapM (handleEvent . eventPayload)
+            wsize  <- ctxWindowSize $ rezContext $ appRez app2
             P cp   <- snd <$> getModalMouseLocation
             newUtc <- getCurrentTime
 
             let readData  = ReadData { rdWindowSize = uncurry V2 wsize
                                      , rdCursorPos = fromIntegral <$> cp
-                                     , rdFonts = appFonts app1
+                                     , rdFonts = appFonts app2
                                      }
-                stateData = appNextId app1
-                evs = events ++ [AppEventFrame]
-                dt  = realToFrac $ diffUTCTime newUtc $ appUTC app1
+                stateData = appNextId app2
+                evs = aEvs ++ events ++ [AppEventFrame]
+                dt  = realToFrac $ diffUTCTime newUtc $ appUTC app2
                 ev  = AppEventTime dt
-                net = stepMany (appLogic app1) evs ev
+                net = stepMany (appLogic app2) evs ev
+                ((ui,v),!uid,actions1) = runRWS net readData stateData
 
-            ((ui,v),uid,actions1) <- runRWST net readData stateData
-            cache <- renderWithSDL2 window (appRez app1) (appCache app1) ui
+            app3 <- rndr window app1 ui
 
-            loop window actions1 app1{ appNextId = uid
-                                     , appLogic = v
-                                     , appCache = cache
-                                     , appUTC = newUtc
-                                     }
+            if AppQuit `elem` events
+              then exitApp (appAudio app3)
+              else loop window actions1 app3{ appNextId = uid
+                                            , appLogic = v
+                                            , appUTC = newUtc
+                                            }

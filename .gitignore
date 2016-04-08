@@ -4,3 +4,7 @@ cabal.sandbox.config
 dist/
 *.prof
 .stack-work/
+*.aux
+*.hp
+*.ps
+**/.DS_Store

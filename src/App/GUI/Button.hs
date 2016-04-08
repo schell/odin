@@ -85,5 +85,5 @@ buttonWith pnt btn p
                     return btn1
   | otherwise = return btn
 
-button :: Button -> V2 Float -> AppSequence Button
+button :: Button -> V2 Float -> AppSequence (Picture a ()) Button
 button = buttonWith paintButton

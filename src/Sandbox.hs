@@ -13,13 +13,14 @@ import           Data.IntMap (IntMap)
 import           Data.Char.FontAwesome
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
+import qualified Data.Vector.Unboxed as V
 
 import           App.Framework
 import           App.Control.FRP
 import           App.Control.Monad
 import           App.GUI
 
-crosshair :: V2 Float -> Picture GLuint ()
+crosshair :: V2 Float -> Pic
 crosshair vec = move vec $ draw $ polylines [StrokeWidth 3, StrokeFeather 1] $
   do let len = 50
          c   = white `alpha` 0.75
@@ -28,7 +29,7 @@ crosshair vec = move vec $ draw $ polylines [StrokeWidth 3, StrokeFeather 1] $
      lineStart (0,c) $ lineTo (V2 0    len, c)
      lineStart (0,c) $ lineTo (V2 0 (-len), c)
 
-spinner :: Float -> V2 Float -> Picture GLuint ()
+spinner :: Float -> V2 Float -> Pic
 spinner t = rotate (pi * t) . crosshair
 
 data TileSetMaker = TileSourcePicker (Picker TileSource)
@@ -47,16 +48,16 @@ loadedPicHitArea lp = (floor <$> tl, floor <$> br)
         s = lpScale lp
         br = tl + z
 
-drawLoadedPic :: LoadedPic -> Picture GLuint ()
+drawLoadedPic :: LoadedPic -> Pic
 drawLoadedPic lp = do
   let V2 w h = fromIntegral <$> lpSize lp
       p = fromIntegral <$> lpPos lp
       s = V2 (lpScale lp) (lpScale lp)
       t = lpTex lp
   move p $ scale s $ withTexture t $
-      fan (0,0) (V2 w 0,V2 1 0) (V2 w h, V2 1 1) [(V2 0 h, V2 0 1)]
+      fan (0,0) (V2 w 0,V2 1 0) (V2 w h, V2 1 1) $ V.singleton (V2 0 h, V2 0 1)
 
-dragPic :: LoadedPic -> V2 Int -> AppSequence LoadedPic
+dragPic :: LoadedPic -> V2 Int -> AppSequence Pic LoadedPic
 dragPic lp offset = do
   let mouseUp = mouseButtonEvent ButtonLeft Released
       lp1 = lp{ lpPos = lpPos lp + offset }
@@ -65,7 +66,7 @@ dragPic lp offset = do
     Left _ -> transformPic lp{ lpPos = lpPos lp + offset }
     Right (_,v) -> step p >> dragPic lp (offset + v)
 
-transformPic :: LoadedPic -> AppSequence LoadedPic
+transformPic :: LoadedPic -> AppSequence Pic LoadedPic
 transformPic lp = do
   let scaleEvent :: Monad m => VarT m AppEvent (Event Float)
       scaleEvent = fmap (\(V2 _ y) -> fromIntegral y) <$> mouseWheelEvent
@@ -82,7 +83,7 @@ data TileSource = TileSource { tsrcFilePath :: FilePath
                              , tsrcTiles :: IntMap (V2 Int)
                              }
 
-drawTileSource :: FontData -> TileSource -> Picture GLuint ()
+drawTileSource :: FontData -> TileSource -> Pic
 drawTileSource fnt ts = do
   drawLoadedPic $ tsrcPic ts
   let V2 _ h = fromIntegral <$> lpSize (tsrcPic ts)
@@ -92,7 +93,7 @@ drawTileSource fnt ts = do
 
 data MarkupScreen = MarkupScreen { msTileSources :: IntMap TileSource }
 
-drawMarkupScreen :: FontData -> MarkupScreen -> Picture GLuint ()
+drawMarkupScreen :: FontData -> MarkupScreen -> Pic
 drawMarkupScreen fnt =
     mapM_ (drawTileSource fnt . snd) . IM.toList . msTileSources
 
@@ -100,7 +101,7 @@ iconButtonPic :: FontData -> V4 Float -> V2 Float -> Float -> Char -> Picture a 
 iconButtonPic fnt color tl s ch = move (tl + V2 0 s) $ withLetters $
   filled (Name $ hash color) fnt 72 s [ch] $ solid color
 
-iconButtonDown :: V2 Float -> Float -> Char -> AppSequence ()
+iconButtonDown :: V2 Float -> Float -> Char -> AppSequence Pic ()
 iconButtonDown tl s ch = do
   icons <- lift getIconFont
   let pic = iconButtonPic icons gray tl s ch
@@ -109,7 +110,7 @@ iconButtonDown tl s ch = do
   step pic
   unless (pointInBounds (fromIntegral <$> up) bounds) $ iconButton tl s ch
 
-iconButton :: V2 Float -> Float -> Char -> AppSequence ()
+iconButton :: V2 Float -> Float -> Char -> AppSequence Pic ()
 iconButton tl s ch = do
   icons <- lift getIconFont
   let pic = iconButtonPic icons white tl s ch
@@ -128,7 +129,7 @@ data TileSourceEdit = TSEditMove
                     | TSEditSub
                     deriving (Show, Eq)
 
-tileSourceEditBar :: AppSequence TileSourceEdit
+tileSourceEditBar :: AppSequence Pic TileSourceEdit
 tileSourceEditBar = mapOutput ((\ws -> (bar ws <>)) <$> windowSize) btns
   where moveBtn  = iconButton (V2 4 0) 32 faArrows
         scaleBtn = iconButton (V2 4 32) 32 faArrowsAlt
@@ -149,7 +150,7 @@ tileSourceEditBar = mapOutput ((\ws -> (bar ws <>)) <$> windowSize) btns
 --  where cancl = onKeyEvent 41 Released
 --        commit = onKeyEvent 40 Released
 
-moveTileSource :: TileSource -> AppSequence TileSource
+moveTileSource :: TileSource -> AppSequence Pic TileSource
 moveTileSource ts = do
   fnt <- lift getLegibleFont
 
@@ -170,7 +171,7 @@ moveTileSource ts = do
           p = lpPos lp
       moveTileSource ts1
 
-editTileSourceWith :: TileSource -> TileSourceEdit -> AppSequence TileSource
+editTileSourceWith :: TileSource -> TileSourceEdit -> AppSequence Pic TileSource
 editTileSourceWith ts TSEditMove = do
   fnt <- lift getLegibleFont
   let pic = drawTileSource fnt ts
@@ -221,7 +222,7 @@ editTileSourceWith ts edit = do
 --    Right btn -> editTileSourceWith ts btn >>= editTileSource
 --    Left () -> return ts
 
-getFirstTileSource :: AppSequence TileSource
+getFirstTileSource :: AppSequence Pic TileSource
 getFirstTileSource = do
   fancy <- lift getFancyFont
   legible <- lift getLegibleFont
@@ -254,7 +255,7 @@ getFirstTileSource = do
       --editTileSource $ TileSource fp lp mempty
       return $ TileSource fp lp mempty
 
-markupScreen :: AppSequence MarkupScreen
+markupScreen :: AppSequence Pic MarkupScreen
 markupScreen = do
   ts <- getFirstTileSource
   infoStr "Got first TileSource"
@@ -268,7 +269,7 @@ data CancelCommitChoice = CancelChoice
                         | CommitChoice
                         deriving (Show, Eq, Enum, Bounded)
 
-cancelCommitButtonBar :: V2 Float -> AppSequence CancelCommitChoice
+cancelCommitButtonBar :: V2 Float -> AppSequence Pic CancelCommitChoice
 cancelCommitButtonBar p = do
   icon <- lift getIconFont
   let cnclData = Button ButtonStateUp [faTimes] icon 16
@@ -279,13 +280,14 @@ cancelCommitButtonBar p = do
   e <- race (<>) cncl chck
   either (const $ return CancelChoice) (const $ return CommitChoice) e
 
-network :: AppSequence ()
+network :: AppSequence Pic ()
 network = do
   legi <- lift getLegibleFont
   let text = TextInput TextInputStateUp "a text input" legi 16 0
   race (<>) (textInput text 0)
            (cancelCommitButtonBar 100)
+
   network
 
 main :: IO ()
-main = runApp "TileSetMaker v0.0" network
+main = runApp picAppRender (outputStream network blank) "Odin's Litterbox"

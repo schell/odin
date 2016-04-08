@@ -135,15 +135,15 @@ textInputWith pnt txt p
         endEvent = eitherE mouseDown anyTextInputEvent
         bounds = first (p+) $ second (p+) $ txtnBounds txt
         text = txtnText txt
-        attack  = do void $ tween easeOutExpo 0 1 0.2
-                     void $ constant 1 0.5
-                     decay
-        decay = do void $ tween easeInExpo 1 0 0.3
-                   void $ tween easeOutExpo 0 1 0.3
-                   decay
-        interval = time ~> outputStream attack 0
+        --attack  = do void $ tween easeOutExpo 0 1 0.2
+        --             void $ constant 1 0.5
+        --             decay
+        --decay = do void $ tween easeInExpo 1 0 0.3
+        --           void $ tween easeOutExpo 0 1 0.3
+        --           decay
+        --interval = time ~> outputStream attack 0
         paintTxt t = move p $ pnt txt{txtnInterval = t}
-    (pic,e) <- (paintTxt <$> interval) `untilEvent` endEvent
+    (pic,e) <- pure (paintTxt 1) `untilEvent` endEvent
     step pic
     case e of
       Left v -> do
@@ -165,5 +165,5 @@ textInputWith pnt txt p
     --  Right v -> do
       | otherwise = return txt
 
-textInput :: TextInput -> V2 Float -> AppSequence TextInput
+textInput :: TextInput -> V2 Float -> AppSequence (Picture a ()) TextInput
 textInput = textInputWith paintTextInput

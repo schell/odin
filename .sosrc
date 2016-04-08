@@ -2,6 +2,6 @@
   - .*\.l?hs$
   - .*\.cabal$
   commands:
-  - stack build --executable-profiling --library-profiling --ghc-options="-threaded -rtsopts -fprof-auto -with-rtsopts=-N"
-  - hlint \0
-  - stack exec sandbox -- +RTS -p
+  - stack build --fast --executable-profiling --library-profiling --ghc-options="-threaded -rtsopts -fprof-cafs -fprof-auto -with-rtsopts=-N8"
+  - stack exec part-two -- +RTS -N8 -p -hy -sstderr
+  - ./pack-profiling.sh part-two

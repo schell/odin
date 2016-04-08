@@ -2,34 +2,26 @@
 module App.Control.FRP where
 
 import           Control.Varying
-import           Control.Monad (join)
 import           Control.Monad.Trans.RWS.Strict (asks, RWST)
-import           Control.Monad.IO.Class (liftIO, MonadIO)
-import           Control.Concurrent.Async
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
+import           Data.Int (Int32, Int16)
+import           Data.Word (Word8)
 import           Linear
 import           Gelatin.SDL2
 import           SDL hiding (Event, windowSize)
-import           Codec.Picture (readImage)
 
 import App.Control.Monad
 
-asyncEvent :: MonadIO m => IO b -> VarT m a (Event (Either String b))
-asyncEvent f = flip resultStream () $ do
-  a <- liftIO $ async f
-  let ev = varM (const $ liftIO $ poll a) ~> onJust
-  meb <- pure () `_untilEvent` ev
-  return $ case meb of
-    Left exc -> Left $ show exc
-    Right b -> Right b
+loadImageEvent :: Uid -> AppSignal (Event (Either String (V2 Int, GLuint)))
+loadImageEvent (Uid k) = var f ~> onJust
+  where f (AppEventLoadImage (Uid t) x) = if k == t then Just x else Nothing
+        f _ = Nothing
 
 reqImage :: FilePath -> AppSignal (Event (Either String (V2 Int, GLuint)))
 reqImage fp = flip resultStream () $ do
-  eimg <- pure () `_untilEvent` asyncEvent (readImage fp)
-  case join eimg of
-    Left err  -> return $ Left err
-    Right img -> Right <$> liftIO (loadTexture img)
+  uid <- loadImageReq fp
+  pure () `_untilEvent` loadImageEvent uid
 
 unhandledEvent :: Monad m => VarT m AppEvent (Event EventPayload)
 unhandledEvent = var f ~> onJust
@@ -45,6 +37,60 @@ dropEvent :: Monad m => VarT m AppEvent (Event FilePath)
 dropEvent = var f ~> onJust
   where f (AppEventDrop fp) = Just fp
         f _ = Nothing
+--------------------------------------------------------------------------------
+-- Joystick stuff
+--------------------------------------------------------------------------------
+joystickAddedEvent :: Monad m => VarT m AppEvent (Event Int32)
+joystickAddedEvent = var f ~> onJust
+  where f (AppEventJoystickAdded iid) = Just iid
+        f _ = Nothing
+
+joystickRemovedEvent :: Monad m => VarT m AppEvent (Event Int32)
+joystickRemovedEvent = var f ~> onJust
+  where f (AppEventJoystickRemoved iid) = Just iid
+        f _ = Nothing
+
+anyJoystickAxisEvent :: Monad m => VarT m AppEvent (Event (Int32, Word8, Int16))
+anyJoystickAxisEvent = var f ~> onJust
+  where f (AppEventJoystickAxis jid axis val) = Just (jid, axis, val)
+        f _ = Nothing
+
+joystickAxisEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event Int16)
+joystickAxisEvent jid axis = var f ~> onJust
+  where f (AppEventJoystickAxis kid axis1 val) = if (jid,axis) == (kid,axis1)
+                                                   then Just val
+                                                   else Nothing
+        f _ = Nothing
+
+joystickAxisPressureEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event Float)
+joystickAxisPressureEvent jid axis =
+  fmap f <$> joystickAxisEvent jid axis
+    where f i = fromIntegral i / fromIntegral (maxBound :: Int16)
+
+joystickBallEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event (V2 Int16))
+joystickBallEvent jid ball = var f ~> onJust
+  where f (AppEventJoystickBall kid ball1 rel) = if (jid,ball) == (kid,ball1)
+                                                   then Just rel
+                                                   else Nothing
+        f _ = Nothing
+
+joystickHatEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event Word8)
+joystickHatEvent jid hat = var f ~> onJust
+  where f (AppEventJoystickHat kid hat1 val) = if (jid,hat) == (kid,hat1)
+                                                  then Just val
+                                                  else Nothing
+        f _ = Nothing
+
+joystickButtonEvent :: Monad m
+                    => Int32 -> Word8 -> Word8 -> VarT m AppEvent (Event ())
+joystickButtonEvent jid btn st =
+  var (== AppEventJoystickButton jid btn st) ~> onTrue
+
+anyJoystickButtonEvent :: Monad m => VarT m AppEvent (Event (Int32, Word8, Word8))
+anyJoystickButtonEvent = var f ~> onJust
+  where f (AppEventJoystickButton jid btn st) = Just (jid, btn, st)
+        f _ = Nothing
+
 
 --------------------------------------------------------------------------------
 -- Keyboard stuff
