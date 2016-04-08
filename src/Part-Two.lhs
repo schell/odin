@@ -43,11 +43,11 @@ into a lot of export conflicts.
 > import Control.Varying
 > import Control.Monad
 
-I moved a ton of the infrastructure into an App directory. App.Control.Monad 
+I moved a ton of the infrastructure into an App directory. `App.Control.Monad`
 contains all the types needed to construct the network's monad and run some 
-effects. App.Control.FRP contains the various App level behaviors (which I call
-streams for simplicity) - so it has all the mouse button 'Event' streams, key
-event streams, etc. that are used to build up the network. App.Framework 
+effects. `App.Control.FRP` contains the various App level behaviors (which I call
+streams for simplicity) - so it has all the mouse button event streams, key
+event streams, etc. that are used to build up the network. `App.Framework`
 contains the main loop and surrounding functions. 
  
 > import App.Control.Monad
@@ -57,11 +57,12 @@ contains the main loop and surrounding functions.
 Adding New Streams
 ================================================================================
 The first step to getting joystick events flowing through the network is to open
-the joystick. 'sdl2' sends a kind of joystick event whenever a joystick is
+the joystick. [sdl2][3] sends a kind of joystick event whenever a joystick is
 plugged in or unplugged, so I added some "add" and "remove" events to 
-'App.Control.Monad' 
+`App.Control.Monad` (keep in mind these snippets are comments in this literate
+haskell file, and are just included for the article)
 
-~~~.haskell
+~~~haskell
 data AppEvent = AppEventNone
               -- ...
               | AppEventJoystickAdded !Int32
@@ -70,7 +71,7 @@ data AppEvent = AppEventNone
 
 along with a bit of registration code in 'App.Framework.handleEvents' 
 
-~~~.haskell
+~~~haskell
 handleEvent (JoyDeviceEvent (JoyDeviceEventData iid)) = do
   vjoys <- availableJoysticks
   let fjoys = V.filter ((== iid) . fromIntegral . joystickDeviceId) vjoys
@@ -86,7 +87,7 @@ The call to 'openJoystick' tells 'sdl2' to start listening for events on that
 joystick. Once we're listening 'sdl2' will push joystick events into the queue,
 which will need to be handled in a similar fasion.
 
-~~~.haskell
+~~~haskell
 data AppEvent = AppEventNone
               -- ...
               | AppEventJoystickAxis !Int32 !Word8 !Int16
@@ -108,7 +109,7 @@ handleEvent (JoyButtonEvent (JoyButtonEventData jid btn st)) =
 That gets the events from 'sdl2' into our network. Now we can write some FRP
 streams. (This is in App.Control.FRP)
 
-~~~.haskell
+~~~haskell
 --------------------------------------------------------------------------------
 -- Joystick stuff
 --------------------------------------------------------------------------------
