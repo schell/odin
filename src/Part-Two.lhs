@@ -222,7 +222,8 @@ each frame
 > main :: IO ()
 > main = runApp picAppRender appSignal "Odin"
 
-`runApp` and `picAppRender` are both part of [App.Framework][framwork]. 
+`runApp` and `picAppRender` are both part of [App.Framework][framework]. 
+
 Now we play!
 
 <iframe 
