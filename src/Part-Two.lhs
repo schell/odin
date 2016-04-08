@@ -6,12 +6,10 @@ description: Adding simple character control
 ---
 
 *tl;dr* In this entry I'll add the ability to control a character using a USB 
-gamepad.
+gamepad. I'll write mostly about getting SDL2 gamepad events into the network 
+and then using those events to move some graphics.
 
 ![a gamepad](/img/gamepad.JPG){.img-responsive}
-
-I'll write mostly about getting SDL2 gamepad events into the network and then
-using those events to move some graphics.
 
 Intro
 ================================================================================
@@ -20,7 +18,7 @@ I think in the last couple articles I set expectations a little high. I wrote
 Maybe I was flippant, it's more likely I was just excited (still am). This 
 series is more about showing off some libraries that I've written and exploring 
 the space around writing games in Haskell using said libraries. Keep in mind 
-both my FRP implementation 'varying' and graphics lib 'gelatin' are both in 
+my FRP implementation [varying][1] and graphics lib [gelatin][2] are both in 
 heavy flux and neither are production ready. By the end of the series I hope to 
 have profiled my libraries, figured out some of what works and what doesn't and 
 have some working code, moving closer to 1.0 releases on hackage. I'm also going 
@@ -37,7 +35,7 @@ quicker.
  
 Imports and Infrastructure Updates
 ================================================================================
-I'm still using 'sdl2', but 'gelatin-sdl2' no longer re-exports it because I ran
+I'm still using [sdl2][3], but `gelatin-sdl2` no longer re-exports it because I ran
 into a lot of export conflicts.
 
 > import Gelatin.SDL2
@@ -227,3 +225,7 @@ Now we play!
   mozallowfullscreen 
   allowfullscreen>
 </iframe>
+
+[1]: http://hackage.haskell.org/package/varying
+[2]: https://github.com/schell/gelatin
+[3]: https://github.com/haskell-game/sdl2
