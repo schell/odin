@@ -1,5 +1,5 @@
 ---
-title: Part Two - Gamepad control
+title: Part Two - Joystick Control
 has-toc: yes
 date: 2016-04-7
 description: Adding simple character control
