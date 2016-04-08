@@ -1,37 +1,40 @@
 flags: {}
 packages: 
 - '.'
-- '../gelatin/gelatin-core'
-- '../gelatin/gelatin-picture'
-- '../gelatin/gelatin-gl'
-- '../gelatin/gelatin-glfw'
-- '../gelatin/gelatin-sdl2'
-- '../renderable'
-- '../varying'
-- '../sdl2'
+#- '../gelatin/gelatin-core'
+#- '../gelatin/gelatin-picture'
+#- '../gelatin/gelatin-gl'
+#- '../gelatin/gelatin-glfw'
+#- '../gelatin/gelatin-sdl2'
+#- '../renderable'
+#- '../varying'
+#- '../sdl2'
 
 - location:
     git: https://github.com/schell/FontyFruity.git
     commit: 99c143ebb569c286aa5252587923f8c34423e969
   extra-dep: true
-#- location:
-#    git: https://github.com/schell/varying.git
-#    commit: fb4fdfb83d2dc3c1d12a9e181faf6f0e974c7e01
-#  extra-dep: true
-#- location:
-#    git: https://github.com/schell/renderable.git
-#    commit: 743ea68c91daeb4c3000f3c0ce2c73fbac02cacc
-#  extra-dep: true
-#- location:
-#    git: https://github.com/schell/gelatin.git
-#    commit: a9666640fd2a025f4b8e3c2f45de53ae3e083a93    
-#  extra-dep: true
-#  subdirs:
-#  - gelatin-core
-#  - gelatin-picture
-#  - gelatin-gl
-#  - gelatin-glfw
-#  - gelatin-sdl2
+- location:
+    git: https://github.com/schell/varying.git
+    commit: dffcb67677a4ffa9e085e929aedcd0161ddab45c
+  extra-dep: true
+- location:
+    git: https://github.com/schell/renderable.git
+    commit: e0f8271c8fe860492ca0a123ce3e41fde977e1de
+  extra-dep: true
+- location:
+    git: https://github.com/schell/sdl2.git 
+    commit: 8d9b060fe5e71f06b9673c9f71e52aa18f56ea1c
+- location:
+    git: https://github.com/schell/gelatin.git
+    commit: 45ce7b7ac6edaa6aaf7f41e02599d7d86a5a688c
+  extra-dep: true
+  subdirs:
+  - gelatin-core
+  - gelatin-picture
+  - gelatin-gl
+  - gelatin-glfw
+  - gelatin-sdl2
 
 extra-deps: []
 resolver: lts-5.2
