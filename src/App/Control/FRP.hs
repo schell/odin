@@ -62,12 +62,14 @@ joystickAxisEvent jid axis = var f ~> onJust
                                                    else Nothing
         f _ = Nothing
 
-joystickAxisPressureEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event Float)
+joystickAxisPressureEvent :: Monad m
+                          => Int32 -> Word8 -> VarT m AppEvent (Event Float)
 joystickAxisPressureEvent jid axis =
   fmap f <$> joystickAxisEvent jid axis
     where f i = fromIntegral i / fromIntegral (maxBound :: Int16)
 
-joystickBallEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event (V2 Int16))
+joystickBallEvent :: Monad m
+                  => Int32 -> Word8 -> VarT m AppEvent (Event (V2 Int16))
 joystickBallEvent jid ball = var f ~> onJust
   where f (AppEventJoystickBall kid ball1 rel) = if (jid,ball) == (kid,ball1)
                                                    then Just rel
@@ -86,7 +88,8 @@ joystickButtonEvent :: Monad m
 joystickButtonEvent jid btn st =
   var (== AppEventJoystickButton jid btn st) ~> onTrue
 
-anyJoystickButtonEvent :: Monad m => VarT m AppEvent (Event (Int32, Word8, Word8))
+anyJoystickButtonEvent :: Monad m
+                       => VarT m AppEvent (Event (Int32, Word8, Word8))
 anyJoystickButtonEvent = var f ~> onJust
   where f (AppEventJoystickButton jid btn st) = Just (jid, btn, st)
         f _ = Nothing

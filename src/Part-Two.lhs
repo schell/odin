@@ -43,11 +43,11 @@ into a lot of export conflicts.
 > import Control.Varying
 > import Control.Monad
 
-I moved a ton of the infrastructure into an App directory. `App.Control.Monad`
+I moved a ton of the infrastructure into an App directory. [App.Control.Monad][monad]
 contains all the types needed to construct the network's monad and run some 
-effects. `App.Control.FRP` contains the various App level behaviors (which I call
+effects. [App.Control.FRP][frp] contains the various App level behaviors (which I call
 streams for simplicity) - so it has all the mouse button event streams, key
-event streams, etc. that are used to build up the network. `App.Framework`
+event streams, etc. that are used to build up the network. [App.Framework][framwork]
 contains the main loop and surrounding functions. 
  
 > import App.Control.Monad
@@ -59,7 +59,7 @@ Adding New Streams
 The first step to getting joystick events flowing through the network is to open
 the joystick. [sdl2][3] sends a kind of joystick event whenever a joystick is
 plugged in or unplugged, so I added some "add" and "remove" events to 
-`App.Control.Monad` (keep in mind these snippets are comments in this literate
+[App.Control.Monad][monad] (keep in mind these snippets are comments in this literate
 haskell file, and are just included for the article)
 
 ~~~haskell
@@ -69,7 +69,7 @@ data AppEvent = AppEventNone
               | AppEventJoystickRemoved !Int32
 ~~~
 
-along with a bit of registration code in 'App.Framework.handleEvents' 
+along with a bit of registration code in `App.Framework.handleEvents` 
 
 ~~~haskell
 handleEvent (JoyDeviceEvent (JoyDeviceEventData iid)) = do
@@ -83,8 +83,8 @@ handleEvent (JoyDeviceEvent (JoyDeviceEventData iid)) = do
     else return $ AppEventJoystickRemoved iid
 ~~~
 
-The call to 'openJoystick' tells 'sdl2' to start listening for events on that
-joystick. Once we're listening 'sdl2' will push joystick events into the queue,
+The call to `openJoystick` tells [sdl2][3] to start listening for events on that
+joystick. Once we're listening [sdl2][3] will push joystick events into the queue,
 which will need to be handled in a similar fasion.
 
 ~~~haskell
@@ -106,8 +106,8 @@ handleEvent (JoyButtonEvent (JoyButtonEventData jid btn st)) =
   return $ AppEventJoystickButton jid btn st
 ~~~
 
-That gets the events from 'sdl2' into our network. Now we can write some FRP
-streams. (This is in App.Control.FRP)
+That gets the events from [sdl2][3] into our network. Now we can write some FRP
+streams. (This is in [App.Control.FRP][frp])
 
 ~~~haskell
 --------------------------------------------------------------------------------
@@ -130,7 +130,14 @@ joystickAxisEvent jid axis = var f ~> onJust
                                                    else Nothing
         f _ = Nothing
 
-joystickBallEvent :: Monad m => Int32 -> Word8 -> VarT m AppEvent (Event (V2 Int16))
+joystickAxisPressureEvent :: Monad m 
+                          => Int32 -> Word8 -> VarT m AppEvent (Event Float)
+joystickAxisPressureEvent jid axis =
+  fmap f <$> joystickAxisEvent jid axis
+    where f i = fromIntegral i / fromIntegral (maxBound :: Int16)
+
+joystickBallEvent :: Monad m 
+                  => Int32 -> Word8 -> VarT m AppEvent (Event (V2 Int16))
 joystickBallEvent jid ball = var f ~> onJust
   where f (AppEventJoystickBall kid ball1 rel) = if (jid,ball) == (kid,ball1)
                                                    then Just rel
@@ -202,19 +209,20 @@ analog stick. When the user presses the "A" button we'll reset.
 
 Main Loop
 ================================================================================
-The 'runApp' function takes a continuous stream of (in this case) 2d pictures 
+The `runApp` function takes a continuous stream of (in this case) 2d pictures 
 to represent our app, so we have to take our network sequence and squash it 
-down into a stream of 'Pic'
+down into a stream of `Pic`, which is a type synonym for `Picture GLuint ()`
 
 > appSignal :: VarT Effect AppEvent Pic
 > appSignal = outputStream network blank
  
-And then we run our app using a renderer that can render those pictures each
-frame
+And then we run our app using a render function that can render those pictures 
+each frame
 
 > main :: IO ()
 > main = runApp picAppRender appSignal "Odin"
 
+`runApp` and `picAppRender` are both part of [App.Framework][framwork]. 
 Now we play!
 
 <iframe 
@@ -230,3 +238,6 @@ Now we play!
 [1]: http://hackage.haskell.org/package/varying
 [2]: https://github.com/schell/gelatin
 [3]: https://github.com/haskell-game/sdl2
+[framework]: https://github.com/schell/odin/blob/master/src/App/Framework.hs
+[frp]: https://github.com/schell/odin/blob/master/src/App/Control/FRP.hs
+[monad]: https://github.com/schell/odin/blob/master/src/App/Control/Monad.hs
