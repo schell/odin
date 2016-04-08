@@ -8,7 +8,7 @@ description: Adding simple character control
 *tl;dr* In this entry I'll add the ability to control a character using a USB 
 gamepad.
 
-*image of the gamepad*
+![a gamepad](/img/gamepad.JPG){.img-responsive}
 
 I'll write mostly about getting SDL2 gamepad events into the network and then
 using those events to move some graphics.
@@ -217,3 +217,13 @@ frame
 > main = runApp picAppRender appSignal "Odin"
 
 Now we play!
+
+<iframe 
+  src="https://player.vimeo.com/video/162132050" 
+  width="500" 
+  height="332" 
+  frameborder="0"
+  webkitallowfullscreen 
+  mozallowfullscreen 
+  allowfullscreen>
+</iframe>
