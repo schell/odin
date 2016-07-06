@@ -224,6 +224,8 @@ each frame
 
 `runApp` and `picAppRender` are both part of [App.Framework][framework]. 
 
+Playtime
+================================================================================
 Now we play!
 
 <iframe 
