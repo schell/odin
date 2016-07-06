@@ -2,6 +2,21 @@
   - .*\.l?hs$
   - .*\.cabal$
   commands:
-  - stack build --fast --executable-profiling --library-profiling --ghc-options="-threaded -rtsopts -fprof-cafs -fprof-auto -with-rtsopts=-N8"
-  - stack exec part-two -- +RTS -N8 -p -hy -sstderr
+  - stack build --fast --trace --ghc-options="-threaded -rtsopts -fprof-cafs -fprof-auto -with-rtsopts=-N"
+- patterns:
+  - .*\.l?hs$
+  commands:
+  - hlint \0
+- patterns:
+  - .*Part-Two\.lhs$
+  commands:
+  - stack exec part-two -- +RTS -N -p -hy -sstderr
   - ./pack-profiling.sh part-two
+- patterns:
+  - .*Sandbox\.hs$
+  commands:
+  - stack exec sandbox -- +RTS -N -p -hy -sstderr
+- patterns:
+  - .*EntityMain\.hs$
+  commands:
+  - stack exec entity -- +RTS -N -p -hy -sstderr

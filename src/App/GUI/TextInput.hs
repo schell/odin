@@ -6,8 +6,6 @@ import           Gelatin.Core.Fill
 import           Gelatin.Picture
 import           Gelatin.SDL2
 import           SDL hiding (Event, time)
-import           SDL.Raw.Enum
-import           Data.Hashable
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Control.Arrow
@@ -42,8 +40,8 @@ paintTextInput txt = do
           TextInputStateDown -> (white, V4 0.3 0.3 0.3 1, white)
           TextInputStateEditing -> (canary, V4 0.2 0.2 0.2 1, white `alpha` 0.8)
       px = txtnPointSize txt
-      text = withLetters $ filled (Name $ hash textColor) (txtnFont txt)
-              72 px (T.unpack $ txtnText txt) $ solid textColor
+      text = withLetters $ filled (txtnFont txt) 72 px (T.unpack $ txtnText txt) $
+               solid textColor
       leaderInc = if hasLeader then V2 inc 0 else 0
       endSpaces = T.length $ T.takeWhile (== ' ') $ T.reverse $ txtnText txt
       spaceInc = V2 (px/2) 0 ^* fromIntegral endSpaces

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="48" height="48" tilewidth="24" tileheight="24" nextobjectid="1">
+ <tileset firstgid="1" name="uf_map" tilewidth="24" tileheight="24" tilecount="525">
+  <image source="../uf_map.png" width="600" height="504"/>
+  <tile id="17">
+   <animation>
+    <frame tileid="17" duration="500"/>
+    <frame tileid="18" duration="500"/>
+    <frame tileid="19" duration="500"/>
+    <frame tileid="20" duration="500"/>
+    <frame tileid="19" duration="500"/>
+    <frame tileid="18" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="101">
+   <animation>
+    <frame tileid="101" duration="500"/>
+    <frame tileid="102" duration="500"/>
+    <frame tileid="103" duration="500"/>
+    <frame tileid="104" duration="500"/>
+    <frame tileid="103" duration="500"/>
+    <frame tileid="102" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="117">
+   <animation>
+    <frame tileid="117" duration="200"/>
+    <frame tileid="118" duration="200"/>
+    <frame tileid="119" duration="200"/>
+    <frame tileid="120" duration="200"/>
+    <frame tileid="119" duration="200"/>
+    <frame tileid="118" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="260">
+   <animation>
+    <frame tileid="260" duration="200"/>
+    <frame tileid="261" duration="200"/>
+    <frame tileid="262" duration="200"/>
+    <frame tileid="263" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="284">
+   <animation>
+    <frame tileid="284" duration="800"/>
+    <frame tileid="285" duration="800"/>
+   </animation>
+  </tile>
+  <tile id="305">
+   <animation>
+    <frame tileid="304" duration="400"/>
+    <frame tileid="305" duration="50"/>
+    <frame tileid="306" duration="100"/>
+    <frame tileid="305" duration="50"/>
+   </animation>
+  </tile>
+  <tile id="328">
+   <animation>
+    <frame tileid="328" duration="200"/>
+    <frame tileid="329" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="330">
+   <animation>
+    <frame tileid="330" duration="500"/>
+    <frame tileid="331" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="336">
+   <animation>
+    <frame tileid="336" duration="500"/>
+    <frame tileid="337" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="360">
+   <animation>
+    <frame tileid="360" duration="100"/>
+    <frame tileid="361" duration="100"/>
+    <frame tileid="362" duration="100"/>
+    <frame tileid="361" duration="100"/>
+   </animation>
+  </tile>
+  <tile id="388">
+   <animation>
+    <frame tileid="388" duration="300"/>
+    <frame tileid="389" duration="300"/>
+   </animation>
+  </tile>
+  <tile id="410">
+   <animation>
+    <frame tileid="410" duration="500"/>
+    <frame tileid="411" duration="500"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="526" name="uf_map" tilewidth="24" tileheight="24" tilecount="525">
+  <tileoffset x="6" y="-13"/>
+  <image source="../uf_map.png" width="600" height="504"/>
+  <tile id="330">
+   <animation>
+    <frame tileid="330" duration="500"/>
+    <frame tileid="331" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="390">
+   <animation>
+    <frame tileid="390" duration="500"/>
+    <frame tileid="391" duration="500"/>
+   </animation>
+  </tile>
+ </tileset>
+ <layer name="water" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt1EEKACEMBMF8Wt+/H1gEQXAidah7jwFHVQ0A4EkzoOFkd/qeVV+X9q5vf2JjB4ntO01p/TOw6eZ9kvr+bpO85eW/EwAAAADo4QPHBB1T
+  </data>
+ </layer>
+ <layer name="terrain grass" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJztlG0OgjAQRNcPRATUI3mUnoR4FI7So3gUZ0OrmwaMiSZtdDZ5gZL+eFMGBhEZCCGEEPITSAEOn7hb/05krMBRxJ8X9pRAOvoMzuMB1xVocI8sPt2b23uuM3Gq4K6sp/W19J6d5NmZ1vgrO/iX5hwnrrUzjXFGfzyy3JDFgbE2PcpN6q7Uxh05PPK4LnwHIYvrQW73pTzb4L6ZfB89UnfkcDIzub0t/eR6ie+gTc68VHc7OGftjlP/2vwz0325nV/l0Ax7ZDgm557b7xvZcnv8ewZCCCGEEEIIIYQQQt7hDkRkTig=
+  </data>
+ </layer>
+ <layer name="terrain sand" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0cEJgDAQBMDU4UcUom2lNEuxNFfwK4ifEJiB5b67XCkAAAC8qaUcc5J79u7yx5JMyZoN+0Ab6tM3997Q8oO2Jb17fXX3HqkvAAAAADC2C3vfCFA=
+  </data>
+ </layer>
+ <layer name="compass" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJztzsENABAABLAzJmOwf8IMHoS0EzQBAOCEWpJWbi/29XUfD/8BAAAAAAB+NQEo1gGd
+  </data>
+ </layer>
+ <layer name="props" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0sEJAjEQBdAZK9sStA+LEFZ7EPZiP4JlWIfD3gRdllxC4D34l+TyQ34EAAB8myuHjKl3j1aZ8YiMuGXvJvvdK5fK8uPuOMA7npV35dW7SKP5z/kp128ZwrV2smxs5TzAjgAAAAAAaPMBOLkJVg==
+  </data>
+ </layer>
+ <layer name="castles" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0sEJACAMBMH48JFObMP+m7IHQYJkpoLluAgAAF7IUV3Q1/p4+62dxqYPAQAAAABcORW9AL4=
+  </data>
+ </layer>
+ <layer name="marker" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJztzkENADAIBDAmdzZQjoP77EGWtApaBQAAQHLP9uBNf/4HAAAAACAb2hIA7g==
+  </data>
+ </layer>
+ <layer name="smoke (offset)" width="48" height="48" opacity="0.5">
+  <data encoding="base64" compression="zlib">
+   eJztzjENAAAIA7Al+P8QjArCQaugCQAAG7quBwAAAAAAAHww1IYAmA==
+  </data>
+ </layer>
+ <layer name="clouds" width="48" height="48" opacity="0.25">
+  <data encoding="base64" compression="zlib">
+   eJzt1EEKgzAUhOEht7S0mlqbc3kUj9YJdSXqxk2e/B8EJW8zEScSAAAAripJ85S07M28P5eDWSucT9+kvN2v2UfPPn72J2ds1cvZH15v5/Z73jtjy/y9NThzCZY7gvpvPwN084j7qM5rDNrN6X+v5G7tZ7RuVs6siPcKAAAAAAAAgHv6AZPRG+I=
+  </data>
+ </layer>
+</map>

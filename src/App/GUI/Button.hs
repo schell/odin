@@ -6,8 +6,6 @@ import           Gelatin.Core.Fill
 import           Gelatin.Picture
 import           Gelatin.SDL2
 import           SDL
-import           SDL.Raw.Enum
-import           Data.Hashable
 import           Control.Arrow
 import           Control.Varying
 import           Control.Monad.Trans.RWS.Strict
@@ -35,7 +33,7 @@ paintButton btn = do
           ButtonStateUp -> (white `alpha` 0.7, V4 0.3 0.3 0.3 1)
           ButtonStateOver -> (canary, V4 0.3 0.3 0.3 1)
           ButtonStateDown -> (white, V4 0.2 0.2 0.2 1)
-      text = withLetters $ filled (Name $ hash textColor) (btnFont btn)
+      text = withLetters $ filled (btnFont btn)
                72 (btnPointSize btn) (btnText btn) $ solid textColor
       size@(V2 _ th) = pictureSize text
       padding = 4

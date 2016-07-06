@@ -3,6 +3,7 @@ module App.Control.FRP where
 
 import           Control.Varying
 import           Control.Monad.Trans.RWS.Strict (asks, RWST)
+import           Control.Monad.Trans.Class (lift)
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
 import           Data.Int (Int32, Int16)
@@ -12,6 +13,25 @@ import           Gelatin.SDL2
 import           SDL hiding (Event, windowSize)
 
 import App.Control.Monad
+
+--------------------------------------------------------------------------------
+-- Requesting an Action
+--------------------------------------------------------------------------------
+requestAction :: Action -> (AppEvent -> Maybe a) -> AppSequence () a
+requestAction a f = do
+  writeAction a
+  pure () `_untilEvent` (var f ~> onJust)
+
+loadLayer :: (Rez -> IO GLRenderer) -> AppSequence () GLRenderer
+loadLayer io = do
+  uid <- lift fresh
+  let f (AppEventLoadedRenderer uid1 r) = if uid1 == uid then Just r
+                                                        else Nothing
+      f _ = Nothing
+  requestAction (ActionLoadRenderer uid io) f
+
+unloadLayer :: GLRenderer -> AppSequence () ()
+unloadLayer = writeAction . ActionUnloadRenderer
 
 loadImageEvent :: Uid -> AppSignal (Event (Either String (V2 Int, GLuint)))
 loadImageEvent (Uid k) = var f ~> onJust
@@ -85,8 +105,9 @@ joystickHatEvent jid hat = var f ~> onJust
 
 joystickButtonEvent :: Monad m
                     => Int32 -> Word8 -> Word8 -> VarT m AppEvent (Event ())
-joystickButtonEvent jid btn st =
-  var (== AppEventJoystickButton jid btn st) ~> onTrue
+joystickButtonEvent jid btn st = var f ~> onTrue
+  where f (AppEventJoystickButton j b s) = (jid,btn,st) == (j,b,s)
+        f _ = False
 
 anyJoystickButtonEvent :: Monad m
                        => VarT m AppEvent (Event (Int32, Word8, Word8))

@@ -25,7 +25,6 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector.Storable.Mutable as MV
 import           Data.Vector.Storable.Mutable (IOVector)
 import qualified Data.Vector as V
-import           Data.Vector (Vector)
 import           System.Exit (exitFailure)
 import           System.FilePath
 import           System.Directory
@@ -46,12 +45,12 @@ cursorToSystem :: CursorType -> Raw.SystemCursor
 cursorToSystem CursorHand = Raw.SDL_SYSTEM_CURSOR_HAND
 
 -- | Apply an action to the outside world and optionally to the app itself.
-applyAction :: AppData a -> Action -> IO (AppData a)
-applyAction app ActionNone = return app
-applyAction app (ActionLog lvl str) = do
+applyAction :: (AppData a, [AppEvent]) -> Action -> IO (AppData a, [AppEvent])
+applyAction acc ActionNone = return acc
+applyAction acc (ActionLog lvl str) = do
   putStrLn $ concat [show lvl, ": ", str]
-  return app
-applyAction app (ActionSetCursor (CursorPush k)) = do
+  return acc
+applyAction (app,evs) (ActionSetCursor (CursorPush k)) = do
   let stack = appCursor app
   item <- case M.lookup k stack of
     Nothing -> do cursor <- Raw.createSystemCursor $ cursorToSystem k
@@ -59,8 +58,8 @@ applyAction app (ActionSetCursor (CursorPush k)) = do
                   return (1,cursor)
     Just (n,cursor) -> do Raw.setCursor cursor
                           return (n+1,cursor)
-  return app{appCursor = M.insert k item stack}
-applyAction app (ActionSetCursor (CursorPop k)) = do
+  return (app{appCursor = M.insert k item stack}, evs)
+applyAction (app,evs) (ActionSetCursor (CursorPop k)) = do
   let (mcursor,n) = case M.lookup k $ appCursor app of
                   Nothing -> (Nothing, 0)
                   Just (1, cursor) -> (Just cursor, 0)
@@ -75,31 +74,37 @@ applyAction app (ActionSetCursor (CursorPop k)) = do
 
   forM_ mcursor Raw.freeCursor
 
-  return app{appCursor = stack}
-applyAction app (ActionSetTextEditing shouldStart) = do
+  return (app{appCursor = stack}, evs)
+applyAction (app,evs) (ActionSetTextEditing shouldStart) = do
   if shouldStart
     then startTextInput $ Raw.Rect 0 0 100 100
     else stopTextInput
-  return app
-applyAction app (ActionLoadImage (Uid k) fp) = do
+  return (app, evs)
+applyAction (app,evs) (ActionLoadImage (Uid k) fp) = do
   a <- async $ readImage fp
-  return app{ appAsyncs = IM.insert k (AsyncThreadImageLoad a) $ appAsyncs app }
+  return (app{ appAsyncs = IM.insert k (AsyncThreadImageLoad a) $ appAsyncs app }
+         ,evs
+         )
+applyAction (app,evs) (ActionLoadRenderer uid io) = do
+  r <- io $ appRez app
+  return (app, evs ++ [AppEventLoadedRenderer uid r])
+applyAction acc (ActionUnloadRenderer r) = fst r >> return acc
 
 -- | Check up on all our async tasks and possibly conclude them, generating
 -- an action.
 checkAsyncs :: AppData a -> IO ([AppEvent], AppData a)
 checkAsyncs app = do
   (evs,as1) <- (\f -> foldM f ([],mempty) $ IM.toList $ appAsyncs app) $
-    \(evs, as) (k, t@(AsyncThreadImageLoad a)) -> do
+    \(evs, as) (k, t@(AsyncThreadImageLoad a)) ->
       poll a >>= \case
-        Nothing -> return (evs, IM.insert k t as)
-        Just e  -> do
-          event <- case e of
-            Left exc -> return $ AppEventLoadImage (Uid k) $ Left (show exc)
-            Right (Left str) -> return $ AppEventLoadImage (Uid k) $ Left str
-            Right (Right dyn) ->
-              loadTexture dyn >>= return . AppEventLoadImage (Uid k) . Right
-          return (evs ++ [event], IM.delete k as)
+    Nothing -> return (evs, IM.insert k t as)
+    Just e  -> do
+      event <- case e of
+        Left exc -> return $ AppEventLoadImage (Uid k) $ Left (show exc)
+        Right (Left str) -> return $ AppEventLoadImage (Uid k) $ Left str
+        Right (Right dyn) ->
+          fmap (AppEventLoadImage (Uid k) . Right) (loadTexture dyn)
+      return (evs ++ [event], IM.delete k as)
   return (evs, app{ appAsyncs = as1 })
 
 -- | Handle an incoming SDL2 event payload, generating an in-app event to be
@@ -167,7 +172,7 @@ deviceSpec cb = OpenDeviceSpec
   }
 
 sinWave :: Float -> Float -> Float -> Var Float Float
-sinWave amp freq phase = accumulate (+) 0 ~> var (\t -> (amp * sin (phase + 2 * pi * freq * t)))
+sinWave amp freq phase = accumulate (+) 0 ~> var (\t -> amp * sin (phase + 2 * pi * freq * t))
 
 audioNetwork :: Var Float Float
 audioNetwork = 0--sinWave 1 440 0
@@ -210,7 +215,6 @@ runApp rndr network title = do
   let dt = 1 / fromIntegral (audioSpecFreq spec)
   atomically $ writeTVar ref (dt, audioNetwork)
   putStrLn $ "Frequency: " ++ show (audioSpecFreq spec)
-  --putStrLn $ "Format:" ++ show (audioSpecFormat spec)
   putStrLn $ "Channels: " ++ show (audioSpecChannels spec)
   putStrLn $ "Silence: " ++ show (audioSpecSilence spec)
   putStrLn $ "Spec Size: " ++ show (audioSpecSize spec)
@@ -225,26 +229,28 @@ runApp rndr network title = do
     where loop window actions app = do
             threadDelay 1
             (aEvs,app1) <- checkAsyncs app
-            app2 <- foldM applyAction app1 actions
-            events <- pollEvents >>= mapM (handleEvent . eventPayload)
-            wsize  <- ctxWindowSize $ rezContext $ appRez app2
-            P cp   <- snd <$> getModalMouseLocation
-            newUtc <- getCurrentTime
+            (app2,aEvs2)<- foldM applyAction (app1,[]) actions
+            events      <- pollEvents >>= mapM (handleEvent . eventPayload)
+            wsize       <- ctxWindowSize $ rezContext $ appRez app2
+            P cp        <- snd <$> getModalMouseLocation
+            newUtc      <- getCurrentTime
 
             let readData  = ReadData { rdWindowSize = uncurry V2 wsize
                                      , rdCursorPos = fromIntegral <$> cp
                                      , rdFonts = appFonts app2
                                      }
                 stateData = appNextId app2
-                evs = aEvs ++ events ++ [AppEventFrame]
+                allEvs = aEvs ++ aEvs2
+                evs = allEvs ++ events ++ [AppEventFrame]
                 dt  = realToFrac $ diffUTCTime newUtc $ appUTC app2
                 ev  = AppEventTime dt
                 net = stepMany (appLogic app2) evs ev
                 ((ui,v),!uid,actions1) = runRWS net readData stateData
 
             app3 <- rndr window app1 ui
-
-            if AppQuit `elem` events
+            let f AppQuit = True
+                f _ = False
+            if any f events
               then exitApp (appAudio app3)
               else loop window actions1 app3{ appNextId = uid
                                             , appLogic = v

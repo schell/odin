@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="48" height="48" tilewidth="48" tileheight="48" nextobjectid="1">
+ <tileset firstgid="1" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760">
+  <image source="../uf_terrain.png" width="960" height="1824"/>
+  <tile id="115">
+   <animation>
+    <frame tileid="115" duration="500"/>
+    <frame tileid="116" duration="500"/>
+    <frame tileid="117" duration="500"/>
+    <frame tileid="118" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="135">
+   <animation>
+    <frame tileid="135" duration="500"/>
+    <frame tileid="136" duration="500"/>
+    <frame tileid="137" duration="500"/>
+    <frame tileid="138" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="155">
+   <animation>
+    <frame tileid="155" duration="500"/>
+    <frame tileid="156" duration="500"/>
+    <frame tileid="157" duration="500"/>
+    <frame tileid="158" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="175">
+   <animation>
+    <frame tileid="175" duration="500"/>
+    <frame tileid="176" duration="500"/>
+    <frame tileid="177" duration="500"/>
+    <frame tileid="178" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="195">
+   <animation>
+    <frame tileid="195" duration="300"/>
+    <frame tileid="196" duration="300"/>
+    <frame tileid="197" duration="300"/>
+    <frame tileid="198" duration="300"/>
+   </animation>
+  </tile>
+  <tile id="215">
+   <animation>
+    <frame tileid="215" duration="500"/>
+    <frame tileid="216" duration="500"/>
+    <frame tileid="217" duration="500"/>
+    <frame tileid="218" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="644">
+   <animation>
+    <frame tileid="644" duration="200"/>
+    <frame tileid="645" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="664">
+   <animation>
+    <frame tileid="664" duration="200"/>
+    <frame tileid="665" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="672">
+   <animation>
+    <frame tileid="672" duration="750"/>
+    <frame tileid="673" duration="750"/>
+   </animation>
+  </tile>
+  <tile id="674">
+   <animation>
+    <frame tileid="674" duration="750"/>
+    <frame tileid="675" duration="750"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="761" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760">
+  <tileoffset x="0" y="-8"/>
+  <image source="../uf_terrain.png" width="960" height="1824"/>
+ </tileset>
+ <tileset firstgid="1521" name="uf_heroes_simple" tilewidth="48" tileheight="48" tilecount="130">
+  <tileoffset x="0" y="-16"/>
+  <image source="../uf_heroes_simple.png" width="480" height="624"/>
+ </tileset>
+ <tileset firstgid="1651" name="uf_items" tilewidth="48" tileheight="48" tilecount="484">
+  <tileoffset x="0" y="-8"/>
+  <image source="../uf_items.png" width="1056" height="1056"/>
+ </tileset>
+ <layer name="floor" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt00EKgCAQBVDv3R26UvvK1h2nghYWWbQb4T34ILr5I5oSQFx5z7RnLHJYKonm6LsWyed+rX+0GeZ0vfuv/pF0xXq8nbXSf3hIK2+n1v9thkhq/fvURv+/7n8EAAAAAACAtmy9tD9z
+  </data>
+ </layer>
+ <layer name="floor 2" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0kEKwjAQBdAxB6tN6PnsUTxEz1VoxIAb7UKkpvAeDBNmNp8wEQDnsKSIe3q/u9X5/GHXq/USkWsf2rtHy86fjrWmVvmYOD9V4pW//DnLNx43c41n9l7vBwAAAAAAADjGBhQvCmo=
+  </data>
+ </layer>
+ <layer name="props" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0kEKwCAQA0Ap+GS/Ub8sXgWP0kZmrntJyJYC8F/9+TrBGW9or1v3SOg1fyYh56rV/S2hT0JGAAAAAAAAGECHBQE=
+  </data>
+ </layer>
+ <layer name="shadows" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt1MEJgDAMBdDWDZyh67uaO3j1kKqI0Nq+Bx9CDiGHkJSAGW259QbPlCC1fokGdGA/ZSTrEtd85y83/ob74Urtx98FAAAAAABgVgcEUQfb
+  </data>
+ </layer>
+ <layer name="walls" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt1U0OgjAQhuHWxA2I3v9gXMDfG2AtGzthJtSaurUk75NMOoCLTzItzgGoOfulrn7tb1lvdSl+04qYshx2zg2pTrp2qWa/rEe932sv92JD+SfNsvef9Uw1uu8SoaH8r0qWya95zZg9a8Wks20zbXthS/llpmUPiF77sJH8oTL/8p8sbzn/tZn7h9q7/HVGtvT+5+Jct3M+6vU9+z48tJ8byt/pmd7raud/XoPuifw5AAAAAAAAAAAAtukN08w+Vw==
+  </data>
+ </layer>
+ <layer name="door" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJztzwENADAIwDC4f6vXACaekJNWwRYBALtVThe8cz9/yTNdAAAAAAAAAPs02L0B8g==
+  </data>
+ </layer>
+ <layer name="heroes" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0iEOgDAQBMBT/QW6aMDzg/7/OSAR0ATF0czIW7ObXARAbkuJ2Mp91s57fcgyWn/UtWcaZMdV5j/aO93mxL3fGGUHAAAAAAAAfOEAcEECHg==
+  </data>
+ </layer>
+ <layer name="torches" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0rENACAMA0GU3RmCbREFEhV1Et11rt9jAJ3N+O/sVvx3ZW+Lal2Ot0XWLp3/7z8AAAAAAADAtQEgBAkR
+  </data>
+ </layer>
+ <layer name="webs" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0rENADAIwDDU50u/5oGuiAH7ggyJADa6Z7oA+vmcDvn56nkNAAAAAACAQQXI4wIo
+  </data>
+ </layer>
+</map>

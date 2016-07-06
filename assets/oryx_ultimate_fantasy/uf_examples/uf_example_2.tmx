@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="48" height="48" tilewidth="48" tileheight="48" nextobjectid="1">
+ <tileset firstgid="1" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760" columns="20">
+  <image source="../uf_terrain.png" width="960" height="1824"/>
+  <tile id="115">
+   <animation>
+    <frame tileid="115" duration="500"/>
+    <frame tileid="116" duration="500"/>
+    <frame tileid="117" duration="500"/>
+    <frame tileid="118" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="135">
+   <animation>
+    <frame tileid="135" duration="500"/>
+    <frame tileid="136" duration="500"/>
+    <frame tileid="137" duration="500"/>
+    <frame tileid="138" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="155">
+   <animation>
+    <frame tileid="155" duration="500"/>
+    <frame tileid="156" duration="500"/>
+    <frame tileid="157" duration="500"/>
+    <frame tileid="158" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="195">
+   <animation>
+    <frame tileid="195" duration="300"/>
+    <frame tileid="196" duration="300"/>
+    <frame tileid="197" duration="300"/>
+    <frame tileid="198" duration="300"/>
+   </animation>
+  </tile>
+  <tile id="644">
+   <animation>
+    <frame tileid="644" duration="200"/>
+    <frame tileid="645" duration="200"/>
+   </animation>
+  </tile>
+  <tile id="672">
+   <animation>
+    <frame tileid="672" duration="750"/>
+    <frame tileid="673" duration="750"/>
+   </animation>
+  </tile>
+  <tile id="674">
+   <animation>
+    <frame tileid="674" duration="750"/>
+    <frame tileid="675" duration="750"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="761" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760" columns="20">
+  <tileoffset x="0" y="-8"/>
+  <image source="../uf_terrain.png" width="960" height="1824"/>
+ </tileset>
+ <tileset firstgid="1521" name="uf_heroes_simple" tilewidth="48" tileheight="48" tilecount="130" columns="10">
+  <tileoffset x="0" y="-16"/>
+  <image source="../uf_heroes_simple.png" width="480" height="624"/>
+ </tileset>
+ <tileset firstgid="1651" name="uf_items" tilewidth="48" tileheight="48" tilecount="484" columns="22">
+  <tileoffset x="0" y="-8"/>
+  <image source="../uf_items.png" width="1056" height="1056"/>
+ </tileset>
+ <layer name="floor" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt07sJwDAMBUBNm9qTZIx8tgyGNDEKaWVyB69w9yTkCIC6liTdNmS/U81b/941m6Gar/0f8Zyhqja8z5jjflqSbrydqvvP+veMdzNT/zXyv1uxPwAAAAAAAP9xAYcCKUM=
+  </data>
+ </layer>
+ <layer name="rug" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt07sJgEAQRdHFYFvyV4KfZuzDmp1UENxAmeQcuMHCBC/ZUgDg2dllL/hPH63RkD2k0VHv7yWaoz1jzAfGaIum7CEvauMfaL0DAAAAAACAP1wuIwNp
+  </data>
+ </layer>
+ <layer name="shadows" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt1LEJAEAIA0B3cf8dXUD51sc7SGORKhgBsFc2me7ZFcDHbJyrph//CgAAAAAAwFUF8BYEGw==
+  </data>
+ </layer>
+ <layer name="walls" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt1EEKgzAQheFk0Wt4BLvoDQLWG6TVe/c+jYuhrykj7jrC/8EjMUF4wmBKADxjPp6b7KMorUttWbrVzp8tD1ntLgrrcsnfmVpe6Tf6TgSz06XkT19jz1Og/qWbadvv9fe++R90/jc6/17/SPPjzX+V/jr/Q4rV35vlvX/kPVB/nX+NnV+72F0UNR/PKnsAAAAAAAAAAACc0xvlSyJ2
+  </data>
+ </layer>
+ <layer name="props" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0lEKQEAUQNFJsRB7YA22g8ICxLb5IIVPZeicejW9+blTEwLAN+TpcZ7S6/18s4tBsXWVp74hCaFfp9vmS6rs7YJn1JH+md25r7npHSN/Qxt5HwAAAAAAAPzBAibBBkk=
+  </data>
+ </layer>
+ <layer name="heroes" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJzt0zEKgDAMAMBSsLq5+18Rf+3gpGBBUEjLHYRAyBBIkhLQsy2/q0czlJSmUu+ZyxktGBuZ88leuZuoO1jzNd8tQefuTdT7+ErtNwAAAAAAAOBvB97rA9E=
+  </data>
+ </layer>
+ <layer name="door" width="48" height="48">
+  <data encoding="base64" compression="zlib">
+   eJztzwENACAIAEGMZQZn/zqUcEPYXYL/CACY7azqgnd285fbvB8AAAAAAAB+lJMGANU=
+  </data>
+ </layer>
+</map>

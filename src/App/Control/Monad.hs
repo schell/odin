@@ -1,5 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module App.Control.Monad where
 
 import           Gelatin.SDL2
@@ -16,8 +18,6 @@ import           Data.IntMap.Strict (IntMap)
 import           Data.Text (Text)
 import           Data.Int (Int32, Int16)
 import           Data.Word (Word8)
-
-newtype Uid = Uid { unUid :: Int } deriving (Show, Eq, Ord, Enum, Num)
 
 data LogLevel = LogLevelInfo
               | LogLevelWarn
@@ -38,6 +38,8 @@ data Action = ActionNone
             | ActionSetCursor CursorCmd
             | ActionSetTextEditing Bool
             | ActionLoadImage Uid FilePath
+            | ActionLoadRenderer Uid (Rez -> IO GLRenderer)
+            | ActionUnloadRenderer GLRenderer
 
 data Fonts = Fonts { fontFancy   :: FontData
                    , fontLegible :: FontData
@@ -87,9 +89,9 @@ data AppEvent = AppEventNone
               | AppEventJoystickHat !Int32 !Word8 !Word8
               | AppEventJoystickButton !Int32 !Word8 !Word8
               | AppEventLoadImage !Uid !(Either String (V2 Int, GLuint))
+              | AppEventLoadedRenderer Uid GLRenderer
               | AppEventOther !EventPayload
               | AppQuit
-              deriving (Show, Eq)
 
 data Delta = DeltaTime Float
            | DeltaFrames Int
@@ -97,7 +99,6 @@ data Delta = DeltaTime Float
 type Pic = Picture GLuint ()
 type AppSequence a = SplineT AppEvent a Effect
 type AppSignal = VarT Effect AppEvent
-
 --------------------------------------------------------------------------------
 -- Empty AppData
 --------------------------------------------------------------------------------
@@ -140,6 +141,11 @@ getLegibleFont = asks (fontLegible . rdFonts)
 -- | Read the current mouse position
 getMousePosition :: (Monad m, Monoid w) => RWST ReadData w s m (V2 Int)
 getMousePosition = asks rdCursorPos
+--------------------------------------------------------------------------------
+-- Write an Action
+--------------------------------------------------------------------------------
+writeAction :: (Monad m, MonadTrans t) => Action -> t (RWST r [Action] s m) ()
+writeAction = lift . tell . (:[])
 --------------------------------------------------------------------------------
 -- Logging
 --------------------------------------------------------------------------------
