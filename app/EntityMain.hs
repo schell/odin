@@ -1,31 +1,41 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE StandaloneDeriving #-}
 import           Gelatin.Core
 import           Gelatin.Picture
 import           Gelatin.SDL2
-import           Gelatin.GL
 import           SDL
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
+import qualified Data.Map.Strict as M
+import           Data.Map.Strict (Map)
 import           Data.Word (Word32)
-import           Data.Functor.Identity
+import           Data.Tiled
+import           Data.Monoid
+import           Data.Maybe (catMaybes)
+import           Data.Either (lefts, rights)
+import           Data.List (find)
 import           Control.Monad (void, forever, when)
 import           Control.Monad.Trans.State
-import           Control.Monad.IO.Class (liftIO, MonadIO)
+import           Control.Monad.IO.Class (liftIO)
 import           Control.Varying
 import           Control.Concurrent (threadDelay)
-import           System.Exit (exitSuccess)
+import           System.Exit (exitSuccess, exitFailure)
+import           Text.Show.Pretty
 
 import           App.Framework (isQuit)
+import           Data.Tiled.Utils
 
-data Update = UpdateTransform Uid PictureTransform
-
-data Input = InputTime Float
+data Update = UpdateTransform PictureTransform
+data Input  = InputTime Float
+type Script = SplineT Input [Update] IO ()
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
 data Components = Components { compRndring  :: IntMap GLRenderer
                              , compTrnsfrm  :: IntMap PictureTransform
-                             , compBehavior :: IntMap (Var Input Update)
+                             , compScript   :: IntMap Script
                              }
 
 emptyComponents :: Components
@@ -43,6 +53,24 @@ emptySystemData :: Rez -> Word32 -> SystemData
 emptySystemData r t = SystemData 0 r t emptyComponents
 
 type System = StateT SystemData IO
+
+destroyEntity :: Uid -> System ()
+destroyEntity (Uid k) = do
+  Components{..} <- gets sysComponents
+  let mr = IM.lookup k compRndring
+      mc = fst <$> mr
+      r  = IM.delete k compRndring
+      t  = IM.delete k compTrnsfrm
+      s  = IM.delete k compScript
+  modify' $ \sys -> sys{sysComponents = Components r t s}
+  liftIO $ sequence_ mc
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+type ImageTextureMap = Map Image GLuint
+type TileGLRendererMap = Map Tile GLRenderer
+
+deriving instance Ord Image
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
@@ -59,72 +87,172 @@ tickTime = do
   modify' $ \s -> s{sysLastTime = t}
   return $ fromIntegral (t - lastT) / 1000
 
-tickBehaviors :: Float -> System [Update]
-tickBehaviors dt = do
+-- | Tick all component scripts by a time delta, updating them in place.
+-- Returns a list of component updates and the Uids of components whose scripts
+-- have ended.
+tickScripts :: Float -> System ([(Uid, [Update])], [Uid])
+tickScripts dt = do
   c <- gets sysComponents
-  let m = compBehavior c
-      run v = runIdentity $ runVarT v $ InputTime dt
-      steps :: IntMap (Update, Var Input Update)
-      steps = run <$> m
-      updates = fst <$> steps
-      nextbs = snd <$> steps
-  modify' $ \s -> s{sysComponents = c{compBehavior = nextbs}}
-  return $ map snd $ IM.toList updates
+  let m = compScript c
+      run s = runSplineE s $ InputTime dt
+      getSteps :: IO (IntMap (Either [Update] (), Script))
+      getSteps = sequence $ run <$> m
+  steps <- liftIO getSteps
+  let uidsToEs = IM.toList $ fst <$> steps
+      (uids,es) = unzip uidsToEs
+      pairs = zipWith f uids es
+      f k (Left u) = Left (Uid k, u)
+      f k (Right ()) = Right $ Uid k
+      nexts = snd <$> steps
+  modify' $ \s -> s{sysComponents = c{compScript = nexts}}
+  return (lefts pairs, rights pairs)
 
-tickUpdates :: [Update] -> System ()
-tickUpdates = mapM_ update
-  where update (UpdateTransform uid t) = addComponentTransform uid t
+tickUpdates :: [(Uid, [Update])] -> [Uid] -> System ()
+tickUpdates us deadIds = do
+  let updates uid = mapM_ (update uid)
+      update uid (UpdateTransform t) = setComponentTransform uid t
+  mapM_ (uncurry updates) us
+  mapM_ destroyEntity deadIds
 
-addComponentRendering :: Uid -> GLRenderer -> System ()
-addComponentRendering (Uid uid) r = do
+setComponentRendering :: Uid -> GLRenderer -> System ()
+setComponentRendering (Uid uid) r = do
   c <- gets sysComponents
   let m = compRndring c
   modify' $ \s -> s{sysComponents = c{compRndring = IM.insert uid r m }}
 
-addComponentTransform :: Uid -> PictureTransform -> System ()
-addComponentTransform (Uid uid) p = do
+setComponentTransform :: Uid -> PictureTransform -> System ()
+setComponentTransform (Uid uid) p = do
   c <- gets sysComponents
   let m = compTrnsfrm c
   modify' $ \s -> s{sysComponents = c{compTrnsfrm = IM.insert uid p m }}
 
-addComponentBehavior :: Uid -> Var Input Update -> System ()
-addComponentBehavior (Uid uid) v = do
+setComponentScript :: Uid -> Script -> System ()
+setComponentScript (Uid uid) v = do
   c <- gets sysComponents
-  let m = compBehavior c
-  modify' $ \s -> s{sysComponents = c{compBehavior = IM.insert uid v m }}
+  let m = compScript c
+  modify' $ \s -> s{sysComponents = c{compScript = IM.insert uid v m }}
 
-deltaTime :: Var Input Float
+deltaTime :: Monad m => VarT m Input Float
 deltaTime = var f
   where f (InputTime t) = t
         --f _ = 0
 
+compilePic :: Picture GLuint () -> System GLRenderer
+compilePic pic = do
+  rez <- gets sysRez
+  fst <$> liftIO (compilePictureRenderer rez mempty pic)
+
+makeImageComponent :: Image -> System (Maybe Uid)
+makeImageComponent Image{..} = do
+  e    <- freshUid
+  liftIO (loadImageAsTexture iSource) >>= \case
+    Nothing  -> return Nothing
+    Just tex -> do
+      let sz = realToFrac <$> V2 iWidth iHeight
+      r <- compilePic $ withTexture tex $ rectangle 0 sz (/sz)
+      e `setComponentTransform` mempty
+      e `setComponentRendering` r
+      return $ Just e
+
+allTiles :: TiledMap -> [Tile]
+allTiles = concatMap allLayerTiles . mapLayers
+  where allLayerTiles = M.elems . layerData
+
+allocImageTexture :: Image -> IO (Maybe (Image, GLuint))
+allocImageTexture i@Image{..} = ((i,) <$>) <$> loadImageAsTexture iSource
+
+allocImageTextureMap :: TiledMap -> IO ImageTextureMap
+allocImageTextureMap t = do
+  mts <- mapM allocImageTexture $ allImages t
+  return $ M.fromList $ catMaybes mts
+
+tilesetOfTile :: TiledMap -> Tile -> Tileset
+tilesetOfTile TiledMap{..} Tile{..} =
+  snd $ last $ takeWhile ((<= tileGid) . fst) initGidToTileset
+    where initGidToTileset = map f mapTilesets
+          f t@Tileset{..} = (tsInitialGid, t)
+
+imageOfTileset :: Tileset -> Image
+imageOfTileset = head . tsImages
+
+imageOfTile :: TiledMap -> Tile -> Image
+imageOfTile tm t = imageOfTileset $ tilesetOfTile tm t
+
+assocTileWithTileset :: TiledMap -> Map Tile Tileset
+assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
+  where tilesets = map (tilesetOfTile t) tiles
+        tiles = allTiles t
+
+allocTileRendering :: Tile -> Tileset -> GLuint -> System GLRenderer
+allocTileRendering tile Tileset{..} tex = do
+  let img = head tsImages
+      w   = fromIntegral $ iWidth img
+      h   = fromIntegral $ iHeight img
+      tw  = fromIntegral tsTileWidth
+      th  = fromIntegral tsTileHeight
+      -- index of the tile relative to the tileset's initial tile
+      ndx = fromIntegral $ tileGid tile - tsInitialGid
+      -- number of tiles in x
+      numtx  = w / tw
+      -- the tile's x and y indices
+      ty  = fromIntegral (floor $ ndx / numtx :: Int)
+      tx  = ndx - ty * numtx
+      -- the tile's pixel topleft and bottomright coordinates
+      tl  = V2 (tw * tx) (th * ty)
+      br  = tl + V2 tw th
+  compilePic $ withTexture tex $ rectangle tl br $ \(V2 x y) -> V2 (x/w) (y/h)
+
+mapOfTiles :: TiledMap -> System TileGLRendererMap
+mapOfTiles t@TiledMap{..} = do
+  img2TexMap <- liftIO $ allocImageTextureMap t
+  let tile2SetMap = assocTileWithTileset t
+      tile2SetTexMapM  = findTexBySet <$> tile2SetMap
+      findTexBySet ts =
+        case M.lookup (imageOfTileset ts) img2TexMap of
+              Nothing -> do putStrLn $
+                              "Could not find texture for tileset:" ++ show ts
+                            exitFailure
+              Just tex -> return (ts, tex)
+  tile2SetTexMap <- liftIO $ sequence tile2SetTexMapM
+  sequence $ M.mapWithKey (\a (b, c) -> allocTileRendering a b c) tile2SetTexMap
+
+layerWithName :: TiledMap -> String -> Maybe Layer
+layerWithName TiledMap{..} name = find ((== name) . layerName) mapLayers
+
+allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRenderer)
+allocLayerRenderer tmap rmap name = case layerWithName tmap name of
+  Nothing -> return Nothing
+  Just layer -> do
+    let  renderLayer :: PictureTransform -> IO ()
+         renderLayer tfrm = mapM_ (tileRenderer tfrm) $ M.toList $ layerData layer
+         tileRenderer tfrm ((x,y), tile) = case M.lookup tile rmap of
+           Nothing -> putStrLn $ "Could not find renderer for tile:" ++ show tile
+           Just f  -> do
+             let ts = tilesetOfTile tmap tile
+                 w  = tsTileWidth ts
+                 h  = tsTileHeight ts
+                 v  = fromIntegral <$> V2 (w * x)  (h * y)
+                 t  = tfrm <> PictureTransform (Transform v 1 0) 1 1
+             snd f t
+    return $ Just (return (), renderLayer)
+
 setupNetwork :: System ()
 setupNetwork = do
-  master <- freshUid
-  rez    <- gets sysRez
-  r      <- liftIO $ do
-    pr <- compilePictureRenderer rez mempty $ withColor $ rectangle 10 20 $ const red
-    return $ fst pr
-  master `addComponentTransform` mempty
-  master `addComponentRendering` r
-  let u = UpdateTransform master <$> b
-      b = PictureTransform <$> t <*> pure 1 <*> pure 1
-      t = Transform <$> (deltaTime ~> (V2 <$> x <*> y)) <*> 1 <*> 0
-      x :: Var Float Float
-      x = outputStream dx 0
-      dx = do tween easeInExpo 10 100 0.25 >>= (`constant` 0.25)
-              tween easeInExpo 100 10 0.25 >>= (`constant` 0.25)
-              dx
-      y :: Var Float Float
-      y = outputStream dy 0
-      dy = do constant 10 0.25 >> tween easeInExpo 10 100 0.25
-              constant 100 0.25 >> tween easeInExpo 100 10 0.25
-              dy
-  master `addComponentBehavior` u
+  tmap@TiledMap{..} <- unrelativizeImagePaths <$>
+    liftIO (loadMapFile "assets/oryx_ultimate_fantasy/uf_examples/uf_example_1.tmx")
+  liftIO $ putStrLn $ ppShow tmap
+  let Just floorLayer = layerWithName tmap "floor"
+  liftIO $ putStrLn $ ppShow $ layerData floorLayer
+  rmap <- mapOfTiles tmap
+  Just layerRenderer <- liftIO $ allocLayerRenderer tmap rmap "floor"
+  ent  <- freshUid
+  ent `setComponentTransform` mempty
+  ent `setComponentRendering` layerRenderer
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
 processEvent :: EventPayload -> IO ()
+processEvent QuitEvent = exitSuccess
 processEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) =
   when (isQuit k) exitSuccess
 processEvent _ = return ()
@@ -144,8 +272,9 @@ main = do
   t             <- ticks
   void $ flip runStateT (emptySystemData rez t) $ do
     setupNetwork
+    liftIO $ putStrLn "Initial network created"
     forever $ do
       liftIO $ void $ pollEvents >>= mapM (processEvent . eventPayload)
-      tickTime >>= tickBehaviors >>= tickUpdates
+      tickTime >>= tickScripts >>= uncurry tickUpdates
       renderWith rez window
       liftIO $ threadDelay 1

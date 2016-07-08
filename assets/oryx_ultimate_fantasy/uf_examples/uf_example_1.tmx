@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.0" orientation="orthogonal" renderorder="right-down" width="48" height="48" tilewidth="48" tileheight="48" nextobjectid="1">
- <tileset firstgid="1" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760">
+ <tileset firstgid="1" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760" columns="20">
   <image source="../uf_terrain.png" width="960" height="1824"/>
   <tile id="115">
    <animation>
@@ -47,50 +47,50 @@
    </animation>
   </tile>
  </tileset>
- <tileset firstgid="761" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760">
+ <tileset firstgid="761" name="uf_terrain" tilewidth="48" tileheight="48" tilecount="760" columns="20">
   <tileoffset x="0" y="-8"/>
   <image source="../uf_terrain.png" width="960" height="1824"/>
  </tileset>
- <tileset firstgid="1521" name="uf_heroes_simple" tilewidth="48" tileheight="48" tilecount="130">
+ <tileset firstgid="1521" name="uf_heroes_simple" tilewidth="48" tileheight="48" tilecount="130" columns="10">
   <tileoffset x="0" y="-16"/>
   <image source="../uf_heroes_simple.png" width="480" height="624"/>
  </tileset>
- <tileset firstgid="1651" name="uf_items" tilewidth="48" tileheight="48" tilecount="484">
+ <tileset firstgid="1651" name="uf_items" tilewidth="48" tileheight="48" tilecount="484" columns="22">
   <image source="../uf_items.png" width="1056" height="1056"/>
  </tileset>
  <layer name="floor" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt0jEKBCEMBVDvX5jdfg87G1CQMFNPivfgI6b6aMYA6Cv+mSuxMsosz886u5k3SVFmv5Vu4ibpfPPv6Nt/i3LPzuf+dO2f/fY7n/tTd6pr/7Nj3fm9Qznv3r/+wdMMAAAAAAAA3nIBNdsqSA==
+   eJzt0kEKwDAIRFFP0WPHdt/DtoKCSLruLP6DIcTVkGiGvx1vVsYzNmZxnnmqWZsEH7M7o8Y3Cf3NL9PtX3zco3PfH9X+0a/eue/P3CnV/r3j3PnaoZir959/8DUDAAAAAAAAAAAAAOh5AA3rKc8=
   </data>
  </layer>
  <layer name="water edges" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt0jENACAAA0HwAH6QhlSkQJDA0pDcJd1/aCkApPV6N9Mdr1q9m+mOV/qzzvfH2Up3AAAAAAAAwK820oED9w==
+   eJzt0rEJACAQBEHtQfuxNEu1FB9LMPBBZuDyDa4UeKPXs5ndcavVs5ndcUt/rvj+iK3sDgAAAAAAAAD+swE0BAP3
   </data>
  </layer>
  <layer name="shadows" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt1KsNACAMQMHuwv6bMQQGgSghOD53yTMVVU0jAM5Vkmbzki24RO3B6KUbhx2zH78KAAAAAADgVw0VnQXz
+   eJzt1LEJACAMAMHskv03cwgbCxFFrES5g29SpAqJ4LactJrnbMEjSgt6P904nFj9+F0AAAAAAAAAowqq6wXz
   </data>
  </layer>
  <layer name="props" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt0jEKgDAQBEDJj7XWH0h8g/hRC1OIJmh5gRlIs9Ve2GEA6M+W3tlYySKYS6/l0e9+wx60e0vtr4+Oboi6lS+13eeSRdxQ/tkp8nbWRrcpXQ8AAAAAAAAiOAGLDAkw
+   eJzt0jEKgDAQBMCQH2utP5D4BvGjFqYQTdDyhBlIs9Ve2JSIas3PbGhkEUy113zrd71hC9q9p/XX+49uiLqVN63dl5pF3FD52CnydpZOtzGfDwAAAAAAAIDYDj+fCTA=
   </data>
  </layer>
  <layer name="walls" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt1VsKwjAQheHJg62tO0jV/W+oG6m3VxNIyBgbX53A/8FhLEU4LUMqAqBlS3lUM+YVclfXN/XbiqMTWUIuIdc0fciY5pLmWV0P7t+tiyl1ObjPxOda5Tv6Pxa03uXgSt9sVfesiF30Tuc9Hzvqn3c7yjs+d9L/1Nh/r/rX+2+pf6vLrzNyNtY/n/tPKef/5Mo3IE79HbD0/n11zu9l7x4AAAAAAAAAAAD69AY+KS0c
+   eJzt1VsOgjAQheHpgyC4g6Luf0NsBG+vtkmbjpX6ymD+LzkZCTE5kElZRGQJeVQz5hVyV9c39duKoxOZQi4h1zR9SJ/mlOZZXXdu69bFkLoc3Gfic83yHf0fC1rvsnOlbzare1bELnqn8573O+qfdzvKOz7upP+psf9e9a/331L/VpdfZ+RorH8+959Szv/BlW9AnPo7YOn9++qcX8vaPQAAAAAAAAAAAAD4N286zC0c
   </data>
  </layer>
  <layer name="heroes" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt0jsKgDAUBEAJ6AXE3rOqZ1APa6EQCz9YWZjgTLMQXrGBLQrgT/oQcwjn9y7cb1M07T3nPZcy5phJ/6u6+rrBe6n/IZdtP8l120fNtpE28Z0AAAAAAABAzlYrwQXr
+   eJzt0jsKgDAUBEAJ6AXE3rOqZ1APa6EQC7+VhQnMNAvhFRvYoiA1fYg5hPN7F+63KZr2nvOeSxlzzKT/VV393eC71P+Qy7bf5Lrto2bbSJv4TgAAAAAAAAB4tgI4UwXr
   </data>
  </layer>
  <layer name="door" width="48" height="48">
   <data encoding="base64" compression="zlib">
-   eJzt0YEJACAIAEGdINp/1sAhCgy5m+DhIwBgtpXdBe+c7oBLe9ALAAAAAAAA+EUB2ccBIA==
+   eJzt0YEJACAIAEGdINp/1sAhCgy5m+DhI4AJVnYXvHO6Ay7tQS8AAAAAAAAA+F8BWuMBIA==
   </data>
  </layer>
 </map>
