@@ -1,7 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE StandaloneDeriving #-}
 import           Gelatin.Core
 import           Gelatin.Picture
 import           Gelatin.SDL2
@@ -9,13 +8,10 @@ import           SDL
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.Map.Strict as M
-import           Data.Map.Strict (Map)
 import           Data.Word (Word32)
 import           Data.Tiled
 import           Data.Monoid
-import           Data.Maybe (catMaybes)
 import           Data.Either (lefts, rights)
-import           Data.List (find)
 import           Control.Monad (void, forever, when, forM_)
 import           Control.Monad.Trans.State
 import           Control.Monad.IO.Class (liftIO)
@@ -35,11 +31,12 @@ type Script = SplineT Input [Update] IO ()
 --------------------------------------------------------------------------------
 data Components = Components { compRndring  :: IntMap GLRenderer
                              , compTrnsfrm  :: IntMap PictureTransform
-                             , compScript   :: IntMap Script
+                             , compScripts  :: IntMap [Script]
+                             , compName     :: IntMap String
                              }
 
 emptyComponents :: Components
-emptyComponents = Components mempty mempty mempty
+emptyComponents = Components mempty mempty mempty mempty
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
@@ -61,16 +58,14 @@ destroyEntity (Uid k) = do
       mc = fst <$> mr
       r  = IM.delete k compRndring
       t  = IM.delete k compTrnsfrm
-      s  = IM.delete k compScript
-  modify' $ \sys -> sys{sysComponents = Components r t s}
+      s  = IM.delete k compScripts
+      n  = IM.delete k compName
+  modify' $ \sys -> sys{sysComponents = Components r t s n}
   liftIO $ sequence_ mc
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
-type ImageTextureMap = Map Image GLuint
-type TileGLRendererMap = Map Tile GLRenderer
 
-deriving instance Ord Image
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
@@ -93,18 +88,17 @@ tickTime = do
 tickScripts :: Float -> System ([(Uid, [Update])], [Uid])
 tickScripts dt = do
   c <- gets sysComponents
-  let m = compScript c
+  let m = compScripts c
       run s = runSplineE s $ InputTime dt
-      getSteps :: IO (IntMap (Either [Update] (), Script))
-      getSteps = sequence $ run <$> m
-  steps <- liftIO getSteps
+      getSteps = sequence $ mapM run <$> m
+  steps <- (unzip <$>) <$> liftIO getSteps
   let uidsToEs = IM.toList $ fst <$> steps
       (uids,es) = unzip uidsToEs
-      pairs = zipWith f uids es
+      pairs = zipWith f uids $ concat es
       f k (Left u) = Left (Uid k, u)
       f k (Right ()) = Right $ Uid k
       nexts = snd <$> steps
-  modify' $ \s -> s{sysComponents = c{compScript = nexts}}
+  modify' $ \s -> s{sysComponents = c{compScripts = nexts}}
   return (lefts pairs, rights pairs)
 
 tickUpdates :: [(Uid, [Update])] -> [Uid] -> System ()
@@ -126,11 +120,25 @@ setComponentTransform (Uid uid) p = do
   let m = compTrnsfrm c
   modify' $ \s -> s{sysComponents = c{compTrnsfrm = IM.insert uid p m }}
 
-setComponentScript :: Uid -> Script -> System ()
-setComponentScript (Uid uid) v = do
+setComponentScripts :: Uid -> [Script] -> System ()
+setComponentScripts (Uid uid) v = do
   c <- gets sysComponents
-  let m = compScript c
-  modify' $ \s -> s{sysComponents = c{compScript = IM.insert uid v m }}
+  let m = compScripts c
+  modify' $ \s -> s{sysComponents = c{compScripts = IM.insert uid v m }}
+
+addComponentScript :: Uid -> Script -> System ()
+addComponentScript (Uid uid) v = do
+  c <- gets sysComponents
+  let m = case IM.lookup uid $ compScripts c of
+            Nothing -> IM.insert uid [] m
+            Just _  -> m
+  modify' $ \s -> s{sysComponents = c{compScripts = IM.adjust (v:) uid m }}
+
+setComponentName :: Uid -> String -> System ()
+setComponentName (Uid uid) v = do
+  c <- gets sysComponents
+  let m = compName c
+  modify' $ \s -> s{sysComponents = c{compName = IM.insert uid v m}}
 
 deltaTime :: Monad m => VarT m Input Float
 deltaTime = var f
@@ -153,35 +161,6 @@ makeImageComponent Image{..} = do
       e `setComponentTransform` mempty
       e `setComponentRendering` r
       return $ Just e
-
-allTiles :: TiledMap -> [Tile]
-allTiles = concatMap allLayerTiles . mapLayers
-  where allLayerTiles = M.elems . layerData
-
-allocImageTexture :: Image -> IO (Maybe (Image, GLuint))
-allocImageTexture i@Image{..} = ((i,) <$>) <$> loadImageAsTexture iSource
-
-allocImageTextureMap :: TiledMap -> IO ImageTextureMap
-allocImageTextureMap t = do
-  mts <- mapM allocImageTexture $ allImages t
-  return $ M.fromList $ catMaybes mts
-
-tilesetOfTile :: TiledMap -> Tile -> Tileset
-tilesetOfTile TiledMap{..} Tile{..} =
-  snd $ last $ takeWhile ((<= tileGid) . fst) initGidToTileset
-    where initGidToTileset = map f mapTilesets
-          f t@Tileset{..} = (tsInitialGid, t)
-
-imageOfTileset :: Tileset -> Image
-imageOfTileset = head . tsImages
-
-imageOfTile :: TiledMap -> Tile -> Image
-imageOfTile tm t = imageOfTileset $ tilesetOfTile tm t
-
-assocTileWithTileset :: TiledMap -> Map Tile Tileset
-assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
-  where tilesets = map (tilesetOfTile t) tiles
-        tiles = allTiles t
 
 allocTileRendering :: Tile -> Tileset -> GLuint -> System GLRenderer
 allocTileRendering tile Tileset{..} tex = do
@@ -224,9 +203,6 @@ mapOfTiles t@TiledMap{..} = do
   tile2SetTexMap <- liftIO $ sequence tile2SetTexMapM
   sequence $ M.mapWithKey (\a (b, c) -> allocTileRendering a b c) tile2SetTexMap
 
-layerWithName :: TiledMap -> String -> Maybe Layer
-layerWithName TiledMap{..} name = find ((== name) . layerName) mapLayers
-
 allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRenderer)
 allocLayerRenderer tmap rmap name = case layerWithName tmap name of
   Nothing -> return Nothing
@@ -265,6 +241,7 @@ setupNetwork = do
     ent  <- freshUid
     ent `setComponentTransform` mempty
     ent `setComponentRendering` layerRenderer
+    ent `setComponentName` (name ++ " layer")
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
