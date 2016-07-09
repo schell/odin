@@ -16,7 +16,7 @@ import           Data.Monoid
 import           Data.Maybe (catMaybes)
 import           Data.Either (lefts, rights)
 import           Data.List (find)
-import           Control.Monad (void, forever, when)
+import           Control.Monad (void, forever, when, forM_)
 import           Control.Monad.Trans.State
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Varying
@@ -186,10 +186,15 @@ assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
 allocTileRendering :: Tile -> Tileset -> GLuint -> System GLRenderer
 allocTileRendering tile Tileset{..} tex = do
   let img = head tsImages
+      -- the image's width and height in pixels
       w   = fromIntegral $ iWidth img
       h   = fromIntegral $ iHeight img
+      -- the tile's width and height in pixels
       tw  = fromIntegral tsTileWidth
       th  = fromIntegral tsTileHeight
+      -- the tile's width and height in uv coords
+      uvw = tw / w
+      uvh = th / h
       -- index of the tile relative to the tileset's initial tile
       ndx = fromIntegral $ tileGid tile - tsInitialGid
       -- number of tiles in x
@@ -197,10 +202,13 @@ allocTileRendering tile Tileset{..} tex = do
       -- the tile's x and y indices
       ty  = fromIntegral (floor $ ndx / numtx :: Int)
       tx  = ndx - ty * numtx
-      -- the tile's pixel topleft and bottomright coordinates
-      tl  = V2 (tw * tx) (th * ty)
-      br  = tl + V2 tw th
-  compilePic $ withTexture tex $ rectangle tl br $ \(V2 x y) -> V2 (x/w) (y/h)
+      -- the tile's uv upper left
+      V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
+      -- the tile's uv bottom left
+      V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
+  compilePic $ withTexture tex $ do
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
 
 mapOfTiles :: TiledMap -> System TileGLRendererMap
 mapOfTiles t@TiledMap{..} = do
@@ -244,10 +252,19 @@ setupNetwork = do
   let Just floorLayer = layerWithName tmap "floor"
   liftIO $ putStrLn $ ppShow $ layerData floorLayer
   rmap <- mapOfTiles tmap
-  Just layerRenderer <- liftIO $ allocLayerRenderer tmap rmap "floor"
-  ent  <- freshUid
-  ent `setComponentTransform` mempty
-  ent `setComponentRendering` layerRenderer
+  let layerNames = [ "floor"
+                   , "water edges"
+                   , "shadows"
+                   , "props"
+                   , "walls"
+                   , "heroes"
+                   , "door"
+                   ]
+  forM_  layerNames $ \name -> do
+    Just layerRenderer <- liftIO $ allocLayerRenderer tmap rmap name
+    ent  <- freshUid
+    ent `setComponentTransform` mempty
+    ent `setComponentRendering` layerRenderer
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
