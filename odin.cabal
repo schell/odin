@@ -10,11 +10,11 @@ name:                odin
 version:             0.1.0.0
 
 -- A short (one-line) description of the package.
-synopsis:            An experimental game. 
+synopsis:            An experimental game.
 
 -- A longer description of the package.
-description:         A experimental architecture and roguelike game, 
-                     demonstrated as a blog series hosted at 
+description:         A experimental architecture and roguelike game,
+                     demonstrated as a blog series hosted at
                      http://zyghost.com/series/odin
 
 -- URL for the project homepage or repository.
@@ -31,7 +31,7 @@ author:              Schell Scivally
 
 -- An email address to which users can send suggestions, bug reports, and
 -- patches.
-maintainer:          schell.scivally@synapsegroup.com 
+maintainer:          schell.scivally@synapsegroup.com
 
 -- A copyright notice.
 -- copyright:
@@ -47,7 +47,7 @@ build-type:          Simple
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.10
 
-library 
+library
   ghc-options:         -threaded -Wall
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -83,10 +83,10 @@ library
                      , free >= 4.12 && < 4.13
                      , hashable >= 1.2 && < 1.3
                      , text >= 1.2 && < 1.3
-                     , vector >= 0.11 && < 0.12 
+                     , vector >= 0.11 && < 0.12
                      , htiled >= 0.1.3
 
-executable entity 
+executable entity
   --buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   hs-source-dirs:      app
@@ -94,11 +94,12 @@ executable entity
   build-depends:       base >=4.8 && <4.9
                      , odin
                      , varying >= 0.5 && < 0.6
-                     , gelatin-core 
+                     , gelatin-core
                      , gelatin-picture
-                     , gelatin-gl 
-                     , gelatin-sdl2 
+                     , gelatin-gl
+                     , gelatin-sdl2
 
+                     , freer
                      , containers
                      , transformers >= 0.4 && < 0.5
                      , mtl >= 2.2 && < 2.3
@@ -109,7 +110,7 @@ executable entity
 
   default-language:    Haskell2010
 
-executable sandbox 
+executable sandbox
   --buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   hs-source-dirs:      app
@@ -118,9 +119,9 @@ executable sandbox
                      , odin
                      , varying >= 0.5 && < 0.6
 
-                     , gelatin-core 
+                     , gelatin-core
                      , gelatin-picture
-                     , gelatin-sdl2 
+                     , gelatin-sdl2
 
                      , transformers >= 0.4 && < 0.5
                      , mtl >= 2.2 && < 2.3
@@ -147,10 +148,10 @@ executable part-two
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8 && <4.9
                      , odin
-                     , gelatin-sdl2 
-                     , gelatin-gl 
-                     , gelatin-picture 
-                     , gelatin-core 
+                     , gelatin-sdl2
+                     , gelatin-gl
+                     , gelatin-picture
+                     , gelatin-core
 
                      , varying >= 0.5 && < 0.6
                      , transformers >= 0.4 && < 0.5
@@ -160,7 +161,7 @@ executable part-two
   -- Base language which the package is written in.
   default-language:    Haskell2010
 
-executable part-one 
+executable part-one
   buildable:           False
   ghc-options:         -threaded -Wall -rtsopts -fprof-auto
   -- Directories containing source files.

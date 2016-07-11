@@ -1,5 +1,5 @@
 flags: {}
-packages: 
+packages:
 - '.'
 - '../gelatin/gelatin-core'
 - '../gelatin/gelatin-picture'
@@ -24,7 +24,7 @@ packages:
     commit: e0f8271c8fe860492ca0a123ce3e41fde977e1de
   extra-dep: true
 - location:
-    git: https://github.com/schell/sdl2.git 
+    git: https://github.com/schell/sdl2.git
     commit: 8d9b060fe5e71f06b9673c9f71e52aa18f56ea1c
 #- location:
 #    git: https://github.com/schell/gelatin.git
@@ -37,6 +37,7 @@ packages:
 #  - gelatin-glfw
 #  - gelatin-sdl2
 
-extra-deps: []
+extra-deps:
+- freer-0.2.3.0
 
 resolver: lts-6.1

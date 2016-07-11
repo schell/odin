@@ -1,169 +1,184 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ConstraintKinds #-}
 import           Gelatin.Core
 import           Gelatin.Picture
-import           Gelatin.SDL2
-import           SDL
+import           Gelatin.SDL2 hiding (E)
+import           SDL hiding (Event, get)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.Map.Strict as M
 import           Data.Word (Word32)
 import           Data.Tiled
 import           Data.Monoid
-import           Data.Either (lefts, rights)
-import           Control.Monad (void, forever, when, forM_)
-import           Control.Monad.Trans.State
-import           Control.Monad.IO.Class (liftIO)
-import           Control.Varying
+import           Data.Maybe (mapMaybe)
+import           Control.Monad (void, forever, when, unless, forM_, msum)
+--import           Control.Monad.Trans.State
 import           Control.Concurrent (threadDelay)
+import           Control.Monad.Freer
+import           Control.Monad.Freer.Internal
+import           Control.Monad.Freer.State
+import           Control.Monad.Freer.Reader
+import           Control.Monad.Freer.Fresh
 import           System.Exit (exitSuccess, exitFailure)
-import           Text.Show.Pretty
+import           Text.Show.Pretty hiding (Name)
 
 import           App.Framework (isQuit)
 import           Data.Tiled.Utils
 
-data Update = UpdateTransform PictureTransform
-data Input  = InputTime Float
-type Script = SplineT Input [Update] IO ()
+data Time = Time { timeLast  :: Word32
+                 , timeDelta :: Float
+                 } deriving (Show, Eq)
+newtype Name = Name String
+type Entity = Int
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
-data Components = Components { compRndring  :: IntMap GLRenderer
-                             , compTrnsfrm  :: IntMap PictureTransform
-                             , compScripts  :: IntMap [Script]
-                             , compName     :: IntMap String
-                             }
-
-emptyComponents :: Components
-emptyComponents = Components mempty mempty mempty mempty
+type Reads a = Member (Reader a)
+type Modifies a = Member (State a)
+type ModifiesComponent a = Modifies (IntMap a)
+type DoesIO = Member IO
+type MakesEntities = Member Fresh
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
-data SystemData = SystemData { sysNextUid    :: Uid
-                             , sysRez        :: Rez
-                             , sysLastTime   :: Word32
-                             , sysComponents :: Components
-                             }
+type Component a = State (IntMap a)
 
-emptySystemData :: Rez -> Word32 -> SystemData
-emptySystemData r t = SystemData 0 r t emptyComponents
+type ScriptStep = System Script
 
-type System = StateT SystemData IO
+data Script = Script { unScript :: ScriptStep }
+            | ScriptEnd
 
-destroyEntity :: Uid -> System ()
-destroyEntity (Uid k) = do
-  Components{..} <- gets sysComponents
-  let mr = IM.lookup k compRndring
-      mc = fst <$> mr
-      r  = IM.delete k compRndring
-      t  = IM.delete k compTrnsfrm
-      s  = IM.delete k compScripts
-      n  = IM.delete k compName
-  modify' $ \sys -> sys{sysComponents = Components r t s n}
-  liftIO $ sequence_ mc
+isRunningScript :: Script -> Bool
+isRunningScript ScriptEnd = False
+isRunningScript _ = True
+
+runScript :: Script -> System Script
+runScript (Script s) = s
+runScript ScriptEnd = return ScriptEnd
+
+type System = Eff '[Component Name
+                   ,Component PictureTransform
+                   ,Component GLRenderer
+                   ,Fresh
+                   ,Reader Window
+                   ,Reader Rez
+                   ,State [EventPayload]
+                   ,State Time
+                   ,State [Script]
+                   ,IO
+                   ]
+
+type SystemResult a =
+  ((((((a, IntMap Name), IntMap PictureTransform), IntMap GLRenderer), [EventPayload]), Time), [Script])
+
+runSystem :: Rez -> Window -> System a -> IO (SystemResult a)
+runSystem rez window system =
+  runM
+  $ flip runState []
+  $ flip runState (Time 0 0)
+  $ flip runState []
+  $ flip runReader rez
+  $ flip runReader window
+  $ flip runFresh' 0
+  $ flip runState (mempty :: IntMap GLRenderer)
+  $ flip runState (mempty :: IntMap PictureTransform)
+  $ runState system (mempty :: IntMap Name)
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
-
---------------------------------------------------------------------------------
+--destroyEntity :: Uid -> System ()
+--destroyEntity (Uid k) = do
+--  Components{..} <- gets sysComponents
+--  let mr = IM.lookup k compRndrer
+--      mc = fst <$> mr
+--      r  = IM.delete k compRndrer
+--      t  = IM.delete k compTrnsfrm
+--      s  = IM.delete k compScripts
+--      n  = IM.delete k compName
+--  modify' $ \sys -> sys{sysComponents = Components r t s n}
+--  io $ sequence_ mc
+----------------------------------------------------------------------------------
 --
---------------------------------------------------------------------------------
-freshUid :: System Uid
-freshUid = do
-  uid <- gets sysNextUid
-  modify' $ \s -> s{sysNextUid = succ uid}
-  return uid
-
-tickTime :: System Float
+----------------------------------------------------------------------------------
+tickTime :: (Modifies Time r, DoesIO r) => Eff r ()
 tickTime = do
-  lastT <- gets sysLastTime
-  t     <- liftIO ticks
-  modify' $ \s -> s{sysLastTime = t}
-  return $ fromIntegral (t - lastT) / 1000
+  Time lastT _ <- get
+  t            <- io ticks
+  let dt = fromIntegral (t - lastT) / 1000
+  put $ Time t dt
 
--- | Tick all component scripts by a time delta, updating them in place.
--- Returns a list of component updates and the Uids of components whose scripts
--- have ended.
-tickScripts :: Float -> System ([(Uid, [Update])], [Uid])
-tickScripts dt = do
-  c <- gets sysComponents
-  let m = compScripts c
-      run s = runSplineE s $ InputTime dt
-      getSteps = sequence $ mapM run <$> m
-  steps <- (unzip <$>) <$> liftIO getSteps
-  let uidsToEs = IM.toList $ fst <$> steps
-      (uids,es) = unzip uidsToEs
-      pairs = zipWith f uids $ concat es
-      f k (Left u) = Left (Uid k, u)
-      f k (Right ()) = Right $ Uid k
-      nexts = snd <$> steps
-  modify' $ \s -> s{sysComponents = c{compScripts = nexts}}
-  return (lefts pairs, rights pairs)
+tickEvents :: (Modifies [EventPayload] r, DoesIO r) => Eff r ()
+tickEvents = io (pollEvents >>= mapM (processEvent . eventPayload)) >>= put
 
-tickUpdates :: [(Uid, [Update])] -> [Uid] -> System ()
-tickUpdates us deadIds = do
-  let updates uid = mapM_ (update uid)
-      update uid (UpdateTransform t) = setComponentTransform uid t
-  mapM_ (uncurry updates) us
-  mapM_ destroyEntity deadIds
+tickScripts :: System ()
+tickScripts = do
+  -- Get the current scripts to run
+  scripts <- getScripts
+  -- Clear out the scripts because running the current set of scripts will
+  -- possibly add new scripts
+  put ([] :: [Script])
+  -- Run the scripts and filter to remove any dead ones
+  results <- mapM runScript scripts
+  let remaining = filter isRunningScript results
+  -- Add the remaining scripts on the end of any new ones
+  modify (++ remaining)
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+getTimeDelta :: Modifies Time r => Eff r Float
+getTimeDelta = timeDelta <$> get
 
-setComponentRendering :: Uid -> GLRenderer -> System ()
-setComponentRendering (Uid uid) r = do
-  c <- gets sysComponents
-  let m = compRndring c
-  modify' $ \s -> s{sysComponents = c{compRndring = IM.insert uid r m }}
+setRenderer :: ModifiesComponent GLRenderer r
+            => Entity -> GLRenderer -> Eff r ()
+setRenderer k r = modify (IM.insert k r)
 
-setComponentTransform :: Uid -> PictureTransform -> System ()
-setComponentTransform (Uid uid) p = do
-  c <- gets sysComponents
-  let m = compTrnsfrm c
-  modify' $ \s -> s{sysComponents = c{compTrnsfrm = IM.insert uid p m }}
+setTransform :: ModifiesComponent PictureTransform r
+             => Entity -> PictureTransform -> Eff r ()
+setTransform k p = modify (IM.insert k p)
 
-setComponentScripts :: Uid -> [Script] -> System ()
-setComponentScripts (Uid uid) v = do
-  c <- gets sysComponents
-  let m = compScripts c
-  modify' $ \s -> s{sysComponents = c{compScripts = IM.insert uid v m }}
+getTransform :: ModifiesComponent PictureTransform r
+             => Entity -> Eff r (Maybe PictureTransform)
+getTransform k = IM.lookup k <$> get
 
-addComponentScript :: Uid -> Script -> System ()
-addComponentScript (Uid uid) v = do
-  c <- gets sysComponents
-  let m = case IM.lookup uid $ compScripts c of
-            Nothing -> IM.insert uid [] m
-            Just _  -> m
-  modify' $ \s -> s{sysComponents = c{compScripts = IM.adjust (v:) uid m }}
+modifyTransform :: ModifiesComponent PictureTransform r
+                => Entity -> (PictureTransform -> PictureTransform) -> Eff r ()
+modifyTransform k f =
+  getTransform k >>= \case
+    Nothing -> setTransform k $ f mempty
+    Just t  -> setTransform k $ f t
 
-setComponentName :: Uid -> String -> System ()
-setComponentName (Uid uid) v = do
-  c <- gets sysComponents
-  let m = compName c
-  modify' $ \s -> s{sysComponents = c{compName = IM.insert uid v m}}
+getScripts :: Modifies [Script] r => Eff r [Script]
+getScripts = get
 
-deltaTime :: Monad m => VarT m Input Float
-deltaTime = var f
-  where f (InputTime t) = t
-        --f _ = 0
+addScript :: Modifies [Script] r => ScriptStep -> Eff r ()
+addScript = modify . (:) . Script
 
-compilePic :: Picture GLuint () -> System GLRenderer
+addScripts :: (Modifies [Script] r) => [Script] -> Eff r ()
+addScripts = modify . (++)
+
+setName :: ModifiesComponent Name r => Entity -> Name -> Eff r ()
+setName k n = modify $ IM.insert k n
+
+getEvents :: Modifies [EventPayload] r => Eff r [EventPayload]
+getEvents = get
+--------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+compilePic :: (Reads Rez r, DoesIO r)
+           => Picture GLuint () -> Eff r GLRenderer
 compilePic pic = do
-  rez <- gets sysRez
-  fst <$> liftIO (compilePictureRenderer rez mempty pic)
+  rez <- ask
+  fst <$> io (compilePictureRenderer rez mempty pic)
 
-makeImageComponent :: Image -> System (Maybe Uid)
-makeImageComponent Image{..} = do
-  e    <- freshUid
-  liftIO (loadImageAsTexture iSource) >>= \case
-    Nothing  -> return Nothing
-    Just tex -> do
-      let sz = realToFrac <$> V2 iWidth iHeight
-      r <- compilePic $ withTexture tex $ rectangle 0 sz (/sz)
-      e `setComponentTransform` mempty
-      e `setComponentRendering` r
-      return $ Just e
-
-allocTileRendering :: Tile -> Tileset -> GLuint -> System GLRenderer
-allocTileRendering tile Tileset{..} tex = do
+allocTileRenderer :: (Reads Rez r, DoesIO r)
+                  => Tile -> Tileset -> GLuint -> Eff r GLRenderer
+allocTileRenderer tile Tileset{..} tex = do
   let img = head tsImages
       -- the image's width and height in pixels
       w   = fromIntegral $ iWidth img
@@ -189,9 +204,9 @@ allocTileRendering tile Tileset{..} tex = do
     tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
     tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
 
-mapOfTiles :: TiledMap -> System TileGLRendererMap
+mapOfTiles :: (Reads Rez r, DoesIO r) => TiledMap -> Eff r TileGLRendererMap
 mapOfTiles t@TiledMap{..} = do
-  img2TexMap <- liftIO $ allocImageTextureMap t
+  img2TexMap <- io $ allocImageTextureMap t
   let tile2SetMap = assocTileWithTileset t
       tile2SetTexMapM  = findTexBySet <$> tile2SetMap
       findTexBySet ts =
@@ -200,8 +215,8 @@ mapOfTiles t@TiledMap{..} = do
                               "Could not find texture for tileset:" ++ show ts
                             exitFailure
               Just tex -> return (ts, tex)
-  tile2SetTexMap <- liftIO $ sequence tile2SetTexMapM
-  sequence $ M.mapWithKey (\a (b, c) -> allocTileRendering a b c) tile2SetTexMap
+  tile2SetTexMap <- io $ sequence tile2SetTexMapM
+  sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer a b c) tile2SetTexMap
 
 allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRenderer)
 allocLayerRenderer tmap rmap name = case layerWithName tmap name of
@@ -219,14 +234,88 @@ allocLayerRenderer tmap rmap name = case layerWithName tmap name of
                  t  = tfrm <> PictureTransform (Transform v 1 0) 1 1
              snd f t
     return $ Just (return (), renderLayer)
+----------------------------------------------------------------------------------
+---- Scripts
+----------------------------------------------------------------------------------
+--waitUntil :: ScriptEvent c -> Script c
+--waitUntil = _untilEvent (pure ())
 
+data Direction = North | East | South | West deriving (Show, Eq, Bounded)
+
+codeToDirection :: Scancode -> Maybe Direction
+codeToDirection ScancodeUp = Just North
+codeToDirection ScancodeRight = Just East
+codeToDirection ScancodeDown = Just South
+codeToDirection ScancodeLeft = Just West
+codeToDirection _ = Nothing
+
+directionToCode :: Direction -> Scancode
+directionToCode North = ScancodeUp
+directionToCode East  = ScancodeRight
+directionToCode South = ScancodeDown
+directionToCode West  = ScancodeLeft
+
+directionToV2 :: Direction -> V2 Float
+directionToV2 North = V2 0 (-1)
+directionToV2 East = V2 1 0
+directionToV2 South = V2 0 1
+directionToV2 West = V2 (-1) 0
+
+arrowCodes :: [Scancode]
+arrowCodes = [ScancodeUp, ScancodeLeft, ScancodeDown, ScancodeRight]
+
+onTrue :: (a -> Bool) -> a -> Maybe a
+onTrue f x = if f x then Just x else Nothing
+
+arrowControl :: (Modifies [EventPayload] r
+                ,Modifies [Script] r
+                ,Modifies Time r
+                ,ModifiesComponent PictureTransform r
+                ) => Entity -> Eff r Script
+arrowControl actor = do
+  -- First wait until the user presses an arrow key
+      -- For that we'll need some scafolding so we can test and extract the
+      -- arrow direction
+  let isArrowPressed (KeyboardEvent (KeyboardEventData _ Pressed False Keysym{..})) =
+        msum $ map (onTrue (== keysymScancode)) arrowCodes
+      isArrowPressed _ = Nothing
+  events <- getEvents
+  let codes = mapMaybe isArrowPressed events
+  unless (null codes) $ do
+    let dirs = mapMaybe codeToDirection codes
+    -- If we got a direction then apply the arrow move script to each
+    -- direction.
+    unless (null dirs) $ do
+      scripts <- mapM (arrowControlMove actor) dirs
+      addScripts scripts
+  return $ Script $ arrowControl actor
+
+arrowControlMove :: (Modifies [EventPayload] r
+                    ,Modifies Time r
+                    ,ModifiesComponent PictureTransform r
+                    ) => Entity -> Direction -> Eff r Script
+arrowControlMove actor dir = do
+  -- Update the transform of the actor
+  dt <- getTimeDelta
+  let tfrm = PictureTransform (Transform (dt * 100 *^ directionToV2 dir) 1 0) 1 1
+  modifyTransform actor (tfrm <>)
+  -- Find if the arrow key was released
+  let isArrowReleased (KeyboardEvent (KeyboardEventData _ Released False Keysym{..})) =
+        keysymScancode == directionToCode dir
+      isArrowReleased _ = False
+  released <- any isArrowReleased <$> getEvents
+  --  Restart the process all over again, from the top
+  if released
+    then return ScriptEnd
+    else return $ Script $ arrowControlMove actor dir
+--
 setupNetwork :: System ()
 setupNetwork = do
   tmap@TiledMap{..} <- unrelativizeImagePaths <$>
-    liftIO (loadMapFile "assets/oryx_ultimate_fantasy/uf_examples/uf_example_1.tmx")
-  liftIO $ putStrLn $ ppShow tmap
+    io (loadMapFile "assets/oryx_ultimate_fantasy/uf_examples/uf_example_1.tmx")
+  io $ putStrLn $ ppShow tmap
   let Just floorLayer = layerWithName tmap "floor"
-  liftIO $ putStrLn $ ppShow $ layerData floorLayer
+  io $ putStrLn $ ppShow $ layerData floorLayer
   rmap <- mapOfTiles tmap
   let layerNames = [ "floor"
                    , "water edges"
@@ -237,38 +326,60 @@ setupNetwork = do
                    , "door"
                    ]
   forM_  layerNames $ \name -> do
-    Just layerRenderer <- liftIO $ allocLayerRenderer tmap rmap name
-    ent  <- freshUid
-    ent `setComponentTransform` mempty
-    ent `setComponentRendering` layerRenderer
-    ent `setComponentName` (name ++ " layer")
---------------------------------------------------------------------------------
---
---------------------------------------------------------------------------------
-processEvent :: EventPayload -> IO ()
-processEvent QuitEvent = exitSuccess
-processEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) =
-  when (isQuit k) exitSuccess
-processEvent _ = return ()
+    Just layerRenderer <- io $ allocLayerRenderer tmap rmap name
+    ent  <- fresh
+    ent `setTransform` mempty
+    ent `setRenderer` layerRenderer
+    ent `setName` (Name $ name ++ " layer")
 
-renderWith :: Rez -> Window -> System ()
+  hero <- fresh
+  heroRnd <- compilePic (withColor $ rectangle 0 20 $ const red)
+  hero `setRenderer` heroRnd
+  hero `setTransform` mempty
+  addScript $ arrowControl hero
+----------------------------------------------------------------------------------
+----
+----------------------------------------------------------------------------------
+processEvent :: EventPayload -> IO EventPayload
+processEvent QuitEvent = exitSuccess
+processEvent ev@(KeyboardEvent key@(KeyboardEventData _ m r k)) = do
+  when (isQuit k) exitSuccess
+  --print key
+  return ev
+processEvent e = return e
+
+getRenderers :: Member (State (IntMap GLRenderer)) r
+             => Eff r (IntMap GLRenderer)
+getRenderers = get
+
+getTransforms :: Member (State (IntMap PictureTransform)) r
+              => Eff r (IntMap PictureTransform)
+getTransforms = get
+
+renderWith :: ( Member (State (IntMap GLRenderer)) r
+              , Member (State (IntMap PictureTransform)) r
+              , Member IO r)
+           => Rez -> Window -> Eff r ()
 renderWith rez window = do
-  liftIO $ clearFrame rez
-  Components{..} <- gets sysComponents
-  let m = IM.intersectionWith snd compRndring compTrnsfrm
-  liftIO $ sequence_ m >> updateWindowSDL2 window
+  io $ clearFrame rez
+  renderers  <- getRenderers
+  transforms <- getTransforms
+  let m = IM.intersectionWith snd renderers transforms
+  io $ sequence_ m >> updateWindowSDL2 window
 --------------------------------------------------------------------------------
 --
 --------------------------------------------------------------------------------
+io :: Member IO r => IO a -> Eff r a
+io = send
+
 main :: IO ()
 main = do
   (rez,window)  <- startupSDL2Backend 800 600 "Entity Sandbox" True
-  t             <- ticks
-  void $ flip runStateT (emptySystemData rez t) $ do
+  void $ runSystem rez window $ do
     setupNetwork
-    liftIO $ putStrLn "Initial network created"
     forever $ do
-      liftIO $ void $ pollEvents >>= mapM (processEvent . eventPayload)
-      tickTime >>= tickScripts >>= uncurry tickUpdates
+      tickTime
+      tickEvents
+      tickScripts
       renderWith rez window
-      liftIO $ threadDelay 1
+      io $ threadDelay 1
