@@ -93,4 +93,9 @@
    eJzt0YEJACAIAEGdINp/1sAhCgy5m+DhI4AJVnYXvHO6Ay7tQS8AAAAAAAAA+F8BWuMBIA==
   </data>
  </layer>
+ <layer name="bounds" width="48" height="48" visible="0">
+  <data encoding="base64" compression="zlib">
+   eJzt1LEJACAMRUH3H8FpbW0iIhb5cAc2weKRImNkm4+vi6rl1Jjan77/rv1706mxa//tPKm/+pvSn3R/ku8/AAAAAAAAwC8LCzAlTQ==
+  </data>
+ </layer>
 </map>

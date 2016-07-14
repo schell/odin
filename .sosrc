@@ -2,11 +2,12 @@
   - .*\.l?hs$
   - .*\.cabal$
   commands:
-  - stack build --fast --trace --ghc-options="-threaded -rtsopts -fprof-cafs -fprof-auto -with-rtsopts=-N8"
+# - stack build --fast --trace --ghc-options="-threaded -rtsopts -fprof-cafs -fprof-auto -with-rtsopts=-N8"
+  - stack build --trace --fast --ghc-options="-threaded"
 - patterns:
   - .*\.l?hs$
   commands:
-  - hlint \0
+  - hlint \0 2>&1
 - patterns:
   - .*Part-Two\.lhs$
   commands:
@@ -19,4 +20,5 @@
 - patterns:
   - .*EntityMain\.hs$
   commands:
-  - stack exec entity -- +RTS -N8 -p -hy -sstderr
+  #- stack exec entity -- +RTS -N8 -p -hy -sstderr
+  - stack exec entity -- +RTS -N8 -xc

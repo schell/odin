@@ -10,7 +10,10 @@ import qualified Data.Map as M
 import           Data.Map (Map)
 import           Data.List (find)
 import           Data.Maybe (catMaybes)
+import           Data.Monoid ((<>))
 import           Gelatin.GL
+
+import Odin.Utils
 
 type ImageTextureMap = Map Image GLuint
 type TileGLRendererMap = Map Tile GLRenderer
@@ -61,3 +64,61 @@ assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
         tiles = allTiles t
 
 
+allocTileRenderer :: Rez -> Tile -> Tileset -> GLuint -> IO GLRenderer
+allocTileRenderer rez tile Tileset{..} tex = do
+  let img = head tsImages
+      -- the image's width and height in pixels
+      w   = fromIntegral $ iWidth img
+      h   = fromIntegral $ iHeight img
+      -- the tile's width and height in pixels
+      tw  = fromIntegral tsTileWidth
+      th  = fromIntegral tsTileHeight
+      -- the tile's width and height in uv coords
+      uvw = tw / w
+      uvh = th / h
+      -- index of the tile relative to the tileset's initial tile
+      ndx = fromIntegral $ tileGid tile - tsInitialGid
+      -- number of tiles in x
+      numtx  = w / tw
+      -- the tile's x and y indices
+      ty  = fromIntegral (floor $ ndx / numtx :: Int)
+      tx  = ndx - ty * numtx
+      -- the tile's uv upper left
+      V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
+      -- the tile's uv bottom left
+      V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
+  compilePic rez $ withTexture tex $ do
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
+
+mapOfTiles :: Rez -> TiledMap -> IO TileGLRendererMap
+mapOfTiles rez t@TiledMap{..} = do
+  img2TexMap <- allocImageTextureMap t
+  let tile2SetMap = assocTileWithTileset t
+      tile2ESetTexMap  = findTexBySet <$> tile2SetMap
+      findTexBySet ts =
+        case M.lookup (imageOfTileset ts) img2TexMap of
+              Nothing -> Left $ "Could not find texture for tileset:" ++ show ts
+              Just tex -> Right (ts, tex)
+      checkErrorsAndClean _ (Left err) = putStrLn err >> return Nothing
+      checkErrorsAndClean k (Right tstx) = return $ Just (k, tstx)
+  mtile2SetTexList <- mapM (uncurry checkErrorsAndClean) $ M.toList tile2ESetTexMap
+  let tile2SetTexMap = M.fromList $ catMaybes mtile2SetTexList
+  sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer rez a b c) tile2SetTexMap
+
+allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRenderer)
+allocLayerRenderer tmap rmap name = case layerWithName tmap name of
+  Nothing -> return Nothing
+  Just layer -> do
+    let  renderLayer :: PictureTransform -> IO ()
+         renderLayer tfrm = mapM_ (tileRenderer tfrm) $ M.toList $ layerData layer
+         tileRenderer tfrm ((x,y), tile) = case M.lookup tile rmap of
+           Nothing -> putStrLn $ "Could not find renderer for tile:" ++ show tile
+           Just f  -> do
+             let ts = tilesetOfTile tmap tile
+                 w  = tsTileWidth ts
+                 h  = tsTileHeight ts
+                 v  = fromIntegral <$> V2 (w * x)  (h * y)
+                 t  = tfrm <> PictureTransform (Transform v 1 0) 1 1
+             snd f t
+    return $ Just (return (), renderLayer)

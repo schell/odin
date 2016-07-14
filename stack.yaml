@@ -4,40 +4,20 @@ packages:
 - '../gelatin/gelatin-core'
 - '../gelatin/gelatin-picture'
 - '../gelatin/gelatin-gl'
-- '../gelatin/gelatin-glfw'
 - '../gelatin/gelatin-sdl2'
+- '../renderable'
 - '../htiled'
-#- '../renderable'
 - '../varying'
-#- '../sdl2'
+- '../sdl2'
 
-- location:
-    git: https://github.com/schell/FontyFruity.git
-    commit: 99c143ebb569c286aa5252587923f8c34423e969
-  extra-dep: true
-#- location:
-#    git: https://github.com/schell/varying.git
-#    commit: dffcb67677a4ffa9e085e929aedcd0161ddab45c
-#  extra-dep: true
-- location:
-    git: https://github.com/schell/renderable.git
-    commit: e0f8271c8fe860492ca0a123ce3e41fde977e1de
-  extra-dep: true
-- location:
-    git: https://github.com/schell/sdl2.git
-    commit: 8d9b060fe5e71f06b9673c9f71e52aa18f56ea1c
-#- location:
-#    git: https://github.com/schell/gelatin.git
-#    commit: 45ce7b7ac6edaa6aaf7f41e02599d7d86a5a688c
-#  extra-dep: true
-#  subdirs:
-#  - gelatin-core
-#  - gelatin-picture
-#  - gelatin-gl
-#  - gelatin-glfw
-#  - gelatin-sdl2
+- location: '../shapes'
+  subdirs:
+  - shapes
+  - shapes-math
 
 extra-deps:
+- FontyFruity-0.5.3.2
 - freer-0.2.3.0
 
-resolver: lts-6.1
+#resolver: lts-6.7
+resolver: nightly-2016-07-14

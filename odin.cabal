@@ -13,8 +13,8 @@ version:             0.1.0.0
 synopsis:            An experimental game.
 
 -- A longer description of the package.
-description:         A experimental architecture and roguelike game,
-                     demonstrated as a blog series hosted at
+description:         A couple experimental game architectures and roguelike a
+                     game, demonstrated as a blog series hosted at
                      http://zyghost.com/series/odin
 
 -- URL for the project homepage or repository.
@@ -60,53 +60,55 @@ library
                      , App.GUI
                      , Data.Char.FontAwesome
                      , Data.Tiled.Utils
+                     , Odin.Scripts.ArrowControl
+                     , Odin.Scripts.Button
+                     , Odin.Common
+                     , Odin.Component
+                     , Odin.Physics
+                     , Odin.System
+                     , Odin.Utils
 
-  build-depends:       base >=4.8 && <4.9
-                     , transformers >= 0.4 && < 0.5
-                     , mtl >= 2.2 && < 2.3
-                     , stm >= 2.4 && < 2.5
-                     , async >= 2.0 && < 2.2
-                     , time >= 1.5 && < 1.6
-                     , containers >= 0.5 && < 0.6
-                     , renderable >= 0.2 && < 0.3
-                     , varying >= 0.5 && < 0.6
-                     , gelatin-sdl2 >= 0.0 && < 0.1
-                     , gelatin-gl >= 0.0 && < 0.1
-                     , gelatin-picture >= 0.0 && < 0.1
-                     , gelatin-core >= 0.0 && < 0.1
-                     , sdl2 >= 2.1 && < 2.2
-                     , directory >= 1.2 && < 1.3
-                     , filepath >= 1.4 && < 1.5
-                     , linear >= 1.20 && < 1.21
-                     , FontyFruity >= 0.5.3 && < 0.6
-                     , JuicyPixels >= 3.2 && < 3.3
-                     , free >= 4.12 && < 4.13
-                     , hashable >= 1.2 && < 1.3
-                     , text >= 1.2 && < 1.3
-                     , vector >= 0.11 && < 0.12
+  build-depends:       base >=4.8 && <5.0
+                     , transformers >= 0.4
+                     , mtl >= 2.2
+                     , freer
+                     , stm >= 2.4
+                     , async >= 2.0
+                     , time >= 1.5
+                     , containers >= 0.5
+                     , renderable >= 0.2.0.1
+                     , varying >= 0.5
+                     , gelatin-sdl2 >= 0.0
+                     , gelatin-gl >= 0.0
+                     , gelatin-picture >= 0.0
+                     , gelatin-core >= 0.0
+                     , sdl2 >= 2.1
+                     , directory >= 1.2
+                     , filepath >= 1.4
+                     , linear >= 1.20
+                     , FontyFruity >= 0.5.3
+                     , JuicyPixels >= 3.2
+                     , free >= 4.12
+                     , hashable >= 1.2
+                     , text >= 1.2
+                     , vector >= 0.11
                      , htiled >= 0.1.3
+                     , shapes
 
 executable entity
   --buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   hs-source-dirs:      app
   main-is:             EntityMain.hs
-  build-depends:       base >=4.8 && <4.9
+  build-depends:       base >=4.8 && <5.0
                      , odin
-                     , varying >= 0.5 && < 0.6
-                     , gelatin-core
-                     , gelatin-picture
-                     , gelatin-gl
                      , gelatin-sdl2
-
-                     , freer
-                     , containers
-                     , transformers >= 0.4 && < 0.5
-                     , mtl >= 2.2 && < 2.3
-                     , vector >= 0.11 && < 0.12
-                     , sdl2 >= 2.1
                      , htiled >= 0.1.3
                      , pretty-show >= 1.6
+                     , filepath
+                     , directory
+                     , linear
+                     , sdl2
 
   default-language:    Haskell2010
 
@@ -115,17 +117,15 @@ executable sandbox
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   hs-source-dirs:      app
   main-is:             Sandbox.hs
-  build-depends:       base >=4.8 && <4.9
+  build-depends:       base >=4.8 && <5.0
                      , odin
-                     , varying >= 0.5 && < 0.6
-
+                     , varying >= 0.5
                      , gelatin-core
                      , gelatin-picture
                      , gelatin-sdl2
-
-                     , transformers >= 0.4 && < 0.5
-                     , mtl >= 2.2 && < 2.3
-                     , vector >= 0.11 && < 0.12
+                     , transformers >= 0.4
+                     , mtl >= 2.2
+                     , vector >= 0.11
                      , sdl2 >= 2.1
                      , htiled >= 0.1.3
 
@@ -146,49 +146,17 @@ executable part-two
   -- other-extensions:
 
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.8 && <4.9
+  build-depends:       base >=4.8 && <5.0
                      , odin
                      , gelatin-sdl2
                      , gelatin-gl
                      , gelatin-picture
                      , gelatin-core
 
-                     , varying >= 0.5 && < 0.6
-                     , transformers >= 0.4 && < 0.5
-                     , mtl >= 2.2 && < 2.3
+                     , varying >= 0.5
+                     , transformers >= 0.4
+                     , mtl >= 2.2
                      , sdl2 >= 2.1
-
-  -- Base language which the package is written in.
-  default-language:    Haskell2010
-
-executable part-one
-  buildable:           False
-  ghc-options:         -threaded -Wall -rtsopts -fprof-auto
-  -- Directories containing source files.
-  hs-source-dirs:      app
-
-  -- .hs or .lhs file containing the Main module.
-  main-is:             Part-One.lhs
-
-  -- Modules included in this executable, other than Main.
-  -- other-modules:
-
-  -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:
-
-  -- Other library packages from which modules are imported.
-  build-depends:       base >=4.8 && <4.9,
-                       transformers >= 0.4 && < 0.5,
-                       mtl >= 2.2 && < 2.3,
-                       stm >= 2.4 && < 2.5,
-                       async >= 2.0 && < 2.2,
-                       time >= 1.5 && < 1.6,
-                       containers >= 0.5 && < 0.6,
-                       renderable >= 0.2 && < 0.3,
-                       varying >= 0.5 && < 0.6,
-                       gelatin-glfw >= 0.0 && < 0.1,
-                       directory >= 1.2 && < 1.3,
-                       filepath >= 1.4 && < 1.5
 
   -- Base language which the package is written in.
   default-language:    Haskell2010
@@ -209,19 +177,19 @@ executable part-one-sdl2
   -- other-extensions:
 
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.8 && <4.9,
-                       transformers >= 0.4 && < 0.5,
-                       mtl >= 2.2 && < 2.3,
-                       stm >= 2.4 && < 2.5,
-                       async >= 2.0 && < 2.2,
-                       time >= 1.5 && < 1.6,
-                       containers >= 0.5 && < 0.6,
-                       renderable >= 0.2 && < 0.3,
-                       varying >= 0.5 && < 0.6,
-                       gelatin-sdl2 >= 0.0 && < 0.1,
-                       sdl2 >= 2.1 && < 2.2,
-                       directory >= 1.2 && < 1.3,
-                       filepath >= 1.4 && < 1.5,
-                       linear >= 1.20 && < 1.21
+  build-depends:       base >=4.8 && <5.0
+                     , transformers >= 0.4
+                     , mtl >= 2.2
+                     , stm >= 2.4
+                     , async >= 2.0
+                     , time >= 1.5
+                     , containers >= 0.5
+                     , renderable >= 0.2.0.1
+                     , varying >= 0.5
+                     , gelatin-sdl2 >= 0.0
+                     , sdl2 >= 2.1
+                     , directory >= 1.2
+                     , filepath >= 1.4
+                     , linear >= 1.20
   default-language:    Haskell2010
 
