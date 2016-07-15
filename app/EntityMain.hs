@@ -15,6 +15,7 @@ import Data.Tiled.Utils
 import Odin.Common
 import Odin.Component
 import Odin.System
+import Odin.Styles
 import Odin.Scripts.ArrowControl
 import Odin.Scripts.Button
 
@@ -72,14 +73,19 @@ setupNetwork = do
 
   font <- io $ getFont "KMKDSP__.ttf"
 
-  void $ freshButton font "Button" 100 $ do
+  let button = ButtonData font "Testable Button" 16 buttonPainter
+  void $ freshButton button 100 $ do
     io $ putStrLn "button hit!"
-    return ScriptEnd
+    endScript
 
 main :: IO ()
 main = do
   (rez,window) <- startupSDL2Backend 800 600 "Entity Sandbox" True
-  let step = emptySystemStep rez window
+  putStrLn "sdl init'd"
+  let step = emptySystemStep rez windw
   void $ runSystem step $ do
     setupNetwork
-    forever $ tickSystem >> threadDelay 1
+    io $ putStrLn "setup network"
+    forever $ do
+      tickSystem
+      io $ threadDelay 1

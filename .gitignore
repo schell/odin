@@ -8,3 +8,5 @@ dist/
 *.hp
 *.ps
 **/.DS_Store
+codex.tags
+*.out

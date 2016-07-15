@@ -14,6 +14,7 @@ import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 
 import           Odin.Common
+import           Odin.Physics
 import           Odin.Utils
 --------------------------------------------------------------------------------
 -- Time
@@ -52,6 +53,17 @@ addScript = modify . (:) . Script
 
 addScripts :: (Modifies [Script] r) => [Script] -> Eff r ()
 addScripts = modify . (++)
+--------------------------------------------------------------------------------
+-- Physics
+--------------------------------------------------------------------------------
+getScene :: Modifies OdinScene r => Eff r OdinScene
+getScene = get
+
+modifyScene :: Modifies OdinScene r => (OdinScene -> OdinScene) -> Eff r ()
+modifyScene = modify
+
+getWorldObjects :: Modifies OdinScene r => Eff r (IntMap WorldObj)
+getWorldObjects = (_worldObjs . _scWorld) <$> getScene
 --------------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------------

@@ -25,6 +25,8 @@ module Odin.Common (
   , Script(..)
   , isRunningScript
   , runScript
+  , nextScript
+  , endScript
   -- * Constraints / Abilities
   , Reads
   , Modifies
@@ -45,6 +47,8 @@ import           Control.Monad.Freer as Eff
 import           Control.Monad.Freer.State as Eff
 import           Control.Monad.Freer.Reader as Eff
 import           Control.Monad.Freer.Fresh as Eff
+
+import Odin.Physics
 --------------------------------------------------------------------------------
 -- Odin Component/System Types
 --------------------------------------------------------------------------------
@@ -73,6 +77,7 @@ type System = Eff '[Component Name
                    ,State [EventPayload]
                    ,State Time
                    ,State [Script]
+                   ,State OdinScene
                    ,IO
                    ]
 
@@ -91,11 +96,12 @@ data SystemStep = SystemStep { sysNames  :: IntMap Name
                              , sysEvents :: [EventPayload]
                              , sysTime   :: Time
                              , sysScripts:: [Script]
+                             , sysScene  :: OdinScene
                              }
 
 emptySystemStep :: Rez -> Window -> SystemStep
 emptySystemStep rez window =
-  SystemStep mempty mempty mempty mempty 0 window rez [] (Time 0 0) []
+  SystemStep mempty mempty mempty mempty 0 window rez [] (Time 0 0) [] emptyScene
 --------------------------------------------------------------------------------
 -- System Type Constraints (energy savers)
 --------------------------------------------------------------------------------
@@ -119,3 +125,9 @@ isRunningScript _ = True
 runScript :: Script -> System Script
 runScript (Script s) = s
 runScript ScriptEnd = return ScriptEnd
+
+endScript :: Monad m => m Script
+endScript = return ScriptEnd
+
+nextScript :: Monad m => ScriptStep -> m Script
+nextScript = return . Script

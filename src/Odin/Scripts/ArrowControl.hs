@@ -59,7 +59,7 @@ arrowControl actor = do
     unless (null dirs) $ do
       scripts <- mapM (arrowControlMove actor) dirs
       addScripts scripts
-  return $ Script $ arrowControl actor
+  nextScript $ arrowControl actor
 
 arrowControlMove :: (Modifies [EventPayload] r
                     ,Modifies Time r
@@ -77,5 +77,5 @@ arrowControlMove actor dir = do
   released <- any isArrowReleased <$> getEvents
   --  Restart the process all over again, from the top
   if released
-    then return ScriptEnd
-    else return $ Script $ arrowControlMove actor dir
+    then endScript
+    else nextScript $ arrowControlMove actor dir

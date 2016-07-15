@@ -1,14 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
-module Odin.Scripts.Button (freshButton) where
+{-# LANGUAGE RecordWildCards #-}
+module Odin.Scripts.Button (ButtonData(..), ButtonState(..), freshButton) where
 
 import Linear.Affine (Point(..))
 import Gelatin.SDL2
+import Control.Monad (when)
 import SDL.Input.Mouse (MouseButton(..)
                        ,getAbsoluteMouseLocation
                        ,getMouseButtons
                        )
-import Control.Monad (when)
 
 import Odin.Common
 import Odin.Component
@@ -19,45 +20,24 @@ data ButtonState = ButtonStateUp
                  | ButtonStateDown
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
+data ButtonData = ButtonData { btnPainterFont      :: FontData
+                             , btnPainterStr       :: String
+                             , btnPainterPointSize :: Float
+                             , btnPainterFunc      :: FontData
+                                                   -> String
+                                                   -> Float
+                                                   -> ButtonState
+                                                   -> Pic
+                             }
+
+paintButton :: ButtonData -> ButtonState -> Pic
+paintButton ButtonData{..} =
+  btnPainterFunc btnPainterFont btnPainterStr btnPainterPointSize
+
 data ButtonRndrs = ButtonRndrs { btnRndrsUp   :: RenderIO
                                , btnRndrsOver :: RenderIO
                                , btnRndrsDown :: RenderIO
                                }
-
-textColorForButtonState :: ButtonState -> V4 Float
-textColorForButtonState ButtonStateUp   = hex 0x333333FF
-textColorForButtonState ButtonStateOver = V4 0.74 0.23 0.22 1
-textColorForButtonState ButtonStateDown = V4 0.74 0.23 0.22 1
-
-bgColorForButtonState :: ButtonState -> V4 Float
-bgColorForButtonState ButtonStateUp   = hex 0xFFFFFFFF
-bgColorForButtonState ButtonStateOver = hex 0xFFFFFFFF
-bgColorForButtonState ButtonStateDown = hex 0xFFFFFFFF
-
-bgOffsetForButtonState :: ButtonState -> V2 Float
-bgOffsetForButtonState ButtonStateUp   = V2 0 0
-bgOffsetForButtonState ButtonStateOver = V2 0 0
-bgOffsetForButtonState ButtonStateDown = V2 2 2
-
-applyTfrmToBounds :: Transform -> BBox -> BBox
-applyTfrmToBounds t (tl,br) = pointsBounds [transformV2 t tl, transformV2 t br]
-
-applyPicTfrmToBounds :: PictureTransform -> BBox -> BBox
-applyPicTfrmToBounds (PictureTransform tfrm _ _) = applyTfrmToBounds tfrm
-
-buttonPic :: FontData -> String -> ButtonState -> Pic
-buttonPic font str btn = do
-  let text = withLetters $ filled font 128 16 str $
-               solid $ textColorForButtonState btn
-      tsz  = pictureSize text
-      txy  = V2 0 5
-      pad  = V2 4 4
-      sz   = tsz + 2*pad
-      shxy = V2 4 4
-      bgxy = bgOffsetForButtonState btn
-  move shxy $ withColor $ rectangle 0 sz $ const $ V4 0 0 0 0.4
-  move bgxy $ withColor $ rectangle 0 sz $ const $ bgColorForButtonState btn
-  move (V2 0 16 - txy + pad + bgxy) text
 
 getMouseIsOverEntityWithSize :: (DoesIO r
                                 ,ModifiesComponent PictureTransform r
@@ -79,7 +59,7 @@ buttonDown script sz rs btn = do
             when isStillOver $ performScript script
             btn `setRenderer` btnRndrsUp rs
             buttonUp script sz rs btn
-    else return $ Script $ buttonDown script sz rs btn
+    else nextScript $ buttonDown script sz rs btn
 
 buttonOver :: Script -> V2 Float -> ButtonRndrs -> Entity -> System Script
 buttonOver script sz rs btn = do
@@ -87,7 +67,7 @@ buttonOver script sz rs btn = do
   isOver <- getMouseIsOverEntityWithSize btn sz
   if isOver then if isDown then do btn `setRenderer` btnRndrsDown rs
                                    buttonDown script sz rs btn
-                           else return $ Script $ buttonOver script sz rs btn
+                           else nextScript $ buttonOver script sz rs btn
             else do btn `setRenderer` btnRndrsUp rs
                     buttonUp script sz rs btn
 
@@ -96,7 +76,7 @@ buttonUp script sz rs btn = do
   isOver <- getMouseIsOverEntityWithSize btn sz
   if isOver then do btn `setRenderer` btnRndrsOver rs
                     buttonOver script sz rs btn
-            else return $ Script $ buttonUp script sz rs btn
+            else nextScript $ buttonUp script sz rs btn
 
 -- | Creates a fresh button.
 freshButton :: (DoesIO r
@@ -106,17 +86,17 @@ freshButton :: (DoesIO r
                ,ModifiesComponent DeallocIO r
                ,ModifiesComponent PictureTransform r
                ,Modifies [Script] r
-               ) => FontData -> String -> V2 Float -> ScriptStep -> Eff r Entity
-freshButton font str pos script = do
-  let sz = pictureSize $ buttonPic font str ButtonStateUp
-  up   <- allocPicRenderer $ buttonPic font str ButtonStateUp
-  over <- allocPicRenderer $ buttonPic font str ButtonStateOver
-  down <- allocPicRenderer $ buttonPic font str ButtonStateDown
+               ) => ButtonData -> V2 Float -> ScriptStep -> Eff r Entity
+freshButton btn@ButtonData{..} pos script = do
+  let sz = pictureSize $ paintButton btn ButtonStateUp
+  up   <- allocPicRenderer $ paintButton btn ButtonStateUp
+  over <- allocPicRenderer $ paintButton btn ButtonStateOver
+  down <- allocPicRenderer $ paintButton btn ButtonStateDown
   let dalloc = mapM_ fst [up,over,down]
       rs      = ButtonRndrs (snd up) (snd over) (snd down)
-  btn <- fresh
-  btn `setDealloc` dalloc
-  btn `setRenderer` btnRndrsUp rs
-  btn `setPicTransform` PictureTransform (Transform pos 1 0) 1 1
-  addScript $ buttonUp (Script script) sz rs btn
-  return btn
+  actor <- fresh
+  actor `setDealloc` dalloc
+  actor `setRenderer` btnRndrsUp rs
+  actor `setPicTransform` PictureTransform (Transform pos 1 0) 1 1
+  addScript $ buttonUp (Script script) sz rs actor
+  return actor
