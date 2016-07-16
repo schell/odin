@@ -4,7 +4,9 @@
 import Gelatin.SDL2
 import Control.Monad (void, forever, forM_)
 import Control.Concurrent (threadDelay)
+import Control.Varying
 import Data.Monoid ((<>))
+import Data.Functor.Identity
 import Text.Show.Pretty
 import System.FilePath
 import System.Directory
@@ -16,6 +18,7 @@ import Odin.Common
 import Odin.Component
 import Odin.System
 import Odin.Styles
+import Odin.Scripts.Animation.Pic
 import Odin.Scripts.ArrowControl
 import Odin.Scripts.Button
 
@@ -78,11 +81,47 @@ setupNetwork = do
     io $ putStrLn "button hit!"
     endScript
 
+  let animation :: Animation ()
+      animation = do
+        let whiteSquare = withColor $ rectangle 0 20 $ const white
+            multS :: Animated (V4 Float) ()
+            multS = do
+              tween_ easeOutExpo white red 0.25
+              tween_ easeOutExpo red blue 0.25
+              tween_ easeOutExpo blue yellow 0.25
+              tween_ easeOutExpo yellow white 0.25
+              step yellow
+              multS
+            mult :: StreamOf (V4 Float)
+            mult = outputStream multS white
+            positionS :: Animated (V2 Float) ()
+            positionS = do
+              tween_ easeOutExpo 0 (V2 200 0) 0.25
+              tween_ easeOutExpo (V2 200 0) 200 0.25
+              tween_ easeOutExpo 200 (V2 0 200) 0.25
+              tween_ easeOutExpo (V2 0 200) 0 0.25
+              step 0
+              positionS
+            position :: StreamOf (V2 Float)
+            position  = outputStream positionS 0
+            tfrm = Transform <$> position <*> 1 <*> 0
+            ptfrm = PictureTransform <$> tfrm <*> 1 <*> mult
+            stream :: StreamOf (PictureTransform, Pic)
+            stream = (,) <$> ptfrm <*> pure whiteSquare
+        stream `_untilEvent_` after 3
+        animation
+  void $ freshAnimation animation $ \ani -> Script $ do
+    io $ putStrLn "animation ended"
+    destroyEntity ani
+    io $ putStrLn "animation destroyed"
+    endScript
+  return ()
+
 main :: IO ()
 main = do
   (rez,window) <- startupSDL2Backend 800 600 "Entity Sandbox" True
   putStrLn "sdl init'd"
-  let step = emptySystemStep rez windw
+  let step = emptySystemStep rez window
   void $ runSystem step $ do
     setupNetwork
     io $ putStrLn "setup network"

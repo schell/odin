@@ -12,6 +12,8 @@ import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
+import qualified Data.Set as S
+import           Data.Set (Set)
 
 import           Odin.Common
 import           Odin.Physics
@@ -24,9 +26,14 @@ getTimeDelta = timeDelta <$> get
 --------------------------------------------------------------------------------
 -- PictureTransform
 --------------------------------------------------------------------------------
-getTransforms :: Member (State (IntMap PictureTransform)) r
+getPicTransforms :: Member (State (IntMap PictureTransform)) r
               => Eff r (IntMap PictureTransform)
-getTransforms = get
+getPicTransforms = get
+
+modifyPicTransforms :: ModifiesComponent PictureTransform r
+                    => (IntMap PictureTransform -> IntMap PictureTransform)
+                    -> Eff r ()
+modifyPicTransforms = modify
 
 setPicTransform :: ModifiesComponent PictureTransform r
              => Entity -> PictureTransform -> Eff r ()
@@ -42,6 +49,9 @@ modifyPicTransform k f =
   getPicTransform k >>= \case
     Nothing -> setPicTransform k $ f mempty
     Just t  -> setPicTransform k $ f t
+
+deletePicTransform :: ModifiesComponent PictureTransform r => Entity -> Eff r ()
+deletePicTransform k = modifyPicTransforms $ IM.delete k
 --------------------------------------------------------------------------------
 -- Scripts
 --------------------------------------------------------------------------------
@@ -64,11 +74,29 @@ modifyScene = modify
 
 getWorldObjects :: Modifies OdinScene r => Eff r (IntMap WorldObj)
 getWorldObjects = (_worldObjs . _scWorld) <$> getScene
+
+setWorldObjects :: Modifies OdinScene r => IntMap WorldObj -> Eff r ()
+setWorldObjects objs = modifyScene $ \s ->
+  let world = (_scWorld s){ _worldObjs = objs }
+  in s{ _scWorld = world }
+
+modifyWorldObjects :: Modifies OdinScene r
+                   => (IntMap WorldObj -> IntMap WorldObj) -> Eff r ()
+modifyWorldObjects f = getWorldObjects >>= setWorldObjects . f
+
+addWorldObject :: Modifies OdinScene r => Entity -> WorldObj -> Eff r ()
+addWorldObject k o = modifyWorldObjects $ IM.insert k o
+
+deleteWorldObject :: Modifies OdinScene r => Entity -> Eff r ()
+deleteWorldObject k = modifyWorldObjects $ IM.delete k
 --------------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------------
 setName :: ModifiesComponent Name r => Entity -> Name -> Eff r ()
 setName k n = modify $ IM.insert k n
+
+deleteName :: ModifiesComponent Name r => Entity -> Eff r ()
+deleteName k = modify (IM.delete k :: IntMap Name -> IntMap Name)
 --------------------------------------------------------------------------------
 -- Events
 --------------------------------------------------------------------------------
@@ -126,3 +154,27 @@ dealloc :: (ModifiesComponent DeallocIO r
            ,DoesIO r
            ) => Entity -> Eff r ()
 dealloc k = getDealloc k >>= io . sequence_
+--------------------------------------------------------------------------------
+-- System Options
+--------------------------------------------------------------------------------
+getOptions :: Modifies SystemOptions r => Eff r SystemOptions
+getOptions = get
+
+setOption :: Modifies SystemOptions r => SystemOption -> Eff r ()
+setOption = modify . S.insert
+
+clearOption :: Modifies SystemOptions r => SystemOption -> Eff r ()
+clearOption = modify . S.delete
+
+optionIsSet :: Modifies SystemOptions r => SystemOption -> Eff r Bool
+optionIsSet o = S.member o <$> getOptions
+--------------------------------------------------------------------------------
+-- Destroying an entire entity and all its components
+--------------------------------------------------------------------------------
+destroyEntity :: Entity -> System ()
+destroyEntity k = do
+  dealloc k
+  deleteRenderer k
+  deletePicTransform k
+  deleteWorldObject k
+  deleteName k

@@ -61,6 +61,7 @@ library
 
                      , Data.Char.FontAwesome
                      , Data.Tiled.Utils
+                     , Odin.Scripts.Animation.Pic
                      , Odin.Scripts.ArrowControl
                      , Odin.Scripts.Button
                      , Odin.Common
@@ -105,6 +106,7 @@ executable entity
   build-depends:       base >=4.8 && <5.0
                      , odin
                      , gelatin-sdl2
+                     , varying
                      , htiled >= 0.1.3
                      , pretty-show >= 1.6
                      , filepath

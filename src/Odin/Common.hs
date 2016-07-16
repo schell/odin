@@ -10,6 +10,7 @@ module Odin.Common (
     module Eff
   -- * Entities
   , Entity
+  , ReservedEntities(..)
   -- * Components
   , Component
   , Time(..)
@@ -18,6 +19,8 @@ module Odin.Common (
   , DeallocIO
   -- * Component Systems
   , System
+  , SystemOption(..)
+  , SystemOptions
   , SystemStep(..)
   , emptySystemStep
   -- * Scripts
@@ -42,6 +45,7 @@ import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get)
 import           Data.IntMap.Strict (IntMap)
+import           Data.Set (Set)
 import           Data.Word (Word32)
 import           Control.Monad.Freer as Eff
 import           Control.Monad.Freer.State as Eff
@@ -67,6 +71,12 @@ type Component a = State (IntMap a)
 type RenderIO = Rendering IO PictureTransform
 type DeallocIO = CleanOp IO
 
+data SystemOption = SystemSkipPhysicsTick
+                  | SystemDrawPhysicsTick
+                  deriving (Show, Ord, Eq, Enum, Bounded)
+
+type SystemOptions = Set SystemOption
+
 type System = Eff '[Component Name
                    ,Component PictureTransform
                    ,Component RenderIO
@@ -78,6 +88,7 @@ type System = Eff '[Component Name
                    ,State Time
                    ,State [Script]
                    ,State OdinScene
+                   ,State SystemOptions
                    ,IO
                    ]
 
@@ -97,11 +108,16 @@ data SystemStep = SystemStep { sysNames  :: IntMap Name
                              , sysTime   :: Time
                              , sysScripts:: [Script]
                              , sysScene  :: OdinScene
+                             , sysOptions:: SystemOptions
                              }
+
+data ReservedEntities = ReservedPhysicsDrawingEntity
+                      deriving (Show, Ord, Eq, Enum, Bounded)
 
 emptySystemStep :: Rez -> Window -> SystemStep
 emptySystemStep rez window =
-  SystemStep mempty mempty mempty mempty 0 window rez [] (Time 0 0) [] emptyScene
+  SystemStep mempty mempty mempty mempty k window rez [] (Time 0 0) [] emptyScene mempty
+    where k = length [ReservedPhysicsDrawingEntity ..]
 --------------------------------------------------------------------------------
 -- System Type Constraints (energy savers)
 --------------------------------------------------------------------------------

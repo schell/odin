@@ -24,8 +24,10 @@ import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
+import qualified Data.Set as S
+import           Data.Set (Set)
 import           Data.Monoid ((<>))
-import           Control.Monad (when)
+import           Control.Monad (when, unless)
 import           Control.Monad.Freer.Internal (runM)
 import           System.Exit (exitSuccess)
 
@@ -77,7 +79,8 @@ tickAllExceptRender = do
   tickTime
   tickEvents
   tickScripts
-  tickPhysics
+  skipPhysics <- optionIsSet SystemSkipPhysicsTick
+  unless skipPhysics tickPhysics
 
 -- | Runs one script and adds it to the system's scripts if it has not concluded.
 performScript :: Script -> System ()
@@ -102,10 +105,11 @@ tickRender :: ( ModifiesComponent RenderIO r
               ) => Eff r ()
 tickRender = do
   rs     <- getRenderers
-  ts     <- getTransforms
+  ts0    <- getPicTransforms
   objs   <- getWorldObjects
+  let ts1 = applyPhysics objs ts0
   ask >>= io . clearFrame
-  io $ renderIntersecting rs ts mempty
+  io $ renderIntersecting rs ts0 mempty
   ask >>= io . updateWindowSDL2
 
 tickSystem :: System ()
@@ -114,33 +118,36 @@ tickSystem = do
   tickRender
 
 type SystemTuple =
-  ( ( ( ( ( ( ( ( Int
-                , IntMap Name)
-              , IntMap PictureTransform)
-            , IntMap RenderIO)
-          , IntMap DeallocIO)
-        , [EventPayload])
-      , Time)
-    , [Script])
-  , OdinScene)
+  ( ( ( ( ( ( ( ( ( Int
+                  , IntMap Name)
+                , IntMap PictureTransform)
+              , IntMap RenderIO)
+            , IntMap DeallocIO)
+          , [EventPayload])
+        , Time)
+      , [Script])
+    , OdinScene)
+  , SystemOptions)
 
 tupleToStep :: Window -> Rez -> SystemTuple -> SystemStep
 tupleToStep win rez p =
-  SystemStep names tfrms rndrs deallocs k win rez evs t scrps scene
-  where k        = fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        names    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        tfrms    = snd $ fst $ fst $ fst $ fst $ fst $ fst p
-        rndrs    = snd $ fst $ fst $ fst $ fst $ fst p
-        deallocs = snd $ fst $ fst $ fst $ fst p
-        evs      = snd $ fst $ fst $ fst p
-        t        = snd $ fst $ fst p
-        scrps    = snd $ fst p
-        scene    = snd p
+  SystemStep names tfrms rndrs deallocs k win rez evs t scrps scene opts
+  where k        = fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
+        names    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
+        tfrms    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
+        rndrs    = snd $ fst $ fst $ fst $ fst $ fst $ fst p
+        deallocs = snd $ fst $ fst $ fst $ fst $ fst p
+        evs      = snd $ fst $ fst $ fst $ fst p
+        t        = snd $ fst $ fst $ fst p
+        scrps    = snd $ fst $ fst p
+        scene    = snd $ fst p
+        opts     = snd p
 
 runSystem :: SystemStep -> System () -> IO SystemStep
 runSystem SystemStep{..} f = tupleToStep sysWindow sysRez <$>
   runM
-   ( flip runState  sysScene
+   ( flip runState  sysOptions
+   $ flip runState  sysScene
    $ flip runState  sysScripts
    $ flip runState  sysTime
    $ flip runState  sysEvents
