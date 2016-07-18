@@ -14,6 +14,7 @@ import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.Set as S
 import           Data.Set (Set)
+import           Data.Monoid ((<>))
 
 import           Odin.Common
 import           Odin.Physics
@@ -52,6 +53,11 @@ modifyPicTransform k f =
 
 deletePicTransform :: ModifiesComponent PictureTransform r => Entity -> Eff r ()
 deletePicTransform k = modifyPicTransforms $ IM.delete k
+
+movePicTransform :: ModifiesComponent PictureTransform r
+                 => Entity -> V2 Float -> Eff r ()
+movePicTransform k v = modifyPicTransform k $ \(PictureTransform t a m) ->
+  PictureTransform (t<>Transform v 1 0) a m
 --------------------------------------------------------------------------------
 -- Scripts
 --------------------------------------------------------------------------------
@@ -87,8 +93,14 @@ modifyWorldObjects f = getWorldObjects >>= setWorldObjects . f
 addWorldObject :: Modifies OdinScene r => Entity -> WorldObj -> Eff r ()
 addWorldObject k o = modifyWorldObjects $ IM.insert k o
 
+addOdinObject :: Modifies OdinScene r => Entity -> OdinObject -> Eff r ()
+addOdinObject k = addWorldObject k . odinObjectToWorldObj
+
 deleteWorldObject :: Modifies OdinScene r => Entity -> Eff r ()
 deleteWorldObject k = modifyWorldObjects $ IM.delete k
+
+deleteOdinObject :: Modifies OdinScene r => Entity -> Eff r ()
+deleteOdinObject = deleteWorldObject
 --------------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------------
@@ -178,3 +190,27 @@ destroyEntity k = do
   deletePicTransform k
   deleteWorldObject k
   deleteName k
+--------------------------------------------------------------------------------
+-- Common Helpers
+--------------------------------------------------------------------------------
+setTfrmAndPic :: (DoesIO r
+                 ,ModifiesComponent RenderIO r
+                 ,ModifiesComponent DeallocIO r
+                 ,ModifiesComponent PictureTransform r
+                 ,Reads Rez r
+                 ) => Entity -> PictureTransform -> Pic -> Cache IO PictureTransform -> Eff r (Cache IO PictureTransform)
+setTfrmAndPic k tfrm pic cache = do
+  rez <- ask
+  -- Compile the pic into a RenderIO and a new resource cache
+  (r, newCache) <- io $ do
+    (rnd, newCache) <- compilePictureRenderer rez cache pic
+    -- Dealloc the stale resources
+    let stale = cache `IM.difference` newCache
+    sequence_ $ fst <$> stale
+    return (snd rnd, newCache)
+
+  -- Update our components
+  k `setPicTransform` tfrm
+  k `setRenderer` r
+  k `setDealloc` sequence_ (fst <$> newCache)
+  return newCache

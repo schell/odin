@@ -86,8 +86,8 @@ freshButton :: (DoesIO r
                ,ModifiesComponent DeallocIO r
                ,ModifiesComponent PictureTransform r
                ,Modifies [Script] r
-               ) => ButtonData -> V2 Float -> ScriptStep -> Eff r Entity
-freshButton btn@ButtonData{..} pos script = do
+               ) => ButtonData -> V2 Float -> (Entity -> ScriptStep) -> Eff r Entity
+freshButton btn@ButtonData{..} pos fscript = do
   let sz = pictureSize $ paintButton btn ButtonStateUp
   up   <- allocPicRenderer $ paintButton btn ButtonStateUp
   over <- allocPicRenderer $ paintButton btn ButtonStateOver
@@ -98,5 +98,5 @@ freshButton btn@ButtonData{..} pos script = do
   actor `setDealloc` dalloc
   actor `setRenderer` btnRndrsUp rs
   actor `setPicTransform` PictureTransform (Transform pos 1 0) 1 1
-  addScript $ buttonUp (Script script) sz rs actor
+  addScript $ buttonUp (Script $ fscript actor) sz rs actor
   return actor

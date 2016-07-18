@@ -23,6 +23,7 @@ module Odin.Common (
   , SystemOptions
   , SystemStep(..)
   , emptySystemStep
+  , module OP
   -- * Scripts
   , ScriptStep
   , Script(..)
@@ -52,7 +53,7 @@ import           Control.Monad.Freer.State as Eff
 import           Control.Monad.Freer.Reader as Eff
 import           Control.Monad.Freer.Fresh as Eff
 
-import Odin.Physics
+import Odin.Physics as OP
 --------------------------------------------------------------------------------
 -- Odin Component/System Types
 --------------------------------------------------------------------------------
