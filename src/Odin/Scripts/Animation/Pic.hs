@@ -15,7 +15,7 @@ type Animation = Animated (PictureTransform,Pic)
 animate :: (ModifiesComponent PictureTransform r
            ,ModifiesComponent RenderIO r
            ,ModifiesComponent DeallocIO r
-           ,Modifies [Script] r
+           ,ModifiesComponent [Script] r
            ,Modifies Time r
            ,Reads Rez r
            ,DoesIO r
@@ -29,13 +29,13 @@ animate k a cache f = do
   case runIdentity $ runSplineE a dt of
     (Left (tfrm,pic), nxt) -> do newCache <- setTfrmAndPic k tfrm pic cache
                                  nextScript $ animate k nxt newCache f
-    (Right (), _) -> do addScripts [f]
+    (Right (), _) -> do k `addScripts` [f]
                         endScript
 
 freshAnimation :: (MakesEntities r
-                  ,Modifies [Script] r
+                  ,ModifiesComponent [Script] r
                   ) => Animation () -> (Entity -> Script) -> Eff r Entity
 freshAnimation a whenDone = do
   k <- fresh
-  addScript $ animate k a mempty $ whenDone k
+  k `addScript` animate k a mempty (whenDone k)
   return k

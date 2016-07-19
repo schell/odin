@@ -26,7 +26,7 @@ import           Physics.Constraint             as PE
 import           Physics.Contact                as PE
 import           Physics.Contact.ConvexHull (ConvexHull)
 import qualified Physics.Contact.ConvexHull     as PE
-import qualified Physics.Contact.SAT            as PE --as O
+--import qualified Physics.Contact.SAT            as PE --as O
 import           Physics.World                  as PE
 import           Physics.World.Object           as PE
 import           Physics.World.Class (External)

@@ -13,11 +13,10 @@ import           SDL hiding (Event, get)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.Set as S
-import           Data.Set (Set)
+--import           Data.Set (Set)
 import           Data.Monoid ((<>))
 
 import           Odin.Common
-import           Odin.Physics
 import           Odin.Utils
 --------------------------------------------------------------------------------
 -- Time
@@ -61,14 +60,23 @@ movePicTransform k v = modifyPicTransform k $ \(PictureTransform t a m) ->
 --------------------------------------------------------------------------------
 -- Scripts
 --------------------------------------------------------------------------------
-getScripts :: Modifies [Script] r => Eff r [Script]
-getScripts = get
+getScripts :: ModifiesComponent [Script] r => Entity -> Eff r (Maybe [Script])
+getScripts k = IM.lookup k <$> get
 
-addScript :: Modifies [Script] r => ScriptStep -> Eff r ()
-addScript = modify . (:) . Script
+addScript :: ModifiesComponent [Script] r => Entity -> ScriptStep -> Eff r ()
+addScript k f = getScripts k >>= modify . \case
+  Nothing -> IM.insert k [Script f]
+  Just ss -> IM.insert k (Script f:ss)
 
-addScripts :: (Modifies [Script] r) => [Script] -> Eff r ()
-addScripts = modify . (++)
+addScripts :: ModifiesComponent [Script] r => Entity -> [Script] -> Eff r ()
+addScripts k xs = getScripts k >>= modify . \case
+  Nothing -> IM.insert k xs
+  Just ys -> IM.insert k (xs ++ ys)
+
+deleteScripts :: ModifiesComponent [Script] r => Entity -> Eff r ()
+deleteScripts = modify . del
+  where del :: Entity -> IntMap [Script] -> IntMap [Script]
+        del = IM.delete
 --------------------------------------------------------------------------------
 -- Physics
 --------------------------------------------------------------------------------
@@ -104,11 +112,11 @@ deleteOdinObject = deleteWorldObject
 --------------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------------
-setName :: ModifiesComponent Name r => Entity -> Name -> Eff r ()
+setName :: ModifiesComponent Name r => Entity -> String -> Eff r ()
 setName k n = modify $ IM.insert k n
 
 deleteName :: ModifiesComponent Name r => Entity -> Eff r ()
-deleteName k = modify (IM.delete k :: IntMap Name -> IntMap Name)
+deleteName k = modify (IM.delete k :: IntMap String -> IntMap String)
 --------------------------------------------------------------------------------
 -- Events
 --------------------------------------------------------------------------------
@@ -166,6 +174,10 @@ dealloc :: (ModifiesComponent DeallocIO r
            ,DoesIO r
            ) => Entity -> Eff r ()
 dealloc k = getDealloc k >>= io . sequence_
+
+deleteDealloc :: ModifiesComponent DeallocIO r => Entity -> Eff r ()
+deleteDealloc = modify . del
+  where del = IM.delete :: Entity -> IntMap DeallocIO -> IntMap DeallocIO
 --------------------------------------------------------------------------------
 -- System Options
 --------------------------------------------------------------------------------
@@ -183,13 +195,8 @@ optionIsSet o = S.member o <$> getOptions
 --------------------------------------------------------------------------------
 -- Destroying an entire entity and all its components
 --------------------------------------------------------------------------------
-destroyEntity :: Entity -> System ()
-destroyEntity k = do
-  dealloc k
-  deleteRenderer k
-  deletePicTransform k
-  deleteWorldObject k
-  deleteName k
+destroyEntity :: Modifies SystemCommands r => Entity -> Eff r ()
+destroyEntity = modify . (:) . SystemDeleteEntity
 --------------------------------------------------------------------------------
 -- Common Helpers
 --------------------------------------------------------------------------------

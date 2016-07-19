@@ -67,10 +67,10 @@ drawPhysics k cache = do
 
 freshPhysicsDrawingEntity :: (MakesEntities r
                              ,ModifiesComponent PictureTransform r
-                             ,Modifies [Script] r
+                             ,ModifiesComponent [Script] r
                              ) => Eff r Entity
 freshPhysicsDrawingEntity = do
   k <- fresh
   k `setPicTransform` mempty
-  addScript $ drawPhysics k mempty
+  k `addScript` drawPhysics k mempty
   return k

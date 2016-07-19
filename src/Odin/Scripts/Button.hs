@@ -56,7 +56,7 @@ buttonDown script sz rs btn = do
   isDown <- ($ ButtonLeft) <$> io getMouseButtons
   if not isDown
     then do isStillOver <- getMouseIsOverEntityWithSize btn sz
-            when isStillOver $ performScript script
+            when isStillOver $ performScript btn script
             btn `setRenderer` btnRndrsUp rs
             buttonUp script sz rs btn
     else nextScript $ buttonDown script sz rs btn
@@ -85,7 +85,7 @@ freshButton :: (DoesIO r
                ,ModifiesComponent RenderIO r
                ,ModifiesComponent DeallocIO r
                ,ModifiesComponent PictureTransform r
-               ,Modifies [Script] r
+               ,ModifiesComponent [Script] r
                ) => ButtonData -> V2 Float -> (Entity -> ScriptStep) -> Eff r Entity
 freshButton btn@ButtonData{..} pos fscript = do
   let sz = pictureSize $ paintButton btn ButtonStateUp
@@ -98,5 +98,5 @@ freshButton btn@ButtonData{..} pos fscript = do
   actor `setDealloc` dalloc
   actor `setRenderer` btnRndrsUp rs
   actor `setPicTransform` PictureTransform (Transform pos 1 0) 1 1
-  addScript $ buttonUp (Script $ fscript actor) sz rs actor
+  actor `addScript` buttonUp (Script $ fscript actor) sz rs actor
   return actor

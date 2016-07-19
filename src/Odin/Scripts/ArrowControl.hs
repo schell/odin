@@ -39,8 +39,8 @@ onTrue :: (a -> Bool) -> a -> Maybe a
 onTrue f x = if f x then Just x else Nothing
 
 arrowControl :: (Modifies [EventPayload] r
-                ,Modifies [Script] r
                 ,Modifies Time r
+                ,ModifiesComponent [Script] r
                 ,ModifiesComponent PictureTransform r
                 ) => Entity -> Eff r Script
 arrowControl actor = do
@@ -58,7 +58,7 @@ arrowControl actor = do
     -- direction.
     unless (null dirs) $ do
       scripts <- mapM (arrowControlMove actor) dirs
-      addScripts scripts
+      actor `addScripts` scripts
   nextScript $ arrowControl actor
 
 arrowControlMove :: (Modifies [EventPayload] r

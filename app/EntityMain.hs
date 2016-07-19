@@ -37,43 +37,54 @@ getFont name = do
                      exitFailure
       Right fnt -> return fnt
 
-setupNetwork :: FontData -> System ()
-setupNetwork font = do
-  net <- fresh
-
+setupNetwork :: FontData -> FontData -> System ()
+setupNetwork comicFont hackFont = do
   lvl <- freshSystem $ do
     void freshPhysicsDrawingEntity
-    actor <- fresh
-    actor `addOdinObject` OdinObject { ooVel    = (3,1)
-                                     , ooRotVel = 1
-                                     , ooPos    = (0,0)
-                                     , ooRot    = 0
-                                     , ooMass   = (1,1)
-                                     , ooMu     = 0
-                                     , ooHull   = rectangleHull 10 10
-                                     }
+    actor1 <- fresh
+    actor1 `setName` "actor1"
+    actor1 `addOdinObject` OdinObject { ooVel    = (3,1)
+                                      , ooRotVel = 1
+                                      , ooPos    = (100,100)
+                                      , ooRot    = 0
+                                      , ooMass   = (1,1)
+                                      , ooMu     = 0
+                                      , ooHull   = rectangleHull 10 10
+                                      }
 
-    status <- freshStatusBar font
-    status `movePicTransform` V2 0 20
+    actor2 <- fresh
+    actor2 `setName` "actor2"
+    actor2 `addOdinObject` OdinObject { ooVel    = (-3,1)
+                                      , ooRotVel = 1
+                                      , ooPos    = (200,100)
+                                      , ooRot    = 0
+                                      , ooMass   = (1,1)
+                                      , ooMu     = 0
+                                      , ooHull   = rectangleHull 10 10
+                                      }
+  lvl `setName` "lvl"
 
-  let button = ButtonData font "Reset" 16 buttonPainter
-  void $ freshButton button 100 $ \btn -> do
+  let button = ButtonData comicFont "Reset" 16 buttonPainter
+  btn <- freshButton button (V2 200 4) $ \btn -> do
     destroyEntity lvl
-    destroyEntity net
     destroyEntity btn
-    setupNetwork font
+    setupNetwork comicFont hackFont
     endScript
-
+  btn `setName` "btn"
 
 main :: IO ()
 main = do
-  font <- getFont "KMKDSP__.ttf"
+  comicFont <- getFont "KMKDSP__.ttf"
+  hackFont  <- getFont "Hack-Regular.ttf"
   (rez,window) <- startupSDL2Backend 800 600 "Entity Sandbox" True
   putStrLn "sdl init'd"
   let step = emptySystemStep rez window
   void $ runSystem step $ do
-    setupNetwork font
+
+    status <- freshStatusPrint
+    --status `movePicTransform` V2 0 0
+    status `setName` "status"
+    setupNetwork comicFont hackFont
+
     io $ putStrLn "setup network"
-    forever $ do
-      tickSystem
-      io $ threadDelay 1
+    forever tickSystem

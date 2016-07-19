@@ -10,17 +10,19 @@ module Odin.Common (
     module Eff
   -- * Entities
   , Entity
-  , ReservedEntities(..)
+  --, ReservedEntities(..)
   -- * Components
   , Component
   , Time(..)
-  , Name(..)
+  , Name
   , RenderIO
   , DeallocIO
   -- * Component Systems
   , System
   , SystemOption(..)
   , SystemOptions
+  , SystemCommand(..)
+  , SystemCommands
   , SystemStep(..)
   , emptySystemStep
   , module OP
@@ -52,6 +54,7 @@ import           Control.Monad.Freer as Eff
 import           Control.Monad.Freer.State as Eff
 import           Control.Monad.Freer.Reader as Eff
 import           Control.Monad.Freer.Fresh as Eff
+--import qualified Control.Monad.State.Strict as MTL
 
 import Odin.Physics as OP
 --------------------------------------------------------------------------------
@@ -61,13 +64,16 @@ type Pic = Picture GLuint ()
 
 data Time = Time { timeLast  :: Word32
                  , timeDelta :: Float
+                 , timeLeft  :: Float
+                 -- ^ The amount of time left unconsumed by the last physics tick
                  } deriving (Show, Eq)
 
-newtype Name = Name String
+type Name = String
 
 type Entity = Int
 
 type Component a = State (IntMap a)
+--type ComponentMTL a = MTL.State (IntMap a)
 
 type RenderIO = Rendering IO PictureTransform
 type DeallocIO = CleanOp IO
@@ -75,21 +81,25 @@ type DeallocIO = CleanOp IO
 data SystemOption = SystemSkipPhysicsTick
                   | SystemDrawPhysicsTick
                   deriving (Show, Ord, Eq, Enum, Bounded)
-
 type SystemOptions = Set SystemOption
+
+data SystemCommand = SystemDeleteEntity Entity
+                   deriving (Show, Ord, Eq, {-Enum, -}Bounded)
+type SystemCommands = [SystemCommand]
 
 type System = Eff '[Component Name
                    ,Component PictureTransform
                    ,Component RenderIO
                    ,Component DeallocIO
+                   ,Component [Script]
                    ,Fresh
                    ,Reader Window
                    ,Reader Rez
                    ,State [EventPayload]
                    ,State Time
-                   ,State [Script]
                    ,State OdinScene
                    ,State SystemOptions
+                   ,State SystemCommands
                    ,IO
                    ]
 
@@ -98,27 +108,28 @@ type ScriptStep = System Script
 data Script = Script { unScript :: ScriptStep }
             | ScriptEnd
 
-data SystemStep = SystemStep { sysNames  :: IntMap Name
-                             , sysTfrms  :: IntMap PictureTransform
-                             , sysRndrs  :: IntMap RenderIO
-                             , sysDealloc:: IntMap DeallocIO
-                             , sysFresh  :: Int
-                             , sysWindow :: Window
-                             , sysRez    :: Rez
-                             , sysEvents :: [EventPayload]
-                             , sysTime   :: Time
-                             , sysScripts:: [Script]
-                             , sysScene  :: OdinScene
-                             , sysOptions:: SystemOptions
+data SystemStep = SystemStep { sysNames    :: IntMap Name
+                             , sysTfrms    :: IntMap PictureTransform
+                             , sysRndrs    :: IntMap RenderIO
+                             , sysDealloc  :: IntMap DeallocIO
+                             , sysScripts  :: IntMap [Script]
+                             , sysFresh    :: Int
+                             , sysWindow   :: Window
+                             , sysRez      :: Rez
+                             , sysEvents   :: [EventPayload]
+                             , sysTime     :: Time
+                             , sysScene    :: OdinScene
+                             , sysOptions  :: SystemOptions
+                             , sysCommands :: SystemCommands
                              }
 
-data ReservedEntities = ReservedPhysicsDrawingEntity
-                      deriving (Show, Ord, Eq, Enum, Bounded)
+--data ReservedEntities = ReservedPhysicsDrawingEntity
+--                      deriving (Show, Ord, Eq, Enum, Bounded)
 
 emptySystemStep :: Rez -> Window -> SystemStep
 emptySystemStep rez window =
-  SystemStep mempty mempty mempty mempty k window rez [] (Time 0 0) [] emptyScene mempty
-    where k = length [ReservedPhysicsDrawingEntity ..]
+  SystemStep mempty mempty mempty mempty mempty k window rez [] (Time 0 0 0) emptyScene mempty mempty
+    where k = 0 --length [ReservedPhysicsDrawingEntity ..]
 --------------------------------------------------------------------------------
 -- System Type Constraints (energy savers)
 --------------------------------------------------------------------------------
