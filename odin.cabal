@@ -66,12 +66,14 @@ library
                      , Odin.Scripts.Button
                      , Odin.Scripts.DrawPhysics
                      , Odin.Scripts.Status
-                     , Odin.Common
-                     , Odin.Component
-                     , Odin.Physics
                      , Odin.Styles
-                     , Odin.System
-                     , Odin.Utils
+
+                     , Odin.Core.Common
+                     , Odin.Core.Component
+                     , Odin.Core.Physics
+                     , Odin.Core.System
+                     , Odin.Core.Utils
+                     , Odin.Core
 
   build-depends:       base >=4.8 && <5.0
                      , transformers >= 0.4

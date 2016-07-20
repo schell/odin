@@ -7,8 +7,7 @@ import SDL
 import Data.Monoid ((<>))
 import Data.Maybe (mapMaybe)
 
-import Odin.Common
-import Odin.Component
+import Odin.Core
 
 data Direction = North | East | South | West deriving (Show, Eq, Bounded)
 

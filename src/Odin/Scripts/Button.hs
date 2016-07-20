@@ -11,9 +11,7 @@ import SDL.Input.Mouse (MouseButton(..)
                        ,getMouseButtons
                        )
 
-import Odin.Common
-import Odin.Component
-import Odin.System
+import Odin.Core
 
 data ButtonState = ButtonStateUp
                  | ButtonStateOver
@@ -51,17 +49,17 @@ getMouseIsOverEntityWithSize actor sz = do
       bb = applyPicTfrmToBounds ptfrm (0,sz)
   return $ pointInBounds vf bb
 
-buttonDown :: Script -> V2 Float -> ButtonRndrs -> Entity -> System Script
-buttonDown script sz rs btn = do
+buttonDown :: Mailbox () -> V2 Float -> ButtonRndrs -> Entity -> System Script
+buttonDown mb sz rs btn = do
   isDown <- ($ ButtonLeft) <$> io getMouseButtons
   if not isDown
     then do isStillOver <- getMouseIsOverEntityWithSize btn sz
-            when isStillOver $ performScript btn script
+            when isStillOver $ send mb () --performScript btn script
             btn `setRenderer` btnRndrsUp rs
-            buttonUp script sz rs btn
-    else nextScript $ buttonDown script sz rs btn
+            buttonUp mb sz rs btn
+    else nextScript $ buttonDown mb sz rs btn
 
-buttonOver :: Script -> V2 Float -> ButtonRndrs -> Entity -> System Script
+buttonOver :: Mailbox () -> V2 Float -> ButtonRndrs -> Entity -> System Script
 buttonOver script sz rs btn = do
   isDown <- ($ ButtonLeft) <$> io getMouseButtons
   isOver <- getMouseIsOverEntityWithSize btn sz
@@ -71,12 +69,12 @@ buttonOver script sz rs btn = do
             else do btn `setRenderer` btnRndrsUp rs
                     buttonUp script sz rs btn
 
-buttonUp :: Script -> V2 Float -> ButtonRndrs -> Entity -> System Script
-buttonUp script sz rs btn = do
+buttonUp :: Mailbox () -> V2 Float -> ButtonRndrs -> Entity -> System Script
+buttonUp mb sz rs btn = do
   isOver <- getMouseIsOverEntityWithSize btn sz
   if isOver then do btn `setRenderer` btnRndrsOver rs
-                    buttonOver script sz rs btn
-            else nextScript $ buttonUp script sz rs btn
+                    buttonOver mb sz rs btn
+            else nextScript $ buttonUp mb sz rs btn
 
 -- | Creates a fresh button.
 freshButton :: (DoesIO m
@@ -86,8 +84,8 @@ freshButton :: (DoesIO m
                ,ModifiesComponent DeallocIO m
                ,ModifiesComponent PictureTransform m
                ,ModifiesComponent [Script] m
-               ) => ButtonData -> V2 Float -> (Entity -> ScriptStep) -> m Entity
-freshButton btn@ButtonData{..} pos fscript = do
+               ) => ButtonData -> V2 Float -> Mailbox () -> m Entity
+freshButton btn@ButtonData{..} pos mb = do
   let sz = pictureSize $ paintButton btn ButtonStateUp
   up   <- allocPicRenderer $ paintButton btn ButtonStateUp
   over <- allocPicRenderer $ paintButton btn ButtonStateOver
@@ -98,5 +96,5 @@ freshButton btn@ButtonData{..} pos fscript = do
   actor `setDealloc` dalloc
   actor `setRenderer` btnRndrsUp rs
   actor `setPicTransform` PictureTransform (Transform pos 1 0) 1 1
-  actor `addScript` buttonUp (Script $ fscript actor) sz rs actor
+  actor `addScript` buttonUp mb sz rs actor
   return actor

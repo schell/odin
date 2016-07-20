@@ -8,8 +8,7 @@ import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Word (Word32)
 
-import Odin.Common
-import Odin.Component
+import Odin.Core
 
 updateStatus :: (Reads Time m
                 ,Reads Rez m

@@ -1,4 +1,4 @@
-module Odin.Utils where
+module Odin.Core.Utils where
 
 import Gelatin.GL
 

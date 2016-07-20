@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
-module Odin.System (
+module Odin.Core.System (
     runSystem
   , tickTime
   , tickEvents
@@ -27,8 +27,8 @@ import           Data.Monoid ((<>))
 import           System.Exit (exitSuccess)
 
 import           App.Framework (isQuit)
-import           Odin.Common
-import           Odin.Component
+import           Odin.Core.Common
+import           Odin.Core.Component
 
 tickTime :: (Modifies Time m, DoesIO m) => m ()
 tickTime = do

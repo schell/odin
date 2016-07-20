@@ -10,3 +10,4 @@ dist/
 **/.DS_Store
 codex.tags
 *.out
+*.eventlog

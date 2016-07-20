@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MagicHash #-}
-module Odin.Physics (
+module Odin.Core.Physics (
   module PE,
   External,
   OdinWorld,

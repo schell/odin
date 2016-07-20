@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
-module Odin.Component where
+module Odin.Core.Component where
 
 import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
@@ -17,8 +17,8 @@ import           Data.Word (Word32)
 --import           Data.Set (Set)
 import           Data.Monoid ((<>))
 
-import           Odin.Common
-import           Odin.Utils
+import           Odin.Core.Common
+import           Odin.Core.Utils
 --------------------------------------------------------------------------------
 -- Entities
 --------------------------------------------------------------------------------
@@ -30,15 +30,17 @@ fresh = do
 --------------------------------------------------------------------------------
 -- Time
 --------------------------------------------------------------------------------
---getTimeDelta :: Modifies Time m => m Word32
---getTimeDelta = timeDelta <$> get
 readTimeDelta :: Reads Time m => m Word32
 readTimeDelta = timeDelta <$> ask
 
---getTimeDeltaSeconds :: (Modifies Time r, Fractional f) => m f
---getTimeDeltaSeconds = ((/1000) . fromIntegral) <$> getTimeDelta
 readTimeDeltaSeconds :: (Reads Time m, Fractional f) => m f
 readTimeDeltaSeconds = ((/1000) . fromIntegral) <$> readTimeDelta
+
+getTime :: Modifies Time m => m Time
+getTime = get
+
+putTime :: Modifies Time m => Time -> m ()
+putTime = put
 --------------------------------------------------------------------------------
 -- PictureTransform
 --------------------------------------------------------------------------------
@@ -89,6 +91,9 @@ addScripts k xs = getScripts k >>= modify . \case
   Nothing -> IM.insert k xs
   Just ys -> IM.insert k (xs ++ ys)
 
+setScripts :: ModifiesComponent [Script] m => Entity -> [Script] -> m ()
+setScripts k xs = modify $ IM.insert k xs
+
 deleteScripts :: ModifiesComponent [Script] m => Entity -> m ()
 deleteScripts = modify . del
   where del :: Entity -> IntMap [Script] -> IntMap [Script]
@@ -117,8 +122,8 @@ modifyWorldObjects f = getWorldObjects >>= setWorldObjects . f
 addWorldObject :: Modifies OdinScene m => Entity -> WorldObj -> m ()
 addWorldObject k o = modifyWorldObjects $ IM.insert k o
 
-addBody :: Modifies OdinScene m => Entity -> Body -> m ()
-addBody k = addWorldObject k . odinBodyToWorldObj
+setBody :: Modifies OdinScene m => Entity -> Body -> m ()
+setBody k = addWorldObject k . odinBodyToWorldObj
 
 deleteWorldObject :: Modifies OdinScene m => Entity -> m ()
 deleteWorldObject k = modifyWorldObjects $ IM.delete k
@@ -216,6 +221,40 @@ destroyEntity = modify . (:) . SystemDeleteEntity
 --------------------------------------------------------------------------------
 -- Common Helpers
 --------------------------------------------------------------------------------
+(##) :: m Entity -> (m Entity -> m Entity) -> m Entity
+f ## g = g f
+
+(#.) :: Monad m => m Entity -> (m Entity -> m Entity) -> m ()
+f #. g = f ## g >> return ()
+
+mkSetter :: Monad m => (b -> t -> m a) -> t -> m b -> m b
+mkSetter w a f = do
+  k <- f
+  _ <- w k a
+  return k
+
+type SerialSetter m a = a -> m Entity -> m Entity
+
+name :: ModifiesComponent Name m => SerialSetter m Name
+name = mkSetter setName
+
+body :: Modifies OdinScene m => SerialSetter m Body
+body = mkSetter setBody
+
+tfrm :: ModifiesComponent PictureTransform m => SerialSetter m PictureTransform
+tfrm = mkSetter setPicTransform
+
+scripts :: ModifiesComponent [Script] m => SerialSetter m [Script]
+scripts = mkSetter setScripts
+
+rndr :: ModifiesComponent RenderIO m => SerialSetter m RenderIO
+rndr = mkSetter setRenderer
+
+dloc :: ModifiesComponent DeallocIO m => SerialSetter m DeallocIO
+dloc = mkSetter setDealloc
+--------------------------------------------------------------------------------
+-- Less Common Helpers
+--------------------------------------------------------------------------------
 setTfrmAndPic :: (DoesIO m
                  ,ModifiesComponent RenderIO m
                  ,ModifiesComponent DeallocIO m
@@ -237,4 +276,3 @@ setTfrmAndPic k tfrm pic cache = do
   k `setRenderer` r
   k `setDealloc` sequence_ (fst <$> newCache)
   return newCache
-

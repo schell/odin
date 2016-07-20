@@ -8,7 +8,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Odin.Common (
+module Odin.Core.Common (
   -- * Reexporting Effects
     module State
   -- * Entities
@@ -42,6 +42,11 @@ module Odin.Common (
   , ModifiesComponent
   , DoesIO
   , MakesEntities
+  -- * Sending / Receiving Messages
+  , Mailbox
+  , MakesMailbox(..)
+  , SendsMessage(..)
+  , GetsMessage(..)
   -- * Time savers / Helpers
   , io
   , Pic
@@ -53,14 +58,15 @@ import           SDL hiding (Event, get)
 import           Data.IntMap.Strict (IntMap)
 import           Data.Set (Set)
 import           Data.Word (Word32)
-import           Data.FTCQueue
+import           Control.Concurrent.STM
+import           Control.Concurrent.STM.TQueue
 --import           Control.Monad.Freer.State as Eff
 --import           Control.Monad.Freer.Reader as Eff
 --import           Control.Monad.Freer.Fresh as Eff
 import           Control.Monad.State.Strict as State hiding (get,put,modify)
 import qualified Control.Monad.State.Strict as S
 
-import Odin.Physics as OP
+import Odin.Core.Physics as OP
 --------------------------------------------------------------------------------
 -- Odin Component/System Types
 --------------------------------------------------------------------------------
@@ -93,10 +99,6 @@ type SystemOptions = Set SystemOption
 data SystemCommand = SystemDeleteEntity Entity
                    deriving (Show, Ord, Eq, {-Enum, -}Bounded)
 type SystemCommands = [SystemCommand]
-
-type Message a = (String, a)
-
-type Mailbox = _
 
 data SystemStep = SystemStep { sysNames    :: IntMap Name
                              , sysTfrms    :: IntMap PictureTransform
@@ -225,3 +227,27 @@ endScript = return ScriptEnd
 
 nextScript :: Monad m => ScriptStep -> m Script
 nextScript = return . Script
+--------------------------------------------------------------------------------
+-- Sending / Recieving messages
+--------------------------------------------------------------------------------
+type Mailbox a = TVar (a -> System ()) --TQueue
+
+class MakesMailbox a m where
+  mailbox :: m (Mailbox a)
+
+class SendsMessage a m where
+  send :: Mailbox a -> a -> m ()
+
+class GetsMessage a m where
+  recv :: Mailbox a -> (a -> m ()) -> m ()
+
+instance MakesMailbox a System where
+  mailbox = io $ newTVarIO $ const $ return () --io newTQueueIO
+
+instance SendsMessage a System where
+  send mbox msg = do --io $ atomically $ writeTQueue mbox msg
+    f <- io $ readTVarIO mbox
+    f msg
+
+instance GetsMessage a System where
+  recv mbox f = void $ io $ atomically $ swapTVar mbox f --io . atomically . tryReadTQueue

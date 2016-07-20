@@ -13,7 +13,7 @@ import           Data.Maybe (catMaybes)
 import           Data.Monoid ((<>))
 import           Gelatin.GL
 
-import Odin.Utils
+import Odin.Core.Utils
 
 type ImageTextureMap = Map Image GLuint
 type TileGLRendererMap = Map Tile GLRenderer

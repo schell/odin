@@ -2,7 +2,7 @@ module Odin.Styles (buttonPainter) where
 
 import Gelatin.SDL2
 
-import Odin.Common
+import Odin.Core.Common
 import Odin.Scripts.Button
 
 textColorForButtonState :: ButtonState -> V4 Float

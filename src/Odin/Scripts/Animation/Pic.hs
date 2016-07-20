@@ -5,8 +5,7 @@ import Gelatin.SDL2
 import Control.Varying
 import Data.Functor.Identity
 
-import Odin.Common
-import Odin.Component
+import Odin.Core
 
 type StreamOf a = Var Float a
 type Animated a = SplineT Float a Identity

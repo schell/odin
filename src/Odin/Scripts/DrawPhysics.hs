@@ -5,9 +5,7 @@ import           Gelatin.SDL2
 import qualified Data.IntMap as IM
 import           Control.Monad (forM_)
 
-import Odin.Common
-import Odin.Component
-
+import Odin.Core
 
 --------------------------------------------------------------------------------
 -- Converting a Scene into a Pic
