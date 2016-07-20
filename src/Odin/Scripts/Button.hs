@@ -39,9 +39,9 @@ data ButtonRndrs = ButtonRndrs { btnRndrsUp   :: RenderIO
                                , btnRndrsDown :: RenderIO
                                }
 
-getMouseIsOverEntityWithSize :: (DoesIO r
-                                ,ModifiesComponent PictureTransform r
-                                ) => Entity -> V2 Float -> Eff r Bool
+getMouseIsOverEntityWithSize :: (DoesIO m
+                                ,ModifiesComponent PictureTransform m
+                                ) => Entity -> V2 Float -> m Bool
 getMouseIsOverEntityWithSize actor sz = do
   P vi  <- io getAbsoluteMouseLocation
   ptfrm <- getPicTransform actor >>= \case
@@ -79,14 +79,14 @@ buttonUp script sz rs btn = do
             else nextScript $ buttonUp script sz rs btn
 
 -- | Creates a fresh button.
-freshButton :: (DoesIO r
-               ,MakesEntities r
-               ,Reads Rez r
-               ,ModifiesComponent RenderIO r
-               ,ModifiesComponent DeallocIO r
-               ,ModifiesComponent PictureTransform r
-               ,ModifiesComponent [Script] r
-               ) => ButtonData -> V2 Float -> (Entity -> ScriptStep) -> Eff r Entity
+freshButton :: (DoesIO m
+               ,MakesEntities m
+               ,Reads Rez m
+               ,ModifiesComponent RenderIO m
+               ,ModifiesComponent DeallocIO m
+               ,ModifiesComponent PictureTransform m
+               ,ModifiesComponent [Script] m
+               ) => ButtonData -> V2 Float -> (Entity -> ScriptStep) -> m Entity
 freshButton btn@ButtonData{..} pos fscript = do
   let sz = pictureSize $ paintButton btn ButtonStateUp
   up   <- allocPicRenderer $ paintButton btn ButtonStateUp

@@ -7,7 +7,6 @@ import Control.Concurrent (threadDelay)
 import Control.Varying
 import Data.Monoid ((<>))
 import Data.Functor.Identity
-import Text.Show.Pretty
 import System.FilePath
 import System.Directory
 import System.Exit
@@ -25,6 +24,8 @@ import Odin.Scripts.Button
 import Odin.Scripts.DrawPhysics
 import Odin.Scripts.Status
 
+import Halive.Utils
+
 -- | Load our standard fonts.
 getFont :: String -> IO FontData
 getFont name = do
@@ -37,32 +38,61 @@ getFont name = do
                      exitFailure
       Right fnt -> return fnt
 
+(##) :: m Entity -> (m Entity -> m Entity) -> m Entity
+f ## g = g f
+
+(#.) :: Monad m => m Entity -> (m Entity -> m Entity) -> m ()
+f #. g = f ## g >> return ()
+
+name :: ModifiesComponent Name m => Name -> m Entity -> m Entity
+name n f = do
+  k <- f
+  k `setName` n
+  return k
+
+body :: Modifies OdinScene m => Body -> m Entity -> m Entity
+body b f = do
+  k <- f
+  k `addBody` b
+  return k
+
+
+
 setupNetwork :: FontData -> FontData -> System ()
 setupNetwork comicFont hackFont = do
   lvl <- freshSystem $ do
     void freshPhysicsDrawingEntity
-    actor1 <- fresh
-    actor1 `setName` "actor1"
-    actor1 `addOdinObject` OdinObject { ooVel    = (3,1)
-                                      , ooRotVel = 1
-                                      , ooPos    = (100,100)
-                                      , ooRot    = 0
-                                      , ooMass   = (1,1)
-                                      , ooMu     = 0
-                                      , ooHull   = rectangleHull 10 10
-                                      }
+    forM_ [(x,y) | y <- [0..5], x <- [0..5]] $ \(x,y) ->
+      fresh ## name ("actor" ++ show x ++ show y)
+          #. body Body{ bVel    = (8,1)
+                      , bRotVel = 1
+                      , bPos    = (100 + x*11,100 + y*11)
+                      , bRot    = 0
+                      , bMass   = (1,1)
+                      , bMu     = 0
+                      , bHull   = rectangleHull 10 10
+                      }
 
-    actor2 <- fresh
-    actor2 `setName` "actor2"
-    actor2 `addOdinObject` OdinObject { ooVel    = (-3,1)
-                                      , ooRotVel = 1
-                                      , ooPos    = (200,100)
-                                      , ooRot    = 0
-                                      , ooMass   = (1,1)
-                                      , ooMu     = 0
-                                      , ooHull   = rectangleHull 10 10
-                                      }
-  lvl `setName` "lvl"
+    fresh ## name "actor2"
+          #. body Body{ bVel    = (-3,2)
+                      , bRotVel = 1
+                      , bPos    = (400,100)
+                      , bRot    = 0
+                      , bMass   = (10,10)
+                      , bMu     = 0
+                      , bHull   = rectangleHull 20 20
+                      }
+
+    fresh ## name "wall"
+          #. body Body{ bVel    = (0,0)
+                      , bRotVel = 0
+                      , bPos    = (700, 300)
+                      , bRot    = 0
+                      , bMass   = (0,0)
+                      , bMu     = 0
+                      , bHull   = rectangleHull 10 600
+                      }
+  setName lvl "lvl"
 
   let button = ButtonData comicFont "Reset" 16 buttonPainter
   btn <- freshButton button (V2 200 4) $ \btn -> do
@@ -70,21 +100,15 @@ setupNetwork comicFont hackFont = do
     destroyEntity btn
     setupNetwork comicFont hackFont
     endScript
-  btn `setName` "btn"
+  setName btn "btn"
 
 main :: IO ()
 main = do
-  comicFont <- getFont "KMKDSP__.ttf"
-  hackFont  <- getFont "Hack-Regular.ttf"
-  (rez,window) <- startupSDL2Backend 800 600 "Entity Sandbox" True
-  putStrLn "sdl init'd"
-  let step = emptySystemStep rez window
-  void $ runSystem step $ do
-
+  comicFont <- reacquire 0 $ getFont "KMKDSP__.ttf"
+  hackFont  <- reacquire 1 $ getFont "Hack-Regular.ttf"
+  (rez,window) <- reacquire 2 $ startupSDL2Backend 800 600 "Entity Sandbox" True
+  runSystem (emptySystemStep rez window) $ do
     status <- freshStatusPrint
-    --status `movePicTransform` V2 0 0
     status `setName` "status"
     setupNetwork comicFont hackFont
-
-    io $ putStrLn "setup network"
     forever tickSystem

@@ -6,7 +6,6 @@ import Gelatin.SDL2
 import SDL
 import Data.Monoid ((<>))
 import Data.Maybe (mapMaybe)
-import Control.Monad (msum, unless)
 
 import Odin.Common
 import Odin.Component
@@ -38,11 +37,11 @@ arrowCodes = [ScancodeUp, ScancodeLeft, ScancodeDown, ScancodeRight]
 onTrue :: (a -> Bool) -> a -> Maybe a
 onTrue f x = if f x then Just x else Nothing
 
-arrowControl :: (Modifies [EventPayload] r
-                ,Modifies Time r
-                ,ModifiesComponent [Script] r
-                ,ModifiesComponent PictureTransform r
-                ) => Entity -> Eff r Script
+arrowControl :: (Modifies [EventPayload] m
+                ,Reads Time m
+                ,ModifiesComponent [Script] m
+                ,ModifiesComponent PictureTransform m
+                ) => Entity -> m Script
 arrowControl actor = do
   -- First wait until the user presses an arrow key
       -- For that we'll need some scafolding so we can test and extract the
@@ -61,13 +60,13 @@ arrowControl actor = do
       actor `addScripts` scripts
   nextScript $ arrowControl actor
 
-arrowControlMove :: (Modifies [EventPayload] r
-                    ,Modifies Time r
-                    ,ModifiesComponent PictureTransform r
-                    ) => Entity -> Direction -> Eff r Script
+arrowControlMove :: (Modifies [EventPayload] m
+                    ,ModifiesComponent PictureTransform m
+                    ,Reads Time m
+                    ) => Entity -> Direction -> m Script
 arrowControlMove actor dir = do
-  -- Update the transform of the actor
-  dt <- getTimeDelta
+  -- Update the transform of the actom
+  dt <- readTimeDeltaSeconds
   let tfrm = PictureTransform (Transform (dt * 100 *^ directionToV2 dir) 1 0) 1 1
   modifyPicTransform actor (tfrm <>)
   -- Find if the arrow key was released

@@ -46,12 +46,12 @@ scenePic = sequence_ . (worldObjPic <$>) . _worldObjs . _scWorld
 --------------------------------------------------------------------------------
 -- Scripts - Fresh'ing, Rendering, dealloc'ing, etc
 --------------------------------------------------------------------------------
-drawPhysics :: (Modifies OdinScene r
-               ,ModifiesComponent RenderIO r
-               ,ModifiesComponent DeallocIO r
-               ,Reads Rez r
-               ,DoesIO r
-               ) => Entity -> Cache IO PictureTransform -> Eff r Script
+drawPhysics :: (Modifies OdinScene m
+               ,ModifiesComponent RenderIO m
+               ,ModifiesComponent DeallocIO m
+               ,Reads Rez m
+               ,DoesIO m
+               ) => Entity -> Cache IO PictureTransform -> m Script
 drawPhysics k cache = do
   rez <- ask
   pic <- scenePic <$> getScene
@@ -65,10 +65,10 @@ drawPhysics k cache = do
   k `setDealloc` sequence_ (fst <$> newCache)
   nextScript $ drawPhysics k newCache
 
-freshPhysicsDrawingEntity :: (MakesEntities r
-                             ,ModifiesComponent PictureTransform r
-                             ,ModifiesComponent [Script] r
-                             ) => Eff r Entity
+freshPhysicsDrawingEntity :: (MakesEntities m
+                             ,ModifiesComponent PictureTransform m
+                             ,ModifiesComponent [Script] m
+                             ) => m Entity
 freshPhysicsDrawingEntity = do
   k <- fresh
   k `setPicTransform` mempty

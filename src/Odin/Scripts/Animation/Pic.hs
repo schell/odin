@@ -12,29 +12,29 @@ type StreamOf a = Var Float a
 type Animated a = SplineT Float a Identity
 type Animation = Animated (PictureTransform,Pic)
 
-animate :: (ModifiesComponent PictureTransform r
-           ,ModifiesComponent RenderIO r
-           ,ModifiesComponent DeallocIO r
-           ,ModifiesComponent [Script] r
-           ,Modifies Time r
-           ,Reads Rez r
-           ,DoesIO r
+animate :: (ModifiesComponent PictureTransform m
+           ,ModifiesComponent RenderIO m
+           ,ModifiesComponent DeallocIO m
+           ,ModifiesComponent [Script] m
+           ,Reads Time m
+           ,Reads Rez m
+           ,DoesIO m
            ) => Entity
              -> Animation ()
              -> Cache IO PictureTransform
              -> Script
-             -> Eff r Script
+             -> m Script
 animate k a cache f = do
-  dt <- getTimeDelta
+  dt <- readTimeDeltaSeconds
   case runIdentity $ runSplineE a dt of
     (Left (tfrm,pic), nxt) -> do newCache <- setTfrmAndPic k tfrm pic cache
                                  nextScript $ animate k nxt newCache f
     (Right (), _) -> do k `addScripts` [f]
                         endScript
 
-freshAnimation :: (MakesEntities r
-                  ,ModifiesComponent [Script] r
-                  ) => Animation () -> (Entity -> Script) -> Eff r Entity
+freshAnimation :: (MakesEntities m
+                  ,ModifiesComponent [Script] m
+                  ) => Animation () -> (Entity -> Script) -> m Entity
 freshAnimation a whenDone = do
   k <- fresh
   k `addScript` animate k a mempty (whenDone k)

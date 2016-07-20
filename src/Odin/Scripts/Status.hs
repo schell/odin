@@ -6,42 +6,42 @@ import Gelatin.SDL2
 import Text.Printf
 import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
+import Data.Word (Word32)
 
 import Odin.Common
 import Odin.Component
 
-updateStatus :: (Modifies Time r
-                ,ModifiesComponent Name r
-                ,ModifiesComponent PictureTransform r
-                ,ModifiesComponent RenderIO r
-                ,ModifiesComponent DeallocIO r
-                ,ModifiesComponent [Script] r
-                ,Reads Rez r
-                ,DoesIO r
-                ) => Entity -> Maybe FontData -> [Float] -> Float -> Eff r Script
+updateStatus :: (Reads Time m
+                ,Reads Rez m
+                ,ModifiesComponent Name m
+                ,ModifiesComponent PictureTransform m
+                ,ModifiesComponent RenderIO m
+                ,ModifiesComponent DeallocIO m
+                ,ModifiesComponent [Script] m
+                ,DoesIO m
+                ) => Entity -> Maybe FontData -> [Word32] -> Word32 -> m Script
 updateStatus k mfont dts0 t0 = do
-  dt <- getTimeDelta
+  dt <- readTimeDelta
   (names   :: IntMap Name) <- get
   (tfrms   :: IntMap PictureTransform) <- get
   (rs      :: IntMap RenderIO) <- get
   (ds      :: IntMap DeallocIO) <- get
-  (scripts :: IntMap [Script]) <- get
   let dts1 = take 100 $ dt:dts0
-      avg  = sum dts1 / 100
-      fps  = round $ 1 / avg
+      avg  = (realToFrac $ sum dts1 :: Double) / 100
+      fps  = round $ 1 / avg * 1000
 
-      dtstr = printf "Time dt:%1.2f fps:%2i" avg (fps :: Int)
+      dtstr = printf "Delta(ms):%1.2f\nFPS:%2i" avg (fps :: Int)
       nstr = printf "Names: %i" (IM.size names)
       tstr = printf "Tfrms: %i" (IM.size tfrms)
       rstr = printf "Rndrs: %i" (IM.size rs)
       dstr = printf "Deallocs: %i" (IM.size ds)
       namesStr = show $ IM.toList names
 
-      showPic :: (ModifiesComponent RenderIO r
-                 ,ModifiesComponent DeallocIO r
-                 ,Reads Rez r
-                 ,DoesIO r
-                 ) => FontData -> Eff r ()
+      showPic :: (ModifiesComponent RenderIO m
+                 ,ModifiesComponent DeallocIO m
+                 ,Reads Rez m
+                 ,DoesIO m
+                 ) => FontData -> m ()
       showPic font = do
         let dtpic = move (V2 0 16) $ withLetters $ filled font 128 16 dtstr $ solid white
             npic = move (V2 0 32) $ withLetters $ filled font 128 16 nstr $ solid white
@@ -56,27 +56,27 @@ updateStatus k mfont dts0 t0 = do
         k `setRenderer` r
         k `setDealloc` c
 
-  t1 <- if t0 >= 1
+  t1 <- if t0 >= 1000
           then do case mfont of
                     Nothing   -> io $ putStrLn $ unlines [dtstr,nstr,tstr,rstr,dstr,namesStr,[]]
                     Just font -> showPic font
-                  return $ t0 - 1
+                  return $ t0 - 1000
           else return $ t0 + dt
   nextScript $ updateStatus k mfont dts1 t1
 
-freshStatusBar :: (MakesEntities r
-                  ,ModifiesComponent PictureTransform r
-                  ,ModifiesComponent [Script] r
-                  ) => FontData -> Eff r Entity
+freshStatusBar :: (MakesEntities m
+                  ,ModifiesComponent PictureTransform m
+                  ,ModifiesComponent [Script] m
+                  ) => FontData -> m Entity
 freshStatusBar font = do
   k <- fresh
   k `setPicTransform` mempty
   k `addScript` updateStatus k (Just font) (replicate 100 0) 0
   return k
 
-freshStatusPrint :: (MakesEntities r
-                    ,ModifiesComponent [Script] r
-                    ) => Eff r Entity
+freshStatusPrint :: (MakesEntities m
+                    ,ModifiesComponent [Script] m
+                    ) => m Entity
 freshStatusPrint = do
   k <- fresh
   k `addScript` updateStatus k Nothing (replicate 100 0) 0

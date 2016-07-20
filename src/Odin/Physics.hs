@@ -5,8 +5,8 @@ module Odin.Physics (
   External,
   OdinWorld,
   OdinScene,
-  OdinObject(..),
-  odinObjectToWorldObj,
+  Body(..),
+  odinBodyToWorldObj,
   physicalObj,
   worldObject,
   physicalObj2Tfrm,
@@ -81,17 +81,18 @@ worldObject :: (Double, Double)
 worldObject vel rotvel pos rotpos mass = makeWorldObj phys
   where phys = physicalObj vel rotvel pos rotpos mass
 
-data OdinObject = OdinObject { ooVel    :: (Double, Double)
-                             , ooRotVel :: Double
-                             , ooPos    :: (Double, Double)
-                             , ooRot    :: Double
-                             , ooMass   :: (Double, Double)
-                             , ooMu     :: Double
-                             , ooHull   :: ConvexHull
-                             }
-odinObjectToWorldObj :: OdinObject -> WorldObj
-odinObjectToWorldObj OdinObject{..} =
-  worldObject ooVel ooRotVel ooPos ooRot ooMass ooMu ooHull
+data Body = Body { bVel    :: (Double, Double)
+                 , bRotVel :: Double
+                 , bPos    :: (Double, Double)
+                 , bRot    :: Double
+                 , bMass   :: (Double, Double)
+                 , bMu     :: Double
+                 , bHull   :: ConvexHull
+                 }
+
+odinBodyToWorldObj :: Body -> WorldObj
+odinBodyToWorldObj Body{..} =
+  worldObject bVel bRotVel bPos bRot bMass bMu bHull
 
 emptyScene :: OdinScene
 emptyScene = Scene world externals contactBehavior
@@ -131,14 +132,14 @@ applyPhysics objs = IM.intersectionWith (<>) objTfrms
 --  type Canonical O.ContactPoints = ContactPoints
 --  toCanonical =
 --    mapBoth f (fromSP . spMap f)
---    where f = toCanonical . _neighborhoodCenter
+--    where f = toCanonical . _neighborhbdCenter
 --
 --instance ToCanonical O.Contact where
 --  type Canonical O.Contact = Contact
 --  toCanonical O.Contact{..} =
 --    Contact
 --    (toCanonical _contactPenetrator)
---    (toCanonical . _neighborhoodUnitNormal $ _contactEdge)
+--    (toCanonical . _neighborhbdUnitNormal $ _contactEdge)
 --
 --instance ToCanonical O.Contact' where
 --  type Canonical O.Contact' = Contact
@@ -150,11 +151,11 @@ applyPhysics objs = IM.intersectionWith (<>) objTfrms
 --  type Canonical O.Overlap = Overlap
 --  toCanonical O.Overlap{..} =
 --    Overlap (e0, e1) depth pen
---    where e0 = toCanonical $ _neighborhoodCenter _overlapEdge
---          e1 = toCanonical . _neighborhoodCenter . _neighborhoodNext $ _overlapEdge
---          n = toCanonical $ _neighborhoodUnitNormal _overlapEdge
+--    where e0 = toCanonical $ _neighborhbdCenter _overlapEdge
+--          e1 = toCanonical . _neighborhbdCenter . _neighborhbdNext $ _overlapEdge
+--          n = toCanonical $ _neighborhbdUnitNormal _overlapEdge
 --          depth = fmap (*(-_overlapDepth)) n
---          pen = toCanonical $ _neighborhoodCenter _overlapPenetrator
+--          pen = toCanonical $ _neighborhbdCenter _overlapPenetrator
 
 canonicalizePoint :: PE.P2 -> V2 Double
 canonicalizePoint = unPoint . toLP2

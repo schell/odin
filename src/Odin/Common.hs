@@ -3,16 +3,19 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Odin.Common (
   -- * Reexporting Effects
-    module Eff
+    module State
   -- * Entities
   , Entity
   --, ReservedEntities(..)
   -- * Components
-  , Component
+  --, Component
   , Time(..)
   , Name
   , RenderIO
@@ -34,8 +37,8 @@ module Odin.Common (
   , nextScript
   , endScript
   -- * Constraints / Abilities
-  , Reads
-  , Modifies
+  , Reads(..)
+  , Modifies(..)
   , ModifiesComponent
   , DoesIO
   , MakesEntities
@@ -50,11 +53,12 @@ import           SDL hiding (Event, get)
 import           Data.IntMap.Strict (IntMap)
 import           Data.Set (Set)
 import           Data.Word (Word32)
-import           Control.Monad.Freer as Eff
-import           Control.Monad.Freer.State as Eff
-import           Control.Monad.Freer.Reader as Eff
-import           Control.Monad.Freer.Fresh as Eff
---import qualified Control.Monad.State.Strict as MTL
+import           Data.FTCQueue
+--import           Control.Monad.Freer.State as Eff
+--import           Control.Monad.Freer.Reader as Eff
+--import           Control.Monad.Freer.Fresh as Eff
+import           Control.Monad.State.Strict as State hiding (get,put,modify)
+import qualified Control.Monad.State.Strict as S
 
 import Odin.Physics as OP
 --------------------------------------------------------------------------------
@@ -63,17 +67,20 @@ import Odin.Physics as OP
 type Pic = Picture GLuint ()
 
 data Time = Time { timeLast  :: Word32
-                 , timeDelta :: Float
-                 , timeLeft  :: Float
-                 -- ^ The amount of time left unconsumed by the last physics tick
+                 -- ^ The number of milliseconds from initialization to the last
+                 -- time the system was ticked.
+                 , timeDelta :: Word32
+                 -- ^ The difference between timeLast and the timeLast before it
+                 , timeLeft  :: Word32
+                 -- ^ The number of milliseconds left unconsumed by the last
+                 -- physics tick
                  } deriving (Show, Eq)
 
 type Name = String
 
 type Entity = Int
 
-type Component a = State (IntMap a)
---type ComponentMTL a = MTL.State (IntMap a)
+--type Component a = State (IntMap a)
 
 type RenderIO = Rendering IO PictureTransform
 type DeallocIO = CleanOp IO
@@ -87,26 +94,9 @@ data SystemCommand = SystemDeleteEntity Entity
                    deriving (Show, Ord, Eq, {-Enum, -}Bounded)
 type SystemCommands = [SystemCommand]
 
-type System = Eff '[Component Name
-                   ,Component PictureTransform
-                   ,Component RenderIO
-                   ,Component DeallocIO
-                   ,Component [Script]
-                   ,Fresh
-                   ,Reader Window
-                   ,Reader Rez
-                   ,State [EventPayload]
-                   ,State Time
-                   ,State OdinScene
-                   ,State SystemOptions
-                   ,State SystemCommands
-                   ,IO
-                   ]
+type Message a = (String, a)
 
-type ScriptStep = System Script
-
-data Script = Script { unScript :: ScriptStep }
-            | ScriptEnd
+type Mailbox = _
 
 data SystemStep = SystemStep { sysNames    :: IntMap Name
                              , sysTfrms    :: IntMap PictureTransform
@@ -123,8 +113,12 @@ data SystemStep = SystemStep { sysNames    :: IntMap Name
                              , sysCommands :: SystemCommands
                              }
 
---data ReservedEntities = ReservedPhysicsDrawingEntity
---                      deriving (Show, Ord, Eq, Enum, Bounded)
+type System = StateT SystemStep IO
+
+type ScriptStep = System Script
+
+data Script = Script { unScript :: ScriptStep }
+            | ScriptEnd
 
 emptySystemStep :: Rez -> Window -> SystemStep
 emptySystemStep rez window =
@@ -133,16 +127,88 @@ emptySystemStep rez window =
 --------------------------------------------------------------------------------
 -- System Type Constraints (energy savers)
 --------------------------------------------------------------------------------
-type Reads a = Member (Reader a)
-type Modifies a = Member (State a)
+class Monad m => Reads a m where
+  ask :: m a
+
+instance Reads Window System where
+  ask = gets sysWindow
+
+instance Reads Rez System where
+  ask = gets sysRez
+
+instance Reads Time System where
+  ask = gets sysTime
+
+class Monad m => Modifies a m where
+  get    :: m a
+  put    :: a -> m ()
+  modify :: (a -> a) -> m ()
+
+instance Modifies (IntMap Name) System where
+  get = gets sysNames
+  put x = S.get >>= \s -> S.put s{sysNames = x}
+  modify f = S.modify $ \s -> s{sysNames = f $ sysNames s}
+
+instance Modifies (IntMap PictureTransform) System where
+  get = gets sysTfrms
+  put x = S.get >>= \s -> S.put s{sysTfrms = x}
+  modify f = S.modify $ \s -> s{sysTfrms = f $ sysTfrms s}
+
+instance Modifies (IntMap RenderIO) System where
+  get = gets sysRndrs
+  put x = S.get >>= \s -> S.put s{sysRndrs = x}
+  modify f = S.modify $ \s -> s{sysRndrs = f $ sysRndrs s}
+
+instance Modifies (IntMap DeallocIO) System where
+  get = gets sysDealloc
+  put x = S.get >>= \s -> S.put s{sysDealloc = x}
+  modify f = S.modify $ \s -> s{sysDealloc = f $ sysDealloc s}
+
+instance Modifies (IntMap [Script]) System where
+  get = gets sysScripts
+  put x = S.get >>= \s -> S.put s{sysScripts = x}
+  modify f = S.modify $ \s -> s{sysScripts = f $ sysScripts s}
+
+instance Modifies (Int) System where
+  get = gets sysFresh
+  put x = S.get >>= \s -> S.put s{sysFresh = x}
+  modify f = S.modify $ \s -> s{sysFresh = f $ sysFresh s}
+
+instance Modifies [EventPayload] System where
+  get = gets sysEvents
+  put x = S.get >>= \s -> S.put s{sysEvents= x}
+  modify f = S.modify $ \s -> s{sysEvents= f $ sysEvents s}
+
+instance Modifies (Time) System where
+  get = gets sysTime
+  put x = S.get >>= \s -> S.put s{sysTime  = x}
+  modify f = S.modify $ \s -> s{sysTime  = f $ sysTime  s}
+
+instance Modifies (OdinScene) System where
+  get = gets sysScene
+  put x = S.get >>= \s -> S.put s{sysScene = x}
+  modify f = S.modify $ \s -> s{sysScene = f $ sysScene s}
+
+instance Modifies (SystemOptions) System where
+  get = gets sysOptions
+  put x = S.get >>= \s -> S.put s{sysOptions = x}
+  modify f = S.modify $ \s -> s{sysOptions = f $ sysOptions s}
+
+instance Modifies (SystemCommands) System where
+  get = gets sysCommands
+  put x = S.get >>= \s -> S.put s{sysCommands = x}
+  modify f = S.modify $ \s -> s{sysCommands = f $ sysCommands s}
+
 type ModifiesComponent a = Modifies (IntMap a)
-type DoesIO = Member IO
-type MakesEntities = Member Fresh
+type DoesIO = MonadIO
+type MakesEntities = Modifies Int
 --------------------------------------------------------------------------------
 -- Doing IO
 --------------------------------------------------------------------------------
-io :: Member IO r => IO a -> Eff r a
-io = send
+--io :: Member IO r => IO a -> Eff r a
+--io = send
+io :: MonadIO m => IO a -> m a
+io = liftIO
 --------------------------------------------------------------------------------
 -- Scripts
 --------------------------------------------------------------------------------

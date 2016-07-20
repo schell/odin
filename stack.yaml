@@ -18,6 +18,7 @@ packages:
 extra-deps:
 - FontyFruity-0.5.3.2
 - freer-0.2.3.0
+- halive-0.1.0.7
 
 resolver: lts-6.7
 #resolver: nightly-2016-07-14

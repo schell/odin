@@ -23,26 +23,21 @@ import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
---import qualified Data.Set as S
---import           Data.Set (Set)
 import           Data.Monoid ((<>))
-import           Control.Monad (when, unless)
-import           Control.Monad.Freer.Internal (runM)
 import           System.Exit (exitSuccess)
 
 import           App.Framework (isQuit)
 import           Odin.Common
 import           Odin.Component
---import           Odin.Physics
 
-tickTime :: (Modifies Time r, DoesIO r) => Eff r ()
+tickTime :: (Modifies Time m, DoesIO m) => m ()
 tickTime = do
   Time lastT _ lt <- get
   t <- io ticks
-  let dt = fromIntegral (t - lastT) / 1000
+  let dt = t - lastT
   put $ Time t dt lt
 
-tickEvents :: (Modifies [EventPayload] r, DoesIO r) => Eff r ()
+tickEvents :: (Modifies [EventPayload] m, DoesIO m) => m ()
 tickEvents = io (pollEvents >>= mapM (processEvent . eventPayload)) >>= put
   where processEvent QuitEvent = exitSuccess
         processEvent ev@(KeyboardEvent (KeyboardEventData _ _ _ k)) = do
@@ -82,16 +77,18 @@ tickCommands = do
                                                  dealloc k
                                                  deleteDealloc k
 
-tickPhysics :: (Modifies OdinScene r
-               ,Modifies Time r
-               ,DoesIO r
-               ) => Eff r ()
+tickPhysics :: (Modifies OdinScene m
+               ,Modifies Time m
+               ,DoesIO m
+               ) => m ()
 tickPhysics = do
   scene <- getScene
+  -- Time is in milliseconds
   Time stamp dt t0 <- get
   let tt = dt + t0
-      n = floor $ tt / 0.01
-      t1 = tt - (fromIntegral n * 0.01)
+      -- one physics step should be 0.01
+      n = floor (fromIntegral tt / 10 :: Double)
+      t1 = tt - (fromIntegral n * 10)
       newWorld = runWorldOver 0.01 scene n
       newTime = Time stamp dt t1
   modifyScene $ \s -> s{_scWorld = newWorld}
@@ -120,13 +117,13 @@ renderIntersecting renderers transforms tfrm = do
       m = IM.intersectionWith ($) renderers appliedTfrms
   sequence_ m
 
-tickRender :: ( ModifiesComponent RenderIO r
-              , ModifiesComponent PictureTransform r
-              , Modifies OdinScene r
-              , Reads Rez r
-              , Reads Window r
-              , DoesIO r
-              ) => Eff r ()
+tickRender :: ( ModifiesComponent RenderIO m
+              , ModifiesComponent PictureTransform m
+              , Modifies OdinScene m
+              , Reads Rez m
+              , Reads Window m
+              , DoesIO m
+              ) => m ()
 tickRender = do
   rs     <- getRenderers
   ts0    <- getPicTransforms
@@ -141,58 +138,12 @@ tickSystem = do
   tickAllExceptRender
   tickRender
 
-type SystemTuple =
-  ( ( ( ( ( ( ( ( ( ( Int
-                    , IntMap Name)
-                  , IntMap PictureTransform)
-                , IntMap RenderIO)
-              , IntMap DeallocIO)
-            , IntMap [Script])
-          , [EventPayload])
-        , Time)
-      , OdinScene)
-    , SystemOptions)
-  , SystemCommands)
-
-tupleToStep :: Window -> Rez -> SystemTuple -> SystemStep
-tupleToStep win rez p =
-  SystemStep names tfrms rndrs deallocs scrps k win rez evs t scene opts cmds
-  where k        = fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        names    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        tfrms    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        rndrs    = snd $ fst $ fst $ fst $ fst $ fst $ fst $ fst p
-        deallocs = snd $ fst $ fst $ fst $ fst $ fst $ fst p
-        scrps    = snd $ fst $ fst $ fst $ fst $ fst p
-        evs      = snd $ fst $ fst $ fst $ fst p
-        t        = snd $ fst $ fst $ fst p
-        scene    = snd $ fst $ fst p
-        opts     = snd $ fst p
-        cmds     = snd p
-
-runSystem :: SystemStep -> System () -> IO SystemStep
-runSystem SystemStep{..} f = tupleToStep sysWindow sysRez <$>
-  runM
-   ( flip runState  sysCommands
-   $ flip runState  sysOptions
-   $ flip runState  sysScene
-   $ flip runState  sysTime
-   $ flip runState  sysEvents
-   $ flip runReader sysRez
-   $ flip runReader sysWindow
-   $ flip runFresh' sysFresh
-   $ flip runState  sysScripts
-   $ flip runState  sysDealloc
-   $ flip runState  sysRndrs
-   $ flip runState  sysTfrms
-   $ runState g     sysNames)
-     where g = f >> fresh
-
-tickEmbedded :: (DoesIO r
-                ,ModifiesComponent RenderIO r
-                ,ModifiesComponent DeallocIO r
-                ) => Entity -> SystemStep -> Eff r Script
+tickEmbedded :: (DoesIO m
+                ,ModifiesComponent RenderIO m
+                ,ModifiesComponent DeallocIO m
+                ) => Entity -> SystemStep -> m Script
 tickEmbedded actor step = do
-  next@SystemStep{..} <- io $ runSystem step tickAllExceptRender
+  next@SystemStep{..} <- io $ execStateT tickAllExceptRender step
   actor `setRenderer` renderIntersecting sysRndrs sysTfrms
   -- Set it's dealloc to run all of the step's deallocations
   actor `setDealloc` sequence_ sysDealloc
@@ -201,13 +152,13 @@ tickEmbedded actor step = do
 -- | Alloc a fresh entity component system.
 -- Nests an encapsulated System within the current System.
 -- Using this function we can spawn sub systems which don't interact.
-freshSystem :: (MakesEntities r
-               ,ModifiesComponent PictureTransform r
-               ,ModifiesComponent [Script] r
-               ,Reads Rez r
-               ,Reads Window r
-               ,DoesIO r
-               ) => System () -> Eff r Entity
+freshSystem :: (MakesEntities m
+               ,ModifiesComponent PictureTransform m
+               ,ModifiesComponent [Script] m
+               ,Reads Rez m
+               ,Reads Window m
+               ,DoesIO m
+               ) => System () -> m Entity
 freshSystem f = do
   actor <- fresh
   rez   <- ask
@@ -220,3 +171,6 @@ freshSystem f = do
   actor `setPicTransform` mempty
   actor `addScript` tickEmbedded actor step
   return actor
+
+runSystem :: SystemStep -> System a -> IO a
+runSystem = flip evalStateT
