@@ -14,8 +14,8 @@ import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.Set as S
 import           Data.Word (Word32)
---import           Data.Set (Set)
 import           Data.Monoid ((<>))
+import           Linear.Affine (Point(..))
 
 import           Odin.Core.Common
 import           Odin.Core.Utils
@@ -41,12 +41,21 @@ getTime = get
 
 putTime :: Modifies Time m => Time -> m ()
 putTime = put
+
+newTime :: DoesIO m => m Time
+newTime = do
+  t <- io ticks
+  let tt = Time { timeLast  = t
+                , timeDelta = 0
+                , timeLeft  = 0
+                }
+  return tt
 --------------------------------------------------------------------------------
 -- PictureTransform
 --------------------------------------------------------------------------------
-getPicTransforms :: ModifiesComponent PictureTransform m
-              => m (IntMap PictureTransform)
-getPicTransforms = get
+readPicTransforms :: Reads (IntMap PictureTransform) m
+                  => m (IntMap PictureTransform)
+readPicTransforms = ask
 
 modifyPicTransforms :: ModifiesComponent PictureTransform m
                     => (IntMap PictureTransform -> IntMap PictureTransform)
@@ -57,14 +66,14 @@ setPicTransform :: ModifiesComponent PictureTransform m
              => Entity -> PictureTransform -> m ()
 setPicTransform k p = modify (IM.insert k p)
 
-getPicTransform :: ModifiesComponent PictureTransform m
+readPicTransform :: Reads (IntMap PictureTransform) m
              => Entity -> m (Maybe PictureTransform)
-getPicTransform k = IM.lookup k <$> get
+readPicTransform k = IM.lookup k <$> ask
 
 modifyPicTransform :: ModifiesComponent PictureTransform m
                 => Entity -> (PictureTransform -> PictureTransform) -> m ()
 modifyPicTransform k f =
-  getPicTransform k >>= \case
+  readPicTransform k >>= \case
     Nothing -> setPicTransform k $ f mempty
     Just t  -> setPicTransform k $ f t
 
@@ -276,3 +285,15 @@ setTfrmAndPic k tfrm pic cache = do
   k `setRenderer` r
   k `setDealloc` sequence_ (fst <$> newCache)
   return newCache
+
+getMouseIsOverEntityWithSize :: (DoesIO m
+                                ,Reads (IntMap PictureTransform) m
+                                ) => Entity -> V2 Float -> m Bool
+getMouseIsOverEntityWithSize actor sz = do
+  P vi  <- io getAbsoluteMouseLocation
+  ptfrm <- readPicTransform actor >>= \case
+    Nothing -> return mempty
+    Just t  -> return t
+  let vf = fromIntegral <$> vi
+      bb = applyPicTfrmToBounds ptfrm (0,sz)
+  return $ pointInBounds vf bb

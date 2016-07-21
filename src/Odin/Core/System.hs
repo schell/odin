@@ -126,7 +126,7 @@ tickRender :: ( ModifiesComponent RenderIO m
               ) => m ()
 tickRender = do
   rs     <- getRenderers
-  ts0    <- getPicTransforms
+  ts0    <- readPicTransforms
   --objs   <- getWorldObjects
   --let ts1 = applyPhysics objs ts0
   ask >>= io . clearFrame
