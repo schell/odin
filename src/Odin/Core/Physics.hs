@@ -5,6 +5,7 @@ module Odin.Core.Physics (
   External,
   OdinWorld,
   OdinScene,
+  World(..),
   Body(..),
   odinBodyToWorldObj,
   physicalObj,

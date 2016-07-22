@@ -4,6 +4,7 @@ module Odin.Scripts.DrawPhysics where
 import           Gelatin.SDL2
 import qualified Data.IntMap as IM
 import           Control.Monad (forM_)
+import           Control.Lens
 
 import Odin.Core
 
@@ -44,31 +45,23 @@ scenePic = sequence_ . (worldObjPic <$>) . _worldObjs . _scWorld
 --------------------------------------------------------------------------------
 -- Scripts - Fresh'ing, Rendering, dealloc'ing, etc
 --------------------------------------------------------------------------------
-drawPhysics :: (Modifies OdinScene m
-               ,ModifiesComponent RenderIO m
-               ,ModifiesComponent DeallocIO m
-               ,Reads Rez m
-               ,DoesIO m
-               ) => Entity -> Cache IO PictureTransform -> m Script
+drawPhysics :: (Physics s m, Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m)
+            => Entity -> Cache IO PictureTransform -> m Script
 drawPhysics k cache = do
-  rez <- ask
-  pic <- scenePic <$> getScene
+  rz <- ask
+  pic <- scenePic <$> use scene
   (r, newCache) <- io $ do
-    (rnd, newCache) <- compilePictureRenderer rez cache pic
+    (rnd, newCache) <- compilePictureRenderer rz cache pic
     -- Dealloc stale resources
     let stale = cache `IM.difference` newCache
     sequence_ $ fst <$> stale
     return (snd rnd, newCache)
-  k `setRenderer` r
-  k `setDealloc` sequence_ (fst <$> newCache)
+  k .# rndr r
+    #. dloc (sequence_ (fst <$> newCache))
   nextScript $ drawPhysics k newCache
 
-freshPhysicsDrawingEntity :: (MakesEntities m
-                             ,ModifiesComponent PictureTransform m
-                             ,ModifiesComponent [Script] m
-                             ) => m Entity
+freshPhysicsDrawingEntity :: (Fresh s m, Tfrms s m, Scripts s m) => m Entity
 freshPhysicsDrawingEntity = do
   k <- fresh
-  k `setPicTransform` mempty
-  k `addScript` drawPhysics k mempty
-  return k
+  k .# tfrm mempty
+    ## script [Script $ drawPhysics k mempty]

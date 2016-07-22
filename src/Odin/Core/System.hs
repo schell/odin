@@ -11,7 +11,6 @@ module Odin.Core.System (
   , tickTime
   , tickEvents
   , tickScripts
-  , performScript
   , tickRender
   , tickSystem
   , tickEmbedded
@@ -20,25 +19,28 @@ module Odin.Core.System (
 
 import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
-import           SDL hiding (Event, get)
+import           SDL hiding (Event, get, time)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import           Data.Monoid ((<>))
+import           Control.Lens
 import           System.Exit (exitSuccess)
 
 import           App.Framework (isQuit)
 import           Odin.Core.Common
 import           Odin.Core.Component
 
-tickTime :: (Modifies Time m, DoesIO m) => m ()
+tickTime :: (Time s m, DoesIO m) => m ()
 tickTime = do
-  Time lastT _ lt <- get
+  lastT <- use (time.timeLast)
   t <- io ticks
-  let dt = t - lastT
-  put $ Time t dt lt
+  time.timeLast .= t
+  time.timeDelta .= t - lastT
 
-tickEvents :: (Modifies [EventPayload] m, DoesIO m) => m ()
-tickEvents = io (pollEvents >>= mapM (processEvent . eventPayload)) >>= put
+tickEvents :: (Events s m, DoesIO m) => m ()
+tickEvents = do
+  evs <- io (pollEvents >>= mapM (processEvent . eventPayload))
+  events .= evs
   where processEvent QuitEvent = exitSuccess
         processEvent ev@(KeyboardEvent (KeyboardEventData _ _ _ k)) = do
           when (isQuit k) exitSuccess
@@ -54,45 +56,41 @@ runScripts scripts0 = do
 tickScripts :: System ()
 tickScripts = do
   -- Get all the current scripts to run
-  scripts <- get :: System (IntMap [Script])
+  ss <- use scripts
   -- Clear out the scripts because running the current set of scripts will
   -- possibly add new scripts
-  put (mempty :: IntMap [Script])
+  scripts .= mempty
   -- Run the scripts and filter to remove any dead ones
-  results <- sequence (runScripts <$> scripts)
+  results <- sequence (runScripts <$> ss)
   -- Add the remaining scripts on the end of any new ones
-  modify (IM.unionWith (++) results)
+  scripts %= IM.unionWith (++) results
 
 tickCommands :: System ()
 tickCommands = do
-  -- Get the commands
-  cmds <- get :: System SystemCommands
-  put ([] :: SystemCommands)
+  cmds <- use commands
+  commands .= []
   mapM_ runCommand cmds
-    where runCommand (SystemDeleteEntity k) = do deletePicTransform k
-                                                 deleteWorldObject k
-                                                 deleteName k
-                                                 deleteScripts k
-                                                 deleteRenderer k
-                                                 dealloc k
-                                                 deleteDealloc k
+    where runCommand (SystemDeleteEntity k) = do
+            tfrms.at k                   .= Nothing
+            scene.scWorld.worldObjs.at k .= Nothing
+            names.at k                   .= Nothing
+            scripts.at k                 .= Nothing
+            rndrs.at k                   .= Nothing
+            dealloc k
+            deallocs.at k                .= Nothing
 
-tickPhysics :: (Modifies OdinScene m
-               ,Modifies Time m
-               ,DoesIO m
-               ) => m ()
+tickPhysics :: (Physics s m, Time s m, DoesIO m) => m ()
 tickPhysics = do
-  scene <- getScene
+  oscene <- use scene
   -- Time is in milliseconds
-  Time stamp dt t0 <- get
+  dt <- use (time.timeDelta)
+  t0 <- use (time.timeLeft)
   let tt = dt + t0
       -- one physics step should be 0.01
       n = floor (fromIntegral tt / 10 :: Double)
       t1 = tt - (fromIntegral n * 10)
-      newWorld = runWorldOver 0.01 scene n
-      newTime = Time stamp dt t1
-  modifyScene $ \s -> s{_scWorld = newWorld}
-  put newTime
+  time.timeLeft .= t1
+  scene.scWorld .= runWorldOver 0.01 oscene n
 
 tickAllExceptRender :: System ()
 tickAllExceptRender = do
@@ -100,33 +98,20 @@ tickAllExceptRender = do
   tickEvents
   tickScripts
   tickCommands
-  skipPhysics <- optionIsSet SystemSkipPhysicsTick
+  skipPhysics <- use (options.contains SystemSkipPhysicsTick)
   unless skipPhysics tickPhysics
-
--- | Runs one script and adds it to the system's scripts if it has not concluded.
-performScript :: Entity -> Script -> System ()
-performScript _ ScriptEnd = return ()
-performScript k (Script s) = s >>= \case
-  ScriptEnd -> return ()
-  script    -> k `addScripts` [script]
 
 renderIntersecting :: IntMap RenderIO -> IntMap PictureTransform
                    -> PictureTransform -> IO ()
-renderIntersecting renderers transforms tfrm = do
-  let appliedTfrms = (tfrm <>) <$> transforms
+renderIntersecting renderers transforms t = do
+  let appliedTfrms = (t <>) <$> transforms
       m = IM.intersectionWith ($) renderers appliedTfrms
   sequence_ m
 
-tickRender :: ( ModifiesComponent RenderIO m
-              , ModifiesComponent PictureTransform m
-              , Modifies OdinScene m
-              , Reads Rez m
-              , Reads Window m
-              , DoesIO m
-              ) => m ()
+tickRender :: System ()
 tickRender = do
-  rs     <- getRenderers
-  ts0    <- readPicTransforms
+  rs     <- use rndrs
+  ts0    <- use tfrms
   --objs   <- getWorldObjects
   --let ts1 = applyPhysics objs ts0
   ask >>= io . clearFrame
@@ -139,38 +124,31 @@ tickSystem = do
   tickRender
 
 tickEmbedded :: (DoesIO m
-                ,ModifiesComponent RenderIO m
-                ,ModifiesComponent DeallocIO m
-                ) => Entity -> SystemStep -> m Script
-tickEmbedded actor step = do
-  next@SystemStep{..} <- io $ execStateT tickAllExceptRender step
-  actor `setRenderer` renderIntersecting sysRndrs sysTfrms
-  -- Set it's dealloc to run all of the step's deallocations
-  actor `setDealloc` sequence_ sysDealloc
-  return $ Script $ tickEmbedded actor next
+                ,Rndrs s m
+                ,Deallocs s m
+                ) => Entity -> Sys -> m Script
+tickEmbedded k step = do
+  next@Sys{..} <- io $ execStateT tickAllExceptRender step
+  -- Set its render to run all of the step's renderings
+  rndrs.at k .= (Just $ renderIntersecting _sysRndrs _sysTfrms)
+  -- Set its dealloc to run all of the step's deallocations
+  deallocs.at k .= (Just $ sequence_ _sysDeallocs)
+  return $ Script $ tickEmbedded k next
 
 -- | Alloc a fresh entity component system.
 -- Nests an encapsulated System within the current System.
 -- Using this function we can spawn sub systems which don't interact.
-freshSystem :: (MakesEntities m
-               ,ModifiesComponent PictureTransform m
-               ,ModifiesComponent [Script] m
-               ,Reads Rez m
-               ,Reads Window m
-               ,DoesIO m
-               ) => System () -> m Entity
+freshSystem :: System () -> System Entity
 freshSystem f = do
-  actor <- fresh
-  rez   <- ask
+  k     <- fresh
+  rz    <- ask
   win   <- ask
-  lst  <- io ticks
-  let t = Time lst 0 0
-      scripts = IM.singleton actor [Script $ f >> return ScriptEnd]
-      step = (emptySystemStep rez win){ sysScripts = scripts , sysTime = t }
-  -- Set it's transform to identity
-  actor `setPicTransform` mempty
-  actor `addScript` tickEmbedded actor step
-  return actor
+  lst   <- io ticks
+  let t  = SystemTime lst 0 0
+      ss = IM.singleton k [Script $ f >> return ScriptEnd]
+      step = (emptySys rz win){ _sysScripts = ss, _sysTime = t }
+  k .# tfrm mempty
+    ## script [Script $ tickEmbedded k step]
 
-runSystem :: SystemStep -> System a -> IO a
+runSystem :: Sys -> System a -> IO a
 runSystem = flip evalStateT

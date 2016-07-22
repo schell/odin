@@ -9,227 +9,153 @@ module Odin.Core.Component where
 
 import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
-import           SDL hiding (Event, get)
+import           SDL hiding (Event, get, time)
 import qualified Data.IntMap.Strict as IM
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.Set as S
-import           Data.Word (Word32)
 import           Data.Monoid ((<>))
+import           Control.Lens
 import           Linear.Affine (Point(..))
 
-import           Odin.Core.Common
+import           Odin.Core.Common as OC
 import           Odin.Core.Utils
 --------------------------------------------------------------------------------
 -- Entities
 --------------------------------------------------------------------------------
-fresh :: MakesEntities m => m Int
+fresh :: Fresh s m => m Int
 fresh = do
-  k <- get
-  put $ k+1
+  k <- use nextK
+  nextK += 1
   return k
 --------------------------------------------------------------------------------
 -- Time
 --------------------------------------------------------------------------------
-readTimeDelta :: Reads Time m => m Word32
-readTimeDelta = timeDelta <$> ask
+readTimeDeltaSeconds :: (Time s m, Fractional f) => m f
+readTimeDeltaSeconds = (/1000) . fromIntegral <$> use (time.timeDelta)
 
-readTimeDeltaSeconds :: (Reads Time m, Fractional f) => m f
-readTimeDeltaSeconds = ((/1000) . fromIntegral) <$> readTimeDelta
-
-getTime :: Modifies Time m => m Time
-getTime = get
-
-putTime :: Modifies Time m => Time -> m ()
-putTime = put
-
-newTime :: DoesIO m => m Time
+newTime :: DoesIO m => m SystemTime
 newTime = do
   t <- io ticks
-  let tt = Time { timeLast  = t
-                , timeDelta = 0
-                , timeLeft  = 0
-                }
+  let tt = SystemTime { _timeLast  = t
+                      , _timeDelta = 0
+                      , _timeLeft  = 0
+                      }
   return tt
 --------------------------------------------------------------------------------
 -- PictureTransform
 --------------------------------------------------------------------------------
-readPicTransforms :: Reads (IntMap PictureTransform) m
-                  => m (IntMap PictureTransform)
-readPicTransforms = ask
-
-modifyPicTransforms :: ModifiesComponent PictureTransform m
-                    => (IntMap PictureTransform -> IntMap PictureTransform)
-                    -> m ()
-modifyPicTransforms = modify
-
-setPicTransform :: ModifiesComponent PictureTransform m
-             => Entity -> PictureTransform -> m ()
-setPicTransform k p = modify (IM.insert k p)
-
-readPicTransform :: Reads (IntMap PictureTransform) m
-             => Entity -> m (Maybe PictureTransform)
-readPicTransform k = IM.lookup k <$> ask
-
-modifyPicTransform :: ModifiesComponent PictureTransform m
-                => Entity -> (PictureTransform -> PictureTransform) -> m ()
-modifyPicTransform k f =
-  readPicTransform k >>= \case
-    Nothing -> setPicTransform k $ f mempty
-    Just t  -> setPicTransform k $ f t
-
-deletePicTransform :: ModifiesComponent PictureTransform m => Entity -> m ()
-deletePicTransform k = modifyPicTransforms $ IM.delete k
-
-movePicTransform :: ModifiesComponent PictureTransform m
-                 => Entity -> V2 Float -> m ()
-movePicTransform k v = modifyPicTransform k $ \(PictureTransform t a m) ->
-  PictureTransform (t<>Transform v 1 0) a m
---------------------------------------------------------------------------------
--- Scripts
---------------------------------------------------------------------------------
-getScripts :: ModifiesComponent [Script] m => Entity -> m (Maybe [Script])
-getScripts k = IM.lookup k <$> get
-
-addScript :: ModifiesComponent [Script] m => Entity -> ScriptStep -> m ()
-addScript k f = getScripts k >>= modify . \case
-  Nothing -> IM.insert k [Script f]
-  Just ss -> IM.insert k (Script f:ss)
-
-addScripts :: ModifiesComponent [Script] m => Entity -> [Script] -> m ()
-addScripts k xs = getScripts k >>= modify . \case
-  Nothing -> IM.insert k xs
-  Just ys -> IM.insert k (xs ++ ys)
-
-setScripts :: ModifiesComponent [Script] m => Entity -> [Script] -> m ()
-setScripts k xs = modify $ IM.insert k xs
-
-deleteScripts :: ModifiesComponent [Script] m => Entity -> m ()
-deleteScripts = modify . del
-  where del :: Entity -> IntMap [Script] -> IntMap [Script]
-        del = IM.delete
---------------------------------------------------------------------------------
--- Physics
---------------------------------------------------------------------------------
-getScene :: Modifies OdinScene m => m OdinScene
-getScene = get
-
-modifyScene :: Modifies OdinScene m => (OdinScene -> OdinScene) -> m ()
-modifyScene = modify
-
-getWorldObjects :: Modifies OdinScene m => m (IntMap WorldObj)
-getWorldObjects = (_worldObjs . _scWorld) <$> getScene
-
-setWorldObjects :: Modifies OdinScene m => IntMap WorldObj -> m ()
-setWorldObjects objs = modifyScene $ \s ->
-  let world = (_scWorld s){ _worldObjs = objs }
-  in s{ _scWorld = world }
-
-modifyWorldObjects :: Modifies OdinScene m
-                   => (IntMap WorldObj -> IntMap WorldObj) -> m ()
-modifyWorldObjects f = getWorldObjects >>= setWorldObjects . f
-
-addWorldObject :: Modifies OdinScene m => Entity -> WorldObj -> m ()
-addWorldObject k o = modifyWorldObjects $ IM.insert k o
-
-setBody :: Modifies OdinScene m => Entity -> Body -> m ()
-setBody k = addWorldObject k . odinBodyToWorldObj
-
-deleteWorldObject :: Modifies OdinScene m => Entity -> m ()
-deleteWorldObject k = modifyWorldObjects $ IM.delete k
-
-deleteBody :: Modifies OdinScene m => Entity -> m ()
-deleteBody = deleteWorldObject
---------------------------------------------------------------------------------
--- Names
---------------------------------------------------------------------------------
-setName :: ModifiesComponent Name m => Entity -> String -> m ()
-setName k n = modify $ IM.insert k n
-
-deleteName :: ModifiesComponent Name m => Entity -> m ()
-deleteName k = modify (IM.delete k :: IntMap String -> IntMap String)
---------------------------------------------------------------------------------
--- Events
---------------------------------------------------------------------------------
-getEvents :: Modifies [EventPayload] m => m [EventPayload]
-getEvents = get
---------------------------------------------------------------------------------
--- Rendering
---------------------------------------------------------------------------------
-getRenderers :: ModifiesComponent RenderIO m => m (IntMap RenderIO)
-getRenderers = get
-
-modifyRenderers :: ModifiesComponent RenderIO m
-                => (IntMap RenderIO -> IntMap RenderIO) -> m ()
-modifyRenderers = modify
-
-setRenderer :: ModifiesComponent RenderIO m
-            => Entity -> RenderIO -> m ()
-setRenderer k r = modify (IM.insert k r)
-
-getRenderer :: ModifiesComponent RenderIO m
-            => Entity -> m (Maybe RenderIO)
-getRenderer k = IM.lookup k <$> get
-
-deleteRenderer :: ModifiesComponent RenderIO m
-               => Entity -> m ()
-deleteRenderer k = modifyRenderers (IM.delete k)
-
-allocPicRenderer ::(Reads Rez m
-                   ,DoesIO m
-                   ) => Pic -> m GLRenderer
+--modifyPicTransforms :: Tfrms s m
+--                    => (IntMap PictureTransform -> IntMap PictureTransform)
+--                    -> m ()
+--modifyPicTransforms = modify
+--
+--setPicTransform :: Tfrms s m
+--             => Entity -> PictureTransform -> m ()
+--setPicTransform k p = modify (IM.insert k p)
+--
+--readPicTransform :: Reads (IntMap PictureTransform) m
+--             => Entity -> m (Maybe PictureTransform)
+--readPicTransform k = IM.lookup k <$> ask
+--
+--modifyPicTransform :: Tfrms s m
+--                => Entity -> (PictureTransform -> PictureTransform) -> m ()
+--modifyPicTransform k f =
+--  readPicTransform k >>= \case
+--    Nothing -> setPicTransform k $ f mempty
+--    Just t  -> setPicTransform k $ f t
+--
+--deletePicTransform :: Tfrms s m => Entity -> m ()
+--deletePicTransform k = modifyPicTransforms $ IM.delete k
+--
+--movePicTransform :: Tfrms s m
+--                 => Entity -> V2 Float -> m ()
+--movePicTransform k v = modifyPicTransform k $ \(PictureTransform t a m) ->
+--  PictureTransform (t<>Transform v 1 0) a m
+----------------------------------------------------------------------------------
+---- Scripts
+----------------------------------------------------------------------------------
+--getScripts :: [Script] m => Entity -> s m (Maybe [Script])
+--getScripts k = IM.lookup k <$> get
+--
+--addScript :: [Script] m => Entity -> ScriptStep -> s m ()
+--addScript k f = getScripts k >>= modify . \case
+--  Nothing -> IM.insert k [Script f]
+--  Just ss -> IM.insert k (Script f:ss)
+--
+--addScripts :: [Script] m => Entity -> [Script] -> s m ()
+--addScripts k xs = getScripts k >>= modify . \case
+--  Nothing -> IM.insert k xs
+--  Just ys -> IM.insert k (xs ++ ys)
+--
+--setScripts :: [Script] m => Entity -> [Script] -> s m ()
+--setScripts k xs = modify $ IM.insert k xs
+--
+--deleteScripts :: [Script] m => Entity -> s m ()
+--deleteScripts = modify . del
+--  where del :: Entity -> IntMap [Script] -> IntMap [Script]
+--        del = IM.delete
+----------------------------------------------------------------------------------
+---- Physics
+----------------------------------------------------------------------------------
+--getWorldObjects :: Physics s m => m (IntMap WorldObj)
+--getWorldObjects = do
+--  s <- use scene
+--  return $ s^.scWorld.worldObjs
+--
+--setWorldObjects :: OdinScene m => IntMap WorldObj -> s m ()
+--setWorldObjects objs = modifyScene $ \s ->
+--  let world = (_scWorld s){ _worldObjs = objs }
+--  in s{ _scWorld = world }
+--
+--modifyWorldObjects :: OdinScene s m
+--                   => (IntMap WorldObj -> IntMap WorldObj) -> m ()
+--modifyWorldObjects f = getWorldObjects >>= setWorldObjects . f
+--
+--addWorldObject :: OdinScene m => Entity -> WorldObj -> s m ()
+--addWorldObject k o = modifyWorldObjects $ IM.insert k o
+--
+--setBody :: OdinScene m => Entity -> Body -> s m ()
+--setBody k b = scene.scWorld.worldObjs %= IM.insert k (odinBodyToWorldObj b)
+--
+--deleteWorldObject :: OdinScene m => Entity -> s m ()
+--deleteWorldObject k = modifyWorldObjects $ IM.delete k
+--
+--deleteBody :: OdinScene m => Entity -> s m ()
+--deleteBody = deleteWorldObject
+----------------------------------------------------------------------------------
+---- Names
+----------------------------------------------------------------------------------
+--setName :: Name m => Entity -> String -> s m ()
+--setName k n = modify $ IM.insert k n
+--
+--deleteName :: Name m => Entity -> s m ()
+--deleteName k = modify (IM.delete k :: IntMap String -> IntMap String)
+----------------------------------------------------------------------------------
+---- Events
+----------------------------------------------------------------------------------
+--getEvents :: [EventPayload] m => s m [EventPayload]
+--getEvents = get
+----------------------------------------------------------------------------------
+---- Rendering
+----------------------------------------------------------------------------------
+allocPicRenderer ::(Reads Rez m, DoesIO m) => Pic -> m GLRenderer
 allocPicRenderer pic = do
-  rez <- ask
-  io $ compilePic rez pic
-
-setPicRenderer :: (ModifiesComponent RenderIO m
-                  ,Reads Rez m
-                  ,DoesIO m
-                  ) => Entity -> Pic -> m DeallocIO
-setPicRenderer k pic = do
-  r <- allocPicRenderer pic
-  k `setRenderer` snd r
-  return $ fst r
---------------------------------------------------------------------------------
--- Deallocating (Renderings, whatevs)
---------------------------------------------------------------------------------
-getDealloc :: ModifiesComponent DeallocIO m
-           => Entity -> m (Maybe DeallocIO)
-getDealloc k = IM.lookup k <$> get
-
-setDealloc :: ModifiesComponent DeallocIO m
-           => Entity -> DeallocIO -> m ()
-setDealloc k d = modify $ IM.insert k d
-
-dealloc :: (ModifiesComponent DeallocIO m
-           ,DoesIO m
-           ) => Entity -> m ()
-dealloc k = getDealloc k >>= io . sequence_
-
-deleteDealloc :: ModifiesComponent DeallocIO m => Entity -> m ()
-deleteDealloc = modify . del
-  where del = IM.delete :: Entity -> IntMap DeallocIO -> IntMap DeallocIO
---------------------------------------------------------------------------------
--- System Options
---------------------------------------------------------------------------------
-getOptions :: Modifies SystemOptions m => m SystemOptions
-getOptions = get
-
-setOption :: Modifies SystemOptions m => SystemOption -> m ()
-setOption = modify . S.insert
-
-clearOption :: Modifies SystemOptions m => SystemOption -> m ()
-clearOption = modify . S.delete
-
-optionIsSet :: Modifies SystemOptions m => SystemOption -> m Bool
-optionIsSet o = S.member o <$> getOptions
+  rz <- ask
+  io $ compilePic rz pic
+----------------------------------------------------------------------------------
+---- Deallocating (Renderings, whatevs)
+----------------------------------------------------------------------------------
+dealloc :: (Deallocs s m, DoesIO m) => Entity -> m ()
+dealloc k = use (deallocs.at k) >>= io . sequence_
 --------------------------------------------------------------------------------
 -- Destroying an entire entity and all its components
 --------------------------------------------------------------------------------
-destroyEntity :: Modifies SystemCommands m => Entity -> m ()
-destroyEntity = modify . (:) . SystemDeleteEntity
+destroyEntity :: Commands s m => Entity -> m ()
+destroyEntity = (commands %=) . (:) . SystemDeleteEntity
 --------------------------------------------------------------------------------
 -- Common Helpers
 --------------------------------------------------------------------------------
+(.#) :: Monad m => Entity -> (m Entity -> m Entity) -> m Entity
+k .# f = return k ## f
+
 (##) :: m Entity -> (m Entity -> m Entity) -> m Entity
 f ## g = g f
 
@@ -244,54 +170,72 @@ mkSetter w a f = do
 
 type SerialSetter m a = a -> m Entity -> m Entity
 
-name :: ModifiesComponent Name m => SerialSetter m Name
+name :: Names s m => SerialSetter m Name
 name = mkSetter setName
+  where setName k n = names %= IM.insert k n
 
-body :: Modifies OdinScene m => SerialSetter m Body
+body :: Physics s m => SerialSetter m Body
 body = mkSetter setBody
+  where setBody k b = scene.scWorld.worldObjs %= IM.insert k (odinBodyToWorldObj b)
 
-tfrm :: ModifiesComponent PictureTransform m => SerialSetter m PictureTransform
-tfrm = mkSetter setPicTransform
+tfrm :: Tfrms s m => SerialSetter m PictureTransform
+tfrm = mkSetter setTfrm
+  where setTfrm k t = tfrms %= IM.insert k t
 
-scripts :: ModifiesComponent [Script] m => SerialSetter m [Script]
-scripts = mkSetter setScripts
+script :: Scripts s m => SerialSetter m [Script]
+script = mkSetter setScripts
+  where setScripts k s = scripts %= IM.insert k s
 
-rndr :: ModifiesComponent RenderIO m => SerialSetter m RenderIO
+rndr :: Rndrs s m => SerialSetter m RenderIO
 rndr = mkSetter setRenderer
+  where setRenderer k r = rndrs %= IM.insert k r
 
-dloc :: ModifiesComponent DeallocIO m => SerialSetter m DeallocIO
+dloc :: Deallocs s m => SerialSetter m DeallocIO
 dloc = mkSetter setDealloc
+  where setDealloc k d = deallocs %= IM.insert k d
+
+pictr :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m Pic
+pictr = mkSetter setPic
+  where setPic k p = do
+          (c,r) <- allocPicRenderer p
+          k .# rndr r
+            ## dloc c
+
+pos :: Tfrms s m => SerialSetter m (V2 Float)
+pos = mkSetter setPos
+  where setPos k v = do
+          let t = PictureTransform (Transform v 1 0) 1 1
+          use (tfrms.at k) >>= \case
+            Nothing -> tfrms.at k .= Just t
+            Just t0 -> tfrms.at k .= (Just $ t <> t0)
 --------------------------------------------------------------------------------
 -- Less Common Helpers
 --------------------------------------------------------------------------------
-setTfrmAndPic :: (DoesIO m
-                 ,ModifiesComponent RenderIO m
-                 ,ModifiesComponent DeallocIO m
-                 ,ModifiesComponent PictureTransform m
-                 ,Reads Rez m
-                 ) => Entity -> PictureTransform -> Pic -> Cache IO PictureTransform -> m (Cache IO PictureTransform)
-setTfrmAndPic k tfrm pic cache = do
-  rez <- ask
+setTfrmAndPic :: (DoesIO m,Rndrs s m,Deallocs s m,Tfrms s m,Reads Rez m)
+              => Entity -> PictureTransform -> Pic -> Cache IO PictureTransform
+              -> m (Cache IO PictureTransform)
+setTfrmAndPic k t pic cache = do
+  rz <- ask
   -- Compile the pic into a RenderIO and a new resource cache
   (r, newCache) <- io $ do
-    (rnd, newCache) <- compilePictureRenderer rez cache pic
+    (rnd, newCache) <- compilePictureRenderer rz cache pic
     -- Dealloc the stale resources
     let stale = cache `IM.difference` newCache
     sequence_ $ fst <$> stale
     return (snd rnd, newCache)
 
   -- Update our components
-  k `setPicTransform` tfrm
-  k `setRenderer` r
-  k `setDealloc` sequence_ (fst <$> newCache)
+  k .# tfrm t
+    ## rndr r
+    #. dloc (sequence_ (fst <$> newCache))
   return newCache
 
 getMouseIsOverEntityWithSize :: (DoesIO m
-                                ,Reads (IntMap PictureTransform) m
+                                ,Tfrms s m
                                 ) => Entity -> V2 Float -> m Bool
-getMouseIsOverEntityWithSize actor sz = do
+getMouseIsOverEntityWithSize k sz = do
   P vi  <- io getAbsoluteMouseLocation
-  ptfrm <- readPicTransform actor >>= \case
+  ptfrm <- use (tfrms.at k) >>= \case
     Nothing -> return mempty
     Just t  -> return t
   let vf = fromIntegral <$> vi

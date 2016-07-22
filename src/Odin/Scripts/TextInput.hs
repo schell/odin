@@ -14,6 +14,7 @@ import           SDL
 import qualified SDL.Raw.Types as Raw
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Control.Lens
 
 data TextInputState = TextInputStateUp
                     | TextInputStateOver
@@ -95,37 +96,37 @@ symIsReturn sym = key == KeycodeReturn || key == KeycodeReturn2
 deleteText :: Text -> Text
 deleteText t = if T.null t then T.empty else T.init t
 
-getKeyboardEvent :: Reads [EventPayload] m => m (Maybe KeyboardEventData)
+getKeyboardEvent :: Events s m => m (Maybe KeyboardEventData)
 getKeyboardEvent = do
-  evs :: [EventPayload] <- ask
+  evs <- use events
   return $ foldl f Nothing evs
   where f :: Maybe KeyboardEventData -> EventPayload -> Maybe KeyboardEventData
         f Nothing (KeyboardEvent ev) = Just ev
         f acc _ = acc
 
-getEscEvent :: Reads [EventPayload] m => m (Maybe KeyboardEventData)
+getEscEvent :: Events s m => m (Maybe KeyboardEventData)
 getEscEvent = f <$> getKeyboardEvent
   where f (Just ev@(KeyboardEventData _ _ _ sym)) = if symIsEsc sym
                                                       then Just ev
                                                       else Nothing
         f _ = Nothing
 
-getEnterEvent :: Reads [EventPayload] m => m (Maybe KeyboardEventData)
+getEnterEvent :: Events s m => m (Maybe KeyboardEventData)
 getEnterEvent = f <$> getKeyboardEvent
   where f (Just ev@(KeyboardEventData _ _ _ sym)) = if symIsReturn sym
                                                       then Just ev
                                                       else Nothing
         f _ = Nothing
 
-getEscOrEnter :: Reads [EventPayload] m => m (Maybe KeyboardEventData)
+getEscOrEnter :: Events s m => m (Maybe KeyboardEventData)
 getEscOrEnter = do
   mesc <- getEscEvent
   ment <- getEnterEvent
   return $ msum [mesc,ment]
 
-getMyTextEvent :: Reads [EventPayload] m => Text -> m (Maybe Text)
+getMyTextEvent :: Events s m => Text -> m (Maybe Text)
 getMyTextEvent text = do
-  evs :: [EventPayload] <- ask
+  evs <- use events
   let f Nothing (TextInputEvent (TextInputEventData _ t)) = Just t
       f acc _ = acc
       txtIn = foldl f Nothing evs
@@ -144,18 +145,18 @@ getMyTextEvent text = do
 allocTextRndrs :: (Reads Rez m, DoesIO m) => TextInput -> m (IO(), TextInputRndrs)
 allocTextRndrs txt = do
   up   <- allocPicRenderer $ paintTextInput txt TextInputStateUp
-  over <- allocPicRenderer $ paintTextInput txt TextInputStateOver
+  ovr  <- allocPicRenderer $ paintTextInput txt TextInputStateOver
   down <- allocPicRenderer $ paintTextInput txt TextInputStateDown
-  let c = mapM_ fst [up,over,down]
-      rs = TextInputRndrs (snd up) (snd over) (snd down)
+  let c = mapM_ fst [up,ovr,down]
+      rs = TextInputRndrs (snd up) (snd ovr) (snd down)
   return (c, rs)
 
 prepareTextInput :: TextInput -> Entity -> System (V2 Float, TextInputRndrs)
 prepareTextInput txt k = do
   let sz = pictureSize $ paintTextInput txt TextInputStateUp
   (c,rs) <- allocTextRndrs txt
-  k `setRenderer` txtRndrsUp rs
-  k `setDealloc` c
+  k .# rndr (txtRndrsUp rs)
+    #. dloc c
   return (sz, rs)
 
 textInputEditing :: Mailbox TextInputState -> TextInput -> V2 Float -> Entity -> System Script
@@ -181,8 +182,8 @@ textInputEditing mb txt0 sz k = do
             sz1  = pictureSize pic
         (c,r) <- allocPicRenderer pic
         dealloc k
-        k `setDealloc` c
-        k `setRenderer` r
+        k .# dloc c
+          #. rndr r
         nextScript $ textInputEditing mb txt1 sz1 k
 
 textInputDown :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
@@ -192,16 +193,15 @@ textInputDown mb txt sz rs k = do
     then do isStillOver <- getMouseIsOverEntityWithSize k sz
             if isStillOver
               then do dealloc k
-                      deleteRenderer k
                       let pic = paintTextInput txt TextInputStateEditing
                           sz1  = pictureSize pic
                       (c,r) <- allocPicRenderer pic
-                      k `setDealloc` c
-                      k `setRenderer` r
+                      k .# dloc c
+                        ## rndr r
                       io $ startTextInput $ Raw.Rect 0 0 100 100
                       send mb TextInputStateEditing
                       textInputEditing mb txt sz1 k
-              else do k `setRenderer` txtRndrsUp rs
+              else do rndrs.at k .= Just (txtRndrsUp rs)
                       send mb TextInputStateUp
                       nextScript $ textInputUp mb txt sz rs k
     else nextScript $ textInputDown mb txt sz rs k
@@ -211,18 +211,18 @@ textInputOver mb txt sz rs k = do
   isDown <- ($ ButtonLeft) <$> io getMouseButtons
   isOver <- getMouseIsOverEntityWithSize k sz
   if isOver
-    then if isDown then do k `setRenderer` txtRndrsDown rs
+    then if isDown then do rndrs.at k .= Just (txtRndrsDown rs)
                            send mb TextInputStateDown
                            textInputDown mb txt sz rs k
                    else nextScript $ textInputOver mb txt sz rs k
-    else do k `setRenderer` txtRndrsUp rs
+    else do rndrs.at k .= Just (txtRndrsUp rs)
             send mb TextInputStateUp
             textInputUp mb txt sz rs k
 
 textInputUp :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
 textInputUp mb txt sz rs k = do
   isOver <- getMouseIsOverEntityWithSize k sz
-  if isOver then do k `setRenderer` txtRndrsOver rs
+  if isOver then do rndrs.at k .= Just (txtRndrsOver rs)
                     send mb TextInputStateOver
                     textInputOver mb txt sz rs k
             else nextScript $ textInputUp mb txt sz rs k
@@ -232,5 +232,5 @@ freshTextInput :: TextInput -> Mailbox TextInputState -> System Entity
 freshTextInput txt mb = do
   k        <- fresh ## tfrm mempty
   (sz, rs) <- prepareTextInput txt k
-  k `addScript` textInputUp mb txt sz rs k
+  scripts.at k .= Just [Script $ textInputUp mb txt sz rs k]
   return k
