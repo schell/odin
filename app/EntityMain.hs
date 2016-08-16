@@ -8,6 +8,7 @@ import           Halive.Utils
 import           Demos.Utils
 import qualified Demos.Physics1 as Physics1
 import qualified Demos.MapCreator as MapCreator
+import           Paths_odin
 
 import Odin.Scripts.TextInput
 

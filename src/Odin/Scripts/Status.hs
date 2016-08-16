@@ -3,6 +3,7 @@
 module Odin.Scripts.Status (freshStatusBar, freshStatusPrint) where
 
 import Gelatin.SDL2
+import Gelatin.Fruity
 import Text.Printf
 import qualified Data.IntMap as IM
 import Data.Word (Word32)
@@ -10,7 +11,7 @@ import Control.Lens
 
 import Odin.Core
 
-updateStatus :: Entity -> Maybe FontData -> [Word32] -> Word32 -> System Script
+updateStatus :: Entity -> Maybe Font -> [Word32] -> Word32 -> System Script
 updateStatus k mfont dts0 t0 = do
   dt       <- use (time.timeDelta)
   namez    <- use names
@@ -28,18 +29,19 @@ updateStatus k mfont dts0 t0 = do
       dstr = printf "Deallocs: %i" (IM.size ds)
       namesStr = show $ IM.toList namez
 
-      showPic :: FontData -> System ()
+      showPic :: Font -> System ()
       showPic font = do
-        let dtpic = move (V2 0 16) $ withLetters $ filled font 128 16 dtstr $ solid white
-            npic = move (V2 0 32) $ withLetters $ filled font 128 16 nstr $ solid white
-            tpic = move (V2 0 48) $ withLetters $ filled font 128 16 tstr $ solid white
-            rpic = move (V2 0 64) $ withLetters $ filled font 128 16 rstr $ solid white
-            dpic = move (V2 0 80) $ withLetters $ filled font 128 16 dstr $ solid white
-            namesPic = move (V2 0 112) $ withLetters $ filled font 128 12 namesStr $
-              solid white
-            pic = sequence_ [dtpic,npic,tpic,rpic,dpic,namesPic]
+        let dtpic    = move (V2 0 16) >> (coloredString font 128 16 dtstr $ const white)
+            npic     = move (V2 0 32) >> (coloredString font 128 16 nstr $ const white)
+            tpic     = move (V2 0 48) >> (coloredString font 128 16 tstr $ const white)
+            rpic     = move (V2 0 64) >> (coloredString font 128 16 rstr $ const white)
+            dpic     = move (V2 0 80) >> (coloredString font 128 16 dstr $ const white)
+            namesPic = move (V2 0 112) >> (coloredString font 128 12 namesStr $
+                                            const white)
+            pic :: ColorPicture ()
+            pic = mapM_ embed [dtpic,npic,tpic,rpic,dpic,namesPic]
         dealloc k
-        (c,r) <- allocPicRenderer pic
+        (c,r) <- allocColorPicRenderer pic
         k .# rndr r
           #. dloc c
 
@@ -51,7 +53,7 @@ updateStatus k mfont dts0 t0 = do
           else return $ t0 + dt
   nextScript $ updateStatus k mfont dts1 t1
 
-freshStatusBar :: (Fresh s m, Tfrms s m, Scripts s m) => FontData -> m Entity
+freshStatusBar :: (Fresh s m, Tfrms s m, Scripts s m) => Font -> m Entity
 freshStatusBar font = do
   k <- fresh
   k .# tfrm mempty

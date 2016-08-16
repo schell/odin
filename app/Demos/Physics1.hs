@@ -2,7 +2,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Demos.Physics1 ( demo ) where
 
-import Gelatin.SDL2
+import Control.Lens
+import qualified Data.Set as S
+
+import Gelatin.Fruity
 import Odin.Core
 import Odin.Styles
 import Odin.Scripts.Button
@@ -54,7 +57,7 @@ makeDemoActors = do
 
   return $ actors ++ [biggy, rwall, bwall]
 
-loop :: FontData -> System ()
+loop :: Font -> System ()
 loop font = do
   -- Create a status bar to tell us what's up
   status  <- freshStatusPrint ## name "status"
@@ -62,6 +65,7 @@ loop font = do
   painter <- freshPhysicsDrawingEntity ## name "phys painter"
   -- Create all of our demo actors
   actors  <- makeDemoActors
+  --options %= (S.insert SystemSkipPhysicsTick)
   -- Make a button to reset the demo
   let button = ButtonData font "Reset" 16 buttonPainter
   btnMail <- mailbox
@@ -75,5 +79,5 @@ loop font = do
       loop font
     st -> io $ print st
 
-demo :: FontData -> System ()
+demo :: Font -> System ()
 demo = loop

@@ -10,7 +10,6 @@ module Odin.Core.Physics (
   odinBodyToWorldObj,
   physicalObj,
   worldObject,
-  physicalObj2Tfrm,
   physicalObj2PicTfrm,
   worldObj2PicTfrm,
   applyPhysics,
@@ -27,7 +26,6 @@ import           Physics.Constraint             as PE
 import           Physics.Contact                as PE
 import           Physics.Contact.ConvexHull (ConvexHull)
 import qualified Physics.Contact.ConvexHull     as PE
---import qualified Physics.Contact.SAT            as PE --as O
 import           Physics.World                  as PE
 import           Physics.World.Object           as PE
 import           Physics.World.Class (External)
@@ -101,15 +99,12 @@ emptyScene = Scene world externals contactBehavior
         externals = []
         contactBehavior = ContactBehavior 0.01 0.02
 
-physicalObj2Tfrm :: PhysicalObj -> Transform
-physicalObj2Tfrm PhysicalObj{..} = Transform v 1 r
-  where vd = toLV2 _physObjPos
-        v  = realToFrac <$> vd
-        r = realToFrac _physObjRotPos
-
 physicalObj2PicTfrm :: PhysicalObj -> PictureTransform
-physicalObj2PicTfrm p = PictureTransform t 1 1
-  where t = physicalObj2Tfrm p
+physicalObj2PicTfrm PhysicalObj{..} = PictureTransform mv 1 1
+  where vd = toLV2 _physObjPos
+        v  = mat4Translate $ promoteV2 (realToFrac <$> vd)
+        r = mat4Rotate (realToFrac _physObjRotPos) (V3 0 0 1)
+        mv = v !*! r
 
 worldObj2PicTfrm :: WorldObj -> PictureTransform
 worldObj2PicTfrm = physicalObj2PicTfrm . _worldPhysObj

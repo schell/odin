@@ -3,26 +3,28 @@ module Odin.Scripts.DrawPhysics where
 
 import           Gelatin.SDL2
 import qualified Data.IntMap as IM
-import           Control.Monad (forM_)
-import           Control.Lens
+import           Control.Lens hiding (to)
 
 import Odin.Core
 
 --------------------------------------------------------------------------------
 -- Converting a Scene into a Pic
 --------------------------------------------------------------------------------
-convexHullPic :: ConvexHull -> Pic
-convexHullPic = f . map (fmap realToFrac) . canonicalizeConvexHull
-  where f [] = return ()
-        f (p:ps) = withStroke [StrokeWidth 2
-                              ,StrokeFeather 0.5
-                              ] $ do
-                     lineStart (p, red) $ do
-                       forM_ ps $ \pp -> lineTo (pp, red)
-                       lineTo (p, red)
-                     lineStart (0, red) $ lineTo (V2 (maxX ps) 0, white)
-        maxX = maximum . map x
-        x (V2 a _) = a
+convexHullPic :: ConvexHull -> ColorPicture ()
+convexHullPic hull = do
+  case map (fmap realToFrac) $ canonicalizeConvexHull hull of
+    []     -> return ()
+    (p:ps) -> do setStroke [StrokeWidth 2, StrokeFeather 0.5]
+                 setGeometry $ geometry $ do
+                   add $ line $ vertices $ do
+                     to (p, red)
+                     forM_ ps $ \pp -> to (pp, red)
+                     to (p, red)
+                   add $ line $ vertices $ do
+                     let maxX = maximum . map x
+                         x (V2 a _) = a
+                     to (0, red)
+                     to (V2 (maxX ps) 0, white)
 
 worldObjPos :: WorldObj -> V2 Float
 worldObjPos = (realToFrac <$>) . canonicalizeVec . _physObjPos . _worldPhysObj
@@ -30,38 +32,35 @@ worldObjPos = (realToFrac <$>) . canonicalizeVec . _physObjPos . _worldPhysObj
 worldObjRot :: WorldObj -> Float
 worldObjRot = realToFrac . _physObjRotPos . _worldPhysObj
 
-worldObjTfrm :: WorldObj -> Transform
-worldObjTfrm obj = Transform (worldObjPos obj) 1 (worldObjRot obj)
+worldObjPic :: WorldObj -> ColorPicture ()
+worldObjPic obj = do
+  move v
+  rotate r
+  convexHullPic $ _worldShape obj
+  where v = worldObjPos obj
+        r = worldObjRot obj
 
-worldObjPicTfrm :: WorldObj -> PictureTransform
-worldObjPicTfrm obj = PictureTransform (worldObjTfrm obj) 1 1
-
-worldObjPic :: WorldObj -> Pic
-worldObjPic obj = withTransform t $ convexHullPic $ _worldShape obj
-  where t = worldObjPicTfrm obj
-
-scenePic :: OdinScene -> Pic
-scenePic = sequence_ . (worldObjPic <$>) . _worldObjs . _scWorld
+scenePic :: OdinScene -> ColorPicture ()
+scenePic = mapM_ (embed . worldObjPic) . IM.elems . (^.scWorld.worldObjs)
 --------------------------------------------------------------------------------
 -- Scripts - Fresh'ing, Rendering, dealloc'ing, etc
 --------------------------------------------------------------------------------
 drawPhysics :: (Physics s m, Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m)
-            => Entity -> Cache IO PictureTransform -> m Script
-drawPhysics k cache = do
+            => Entity -> m Script
+drawPhysics k = do
+  -- Dealloc the last frame
+  use (deallocs.at k) >>= (maybe (return ()) io)
+  -- Alloc the new frame
   rz <- ask
   pic <- scenePic <$> use scene
-  (r, newCache) <- io $ do
-    (rnd, newCache) <- compilePictureRenderer rz cache pic
-    -- Dealloc stale resources
-    let stale = cache `IM.difference` newCache
-    sequence_ $ fst <$> stale
-    return (snd rnd, newCache)
+  (c,r) <- io $ compileColorPicture rz pic
+  -- Update entity values
   k .# rndr r
-    #. dloc (sequence_ (fst <$> newCache))
-  nextScript $ drawPhysics k newCache
+    #. dloc c
+  nextScript $ drawPhysics k
 
 freshPhysicsDrawingEntity :: (Fresh s m, Tfrms s m, Scripts s m) => m Entity
 freshPhysicsDrawingEntity = do
   k <- fresh
   k .# tfrm mempty
-    ## script [Script $ drawPhysics k mempty]
+    ## script [Script $ drawPhysics k]

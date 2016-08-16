@@ -74,7 +74,7 @@ transformPic lp = do
     Left _ -> dragPic lp 0
     Right s -> transformPic lp{ lpScale = s/20 + lpScale lp }
 
-iconButtonPic :: FontData -> V4 Float -> V2 Float -> Float -> Char -> Picture a ()
+iconButtonPic :: Font -> V4 Float -> V2 Float -> Float -> Char -> Picture a ()
 iconButtonPic fnt color tl s ch = move (tl + V2 0 s) $ withLetters $
   filled fnt 72 s [ch] $ solid color
 

@@ -1,9 +1,9 @@
 flags: {}
 packages:
 - '.'
-- '../gelatin/gelatin-core'
-- '../gelatin/gelatin-picture'
+- '../gelatin/gelatin'
 - '../gelatin/gelatin-gl'
+- '../gelatin/gelatin-fruity'
 - '../gelatin/gelatin-sdl2'
 - '../renderable'
 - '../htiled'
@@ -17,7 +17,6 @@ packages:
 
 extra-deps:
 - FontyFruity-0.5.3.2
-- freer-0.2.3.0
 - halive-0.1.0.7
 
 resolver: lts-6.7

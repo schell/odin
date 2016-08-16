@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Odin.Scripts.Button (ButtonData(..), ButtonState(..), freshButton) where
 
+import Gelatin.Fruity
 import Gelatin.SDL2
 import Control.Lens
 import SDL.Input.Mouse (MouseButton(..)
@@ -17,19 +18,20 @@ data ButtonState = ButtonStateUp
                  | ButtonStateClicked
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
-data ButtonData = ButtonData { btnPainterFont      :: FontData
+data ButtonData = ButtonData { btnPainterFont      :: Font
                              , btnPainterStr       :: String
                              , btnPainterPointSize :: Float
-                             , btnPainterFunc      :: FontData
+                             , btnPainterFunc      :: Font
                                                    -> String
                                                    -> Float
                                                    -> ButtonState
-                                                   -> Pic
+                                                   -> ColorPicture ()
                              }
 
-paintButton :: ButtonData -> ButtonState -> Pic
-paintButton ButtonData{..} =
-  btnPainterFunc btnPainterFont btnPainterStr btnPainterPointSize
+paintButton :: ButtonData -> ButtonState -> ColorPicture ()
+paintButton ButtonData{..} st = do
+  btnPainterFunc btnPainterFont btnPainterStr btnPainterPointSize st
+  void pictureBounds
 
 data ButtonRndrs = ButtonRndrs { btnRndrsUp   :: RenderIO
                                , btnRndrsOver :: RenderIO
@@ -70,15 +72,15 @@ buttonUp mb sz rs btn = do
 
 -- | Creates a fresh button.
 freshButton :: ButtonData -> V2 Float -> Mailbox ButtonState -> System Entity
-freshButton btn@ButtonData{..} pos mb = do
-  let sz = pictureSize $ paintButton btn ButtonStateUp
-  up   <- allocPicRenderer $ paintButton btn ButtonStateUp
-  ovr  <- allocPicRenderer $ paintButton btn ButtonStateOver
-  down <- allocPicRenderer $ paintButton btn ButtonStateDown
+freshButton btn@ButtonData{..} p mb = do
+  let sz = pictureSize' $ paintButton btn ButtonStateUp
+  up   <- allocColorPicRenderer $ paintButton btn ButtonStateUp
+  ovr  <- allocColorPicRenderer $ paintButton btn ButtonStateOver
+  down <- allocColorPicRenderer $ paintButton btn ButtonStateDown
   let d  = mapM_ fst [up,ovr,down]
       rs = ButtonRndrs (snd up) (snd ovr) (snd down)
   k <- fresh
   k .# dloc d
     ## rndr (btnRndrsUp rs)
-    ## tfrm (PictureTransform (Transform pos 1 0) 1 1)
+    ## pos p
     ## script [Script $ buttonUp mb sz rs k]

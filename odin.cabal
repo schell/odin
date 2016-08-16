@@ -37,7 +37,6 @@ maintainer:          schell@zyghost.com
 -- copyright:
 
 category:            Development
-
 build-type:          Simple
 
 -- Extra files to be distributed with the package, such as examples or a
@@ -46,20 +45,15 @@ build-type:          Simple
 
 -- Constraint on the version of Cabal needed to build this package.
 cabal-version:       >=1.10
+data-files:          assets/fonts/*.ttf
+                   , assets/images/*.png
 
 library
   ghc-options:         -threaded -Wall
   hs-source-dirs:      src
   default-language:    Haskell2010
-  exposed-modules:     App.Control.FRP
-                     , App.Control.Monad
-                     , App.GUI.Button
-                     , App.GUI.Picker
-                     , App.GUI.TextInput
-                     , App.Framework
-                     , App.GUI
 
-                     , Data.Char.FontAwesome
+  exposed-modules:     Data.Char.FontAwesome
                      , Data.Tiled.Utils
                      , Odin.Scripts.Animation.Pic
                      , Odin.Scripts.ArrowControl
@@ -74,24 +68,32 @@ library
                      , Odin.Core.Physics
                      , Odin.Core.System
                      , Odin.Core.Types
-                     , Odin.Core.Utils
                      , Odin.Core
+
+                     --  App.Control.FRP
+                     --, App.Control.Monad
+                     --, App.GUI.Button
+                     --, App.GUI.Picker
+                     --, App.GUI.TextInput
+                     --, App.Framework
+                     --, App.GUI
+
+
 
   build-depends:       base >=4.8 && <5.0
                      , transformers >= 0.4
                      , mtl >= 2.2
                      , array >= 0.5
-                     , freer
                      , stm >= 2.4
                      , async >= 2.0
                      , time >= 1.5
                      , containers >= 0.5
                      , renderable >= 0.2.0.1
                      , varying >= 0.5
-                     , gelatin-sdl2 >= 0.0
-                     , gelatin-gl >= 0.0
-                     , gelatin-picture >= 0.0
-                     , gelatin-core >= 0.0
+                     , gelatin-sdl2
+                     , gelatin-gl
+                     , gelatin-fruity
+                     , gelatin
                      , sdl2 >= 2.1
                      , directory >= 1.2
                      , filepath >= 1.4
@@ -115,28 +117,30 @@ executable entity
   build-depends:       base >=4.8 && <5.0
                      , odin
                      , gelatin-sdl2
+                     , gelatin-fruity
                      , varying
                      , htiled >= 0.1.3
                      , pretty-show >= 1.6
                      , filepath
                      , directory
                      , linear
+                     , lens
                      , sdl2
                      , halive
                      , text
+                     , containers
 
   default-language:    Haskell2010
 
 executable sandbox
-  --buildable: False
+  buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   hs-source-dirs:      app
   main-is:             Sandbox.hs
   build-depends:       base >=4.8 && <5.0
                      , odin
                      , varying >= 0.5
-                     , gelatin-core
-                     , gelatin-picture
+                     , gelatin
                      , gelatin-sdl2
                      , transformers >= 0.4
                      , mtl >= 2.2
@@ -147,6 +151,7 @@ executable sandbox
   default-language:    Haskell2010
 
 executable part-two
+  buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
   -- Directories containing source files.
   hs-source-dirs:      app
@@ -165,8 +170,7 @@ executable part-two
                      , odin
                      , gelatin-sdl2
                      , gelatin-gl
-                     , gelatin-picture
-                     , gelatin-core
+                     , gelatin
 
                      , varying >= 0.5
                      , transformers >= 0.4

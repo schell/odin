@@ -1,6 +1,6 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Odin.Core.Types where
 
-import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get)
 import           Data.IntMap.Strict (IntMap)
@@ -10,7 +10,7 @@ import           Control.Monad.State.Strict
 
 import Odin.Core.Physics as OP
 
-type Pic = Picture GLuint ()
+newtype Uid = Uid { unUid :: Int } deriving (Show, Eq, Num, Enum)
 
 data SystemTime = SystemTime { _timeLast  :: Word32
                              -- ^ The number of milliseconds from initialization to the last
@@ -26,9 +26,9 @@ type Name = String
 
 type Entity = Int
 
-type RenderIO = Rendering IO PictureTransform
+type RenderIO = PictureTransform -> IO ()
 
-type DeallocIO = CleanOp IO
+type DeallocIO = IO ()
 
 type System = StateT Sys IO
 

@@ -80,16 +80,15 @@ module Odin.Core.Common (
   , DoesIO
   , Reads(..)
   -- * Sending / Receiving Messages
+  , MailboxT
   , Mailbox
-  , MakesMailbox(..)
-  , SendsMessage(..)
-  , GetsMessage(..)
+  , mailbox
+  , send
+  , recv
   -- * Time savers / Helpers
   , io
-  , Pic
   ) where
 
-import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get, time)
 import           Data.IntMap.Strict (IntMap)
@@ -158,24 +157,16 @@ nextScript = return . Script
 --------------------------------------------------------------------------------
 -- Sending / Recieving messages
 --------------------------------------------------------------------------------
-type Mailbox a = TVar (a -> System ())
+type MailboxT m a = TVar (a -> m ())
+type Mailbox a = MailboxT System a
 
-class MakesMailbox a m where
-  mailbox :: m (Mailbox a)
+mailbox :: MonadIO m => m (MailboxT m a)
+mailbox = io $ newTVarIO $ const $ return ()
 
-class SendsMessage a m where
-  send :: Mailbox a -> a -> m ()
+send :: MonadIO m => MailboxT m a -> a -> m ()
+send mbox msg = do
+  f <- io $ readTVarIO mbox
+  f msg
 
-class GetsMessage a m where
-  recv :: Mailbox a -> (a -> m ()) -> m ()
-
-instance MakesMailbox a System where
-  mailbox = io $ newTVarIO $ const $ return ()
-
-instance SendsMessage a System where
-  send mbox msg = do
-    f <- io $ readTVarIO mbox
-    f msg
-
-instance GetsMessage a System where
-  recv mbox f = void $ io $ atomically $ swapTVar mbox f
+recv :: MonadIO m => MailboxT m a -> (a -> m ()) -> m ()
+recv mbox f = void $ io $ atomically $ swapTVar mbox f

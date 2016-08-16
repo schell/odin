@@ -17,7 +17,6 @@ module Odin.Core.System (
   , freshSystem
   ) where
 
-import           Gelatin.Picture
 import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get, time)
 import qualified Data.IntMap.Strict as IM
@@ -26,9 +25,18 @@ import           Data.Monoid ((<>))
 import           Control.Lens
 import           System.Exit (exitSuccess)
 
-import           App.Framework (isQuit)
 import           Odin.Core.Common
 import           Odin.Core.Component
+
+isQuit :: Keysym -> Bool
+isQuit (Keysym (Scancode 20) (Keycode 113) m) = any ($ m)
+    [ keyModifierLeftCtrl
+    , keyModifierRightCtrl
+    , keyModifierLeftGUI
+    , keyModifierRightGUI
+    ]
+isQuit _ = False
+
 
 tickTime :: (Time s m, DoesIO m) => m ()
 tickTime = do

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Odin.Scripts.TextInput (
     TextInputState(..)
   , TextInput(..)
@@ -9,12 +10,13 @@ module Odin.Scripts.TextInput (
   ) where
 
 import           Gelatin.SDL2
+import           Gelatin.Fruity
 import           Odin.Core
 import           SDL
 import qualified SDL.Raw.Types as Raw
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           Control.Lens
+import           Control.Lens hiding (to)
 
 data TextInputState = TextInputStateUp
                     | TextInputStateOver
@@ -24,7 +26,7 @@ data TextInputState = TextInputStateUp
                     deriving (Show, Eq)
 
 data TextInput = TextInput { txtnText      :: Text
-                           , txtnFont      :: FontData
+                           , txtnFont      :: Font
                            , txtnPointSize :: Float
                            --, txtnInterval  :: Float
                            }
@@ -43,44 +45,53 @@ bgColor TextInputStateEditing = V4 0.2 0.2 0.2 1
 bgColor _ = V4 1 1 1 0
 
 lnColor :: TextInputState -> V4 Float
-lnColor TextInputStateUp = white `alpha` 0.4
-lnColor TextInputStateOver = white `alpha` 0.8
+lnColor TextInputStateUp = white `withAlpha` 0.4
+lnColor TextInputStateOver = white `withAlpha` 0.8
 lnColor TextInputStateDown = white
-lnColor _ = white `alpha` 0.8
+lnColor _ = white `withAlpha` 0.8
 
-paintTextBackground :: V2 Float -> TextInputState -> Picture a ()
+paintTextBackground :: V2 Float -> TextInputState -> ColorPicture ()
 paintTextBackground sz@(V2 tw th) st = do
   let bgcolor = bgColor st
       lncolor = lnColor st
       padding = 4
       inc     = 1.5 * padding
-  withColor $ rectangle 0 (sz + V2 inc inc) $ const bgcolor
-  withStroke [StrokeWidth 3, StrokeFeather 1] $
-        lineStart (0, lncolor) $ do lineTo (V2 (tw + inc) 0, lncolor)
-                                    lineTo (V2 (tw + inc) (th + inc), lncolor)
-                                    lineTo (V2 0 (th + inc), lncolor)
-                                    lineTo (0, lncolor)
+  --withColor $ rectangle 0 (sz + V2 inc inc) $ const bgcolor
+  setStroke [StrokeWidth 3, StrokeFeather 1]
+  setGeometry $ geometry $ do
+    add $ fan $ mapVertices (,bgcolor) $ vertices $ rectangle 0 (sz + V2 inc inc)
+    add $ line $ vertices $ do
+     to (0, lncolor)
+     to (V2 (tw + inc) 0, lncolor)
+     to (V2 (tw + inc) (th + inc), lncolor)
+     to (V2 0 (th + inc), lncolor)
+     to (0, lncolor)
 
-paintTextInput :: TextInput -> TextInputState -> Picture a ()
+paintTextInput :: TextInput -> TextInputState -> ColorPicture ()
 paintTextInput txt st = do
-  let textcolor= textColor st
-      px = txtnPointSize txt
-      txttxt = txtnText txt
-      text = withLetters $ filled (txtnFont txt) 72 px (T.unpack txttxt) $
-               solid textcolor
-      leaderInc = if hasLeader then V2 inc 0 else 0
-      endSpaces = T.length $ T.takeWhile (== ' ') $ T.reverse txttxt
-      spaceInc = V2 (px/2) 0 ^* fromIntegral endSpaces
-      V2 w h = sum [pictureSize text, leaderInc, spaceInc]
-      size@(V2 tw th) = V2 (max (px/2) w) (max px h)
-      bar = withColor $ rectangle (V2 0 0) (V2 1.5 th) $
-              const $ textcolor `alpha` 0.5
-      hasLeader = st == TextInputStateEditing
-      padding = 4
-      inc = 1.5 * padding
   paintTextBackground size st
-  move (V2 0 th + V2 padding padding) text
-  when hasLeader $ move (V2 tw padding) bar
+  foreground
+  where textcolor= textColor st
+        px = txtnPointSize txt
+        txttxt = txtnText txt
+        drawText = coloredString (txtnFont txt) 72 px (T.unpack txttxt) $ const textcolor
+        leaderInc = if hasLeader then V2 inc 0 else 0
+        endSpaces = T.length $ T.takeWhile (== ' ') $ T.reverse txttxt
+        spaceInc = V2 (px/2) 0 ^* fromIntegral endSpaces
+        V2 w h = sum [pictureSize' drawText, leaderInc, spaceInc]
+        size@(V2 tw th) = V2 (max (px/2) w) (max px h)
+        bar = setGeometry $ geometry $ add $ fan $
+          mapVertices (,textcolor `withAlpha` 0.5) $ vertices $
+            rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
+
+        hasLeader = st == TextInputStateEditing
+        padding = 4
+        inc = 1.5 * padding
+        foreground = do
+          embed $ do
+            move (V2 0 th + V2 padding padding)
+            drawText
+          when hasLeader $ embed bar
 
 symIsDel :: Keysym -> Bool
 symIsDel sym = key == KeycodeBackspace || key == KeycodeDelete
@@ -144,16 +155,16 @@ getMyTextEvent text = do
 
 allocTextRndrs :: (Reads Rez m, DoesIO m) => TextInput -> m (IO(), TextInputRndrs)
 allocTextRndrs txt = do
-  up   <- allocPicRenderer $ paintTextInput txt TextInputStateUp
-  ovr  <- allocPicRenderer $ paintTextInput txt TextInputStateOver
-  down <- allocPicRenderer $ paintTextInput txt TextInputStateDown
+  up   <- allocColorPicRenderer $ paintTextInput txt TextInputStateUp
+  ovr  <- allocColorPicRenderer $ paintTextInput txt TextInputStateOver
+  down <- allocColorPicRenderer $ paintTextInput txt TextInputStateDown
   let c = mapM_ fst [up,ovr,down]
       rs = TextInputRndrs (snd up) (snd ovr) (snd down)
   return (c, rs)
 
 prepareTextInput :: TextInput -> Entity -> System (V2 Float, TextInputRndrs)
 prepareTextInput txt k = do
-  let sz = pictureSize $ paintTextInput txt TextInputStateUp
+  let sz = pictureSize' $ paintTextInput txt TextInputStateUp
   (c,rs) <- allocTextRndrs txt
   k .# rndr (txtRndrsUp rs)
     #. dloc c
@@ -179,8 +190,8 @@ textInputEditing mb txt0 sz k = do
       Just text -> do
         let txt1 = txt0{txtnText = text}
             pic  = paintTextInput txt1 TextInputStateEditing
-            sz1  = pictureSize pic
-        (c,r) <- allocPicRenderer pic
+            sz1  = pictureSize' pic
+        (c,r) <- allocColorPicRenderer pic
         dealloc k
         k .# dloc c
           #. rndr r
@@ -194,10 +205,10 @@ textInputDown mb txt sz rs k = do
             if isStillOver
               then do dealloc k
                       let pic = paintTextInput txt TextInputStateEditing
-                          sz1  = pictureSize pic
-                      (c,r) <- allocPicRenderer pic
+                          sz1  = fst $ runPicture $ pic >> pictureSize
+                      (c,r) <- allocColorPicRenderer pic
                       k .# dloc c
-                        ## rndr r
+                        #. rndr r
                       io $ startTextInput $ Raw.Rect 0 0 100 100
                       send mb TextInputStateEditing
                       textInputEditing mb txt sz1 k

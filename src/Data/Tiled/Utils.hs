@@ -13,8 +13,6 @@ import           Data.Maybe (catMaybes)
 import           Data.Monoid ((<>))
 import           Gelatin.GL
 
-import Odin.Core.Utils
-
 type ImageTextureMap = Map Image GLuint
 type TileGLRendererMap = Map Tile GLRenderer
 
@@ -87,9 +85,11 @@ allocTileRenderer rez tile Tileset{..} tex = do
       V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
       -- the tile's uv bottom left
       V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
-  compilePic rez $ withTexture tex $ do
-    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
-    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
+  compileTexturePicture rez $ do
+    setTextures [tex]
+    setGeometry $ geometry $ add $ triangles $ vertices $ do
+      tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
+      tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
 
 mapOfTiles :: Rez -> TiledMap -> IO TileGLRendererMap
 mapOfTiles rez t@TiledMap{..} = do
@@ -119,6 +119,6 @@ allocLayerRenderer tmap rmap name = case layerWithName tmap name of
                  w  = tsTileWidth ts
                  h  = tsTileHeight ts
                  v  = fromIntegral <$> V2 (w * x)  (h * y)
-                 t  = tfrm <> PictureTransform (Transform v 1 0) 1 1
+                 t  = tfrm <> PictureTransform (mat4Translate $ promoteV2 v) 1 1
              snd f t
     return $ Just (return (), renderLayer)
