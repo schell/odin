@@ -1,7 +1,7 @@
 ---
 title: Odin
-description: Learn how to write a roguelike with FRP.  
+description: A game and engine using Haskell, FRP and love.  
 date: 2016-02-11
 ---
 
-In this series I'm exploring building a roguelike using my own FRP library.
+In this series I'm exploring building a roguelike using my own libraries.
