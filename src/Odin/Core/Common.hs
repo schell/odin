@@ -10,9 +10,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
-module Odin.Core.Common (
+module Odin.Core.Common
   -- * Reexporting Effects
-    module State
+  ( module State
+  -- * Rexporting Common Vector Typeclasses
+  , Unbox
   -- * Entities
   , Entity
   -- * Components
@@ -65,6 +67,10 @@ module Odin.Core.Common (
   , runScript
   , nextScript
   , endScript
+  -- * Sequenced Events
+  , module E
+  , Evented
+  , runEventedScript
   -- * Constraints / Abilities
   , Names
   , Tfrms
@@ -85,6 +91,10 @@ module Odin.Core.Common (
   , mailbox
   , send
   , recv
+  -- * Painting / Graphics
+  , Painter
+  , ColorPainter
+  , TexturePainter
   -- * Time savers / Helpers
   , io
   ) where
@@ -92,9 +102,12 @@ module Odin.Core.Common (
 import           Gelatin.SDL2 hiding (E)
 import           SDL hiding (Event, get, time)
 import           Data.IntMap.Strict (IntMap)
+import           Data.Vector.Unboxed (Unbox)
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
+
+import           Control.Monad.Evented as E
 
 import           Odin.Core.Physics as OP
 import           Odin.Core.Types
@@ -154,6 +167,15 @@ endScript = return ScriptEnd
 
 nextScript :: Monad m => ScriptStep -> m Script
 nextScript = return . Script
+--------------------------------------------------------------------------------
+-- Sequenced Events
+--------------------------------------------------------------------------------
+type Evented a = EventT () () System a
+
+runEventedScript :: Evented a -> System Script
+runEventedScript ev = runEventT ev () >>= \case
+  Left nv -> return $ Script $ runEventedScript nv
+  Right _ -> endScript
 --------------------------------------------------------------------------------
 -- Sending / Recieving messages
 --------------------------------------------------------------------------------

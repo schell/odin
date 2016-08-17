@@ -5,11 +5,9 @@ module Demos.MapCreator ( demo ) where
 import SDL
 import Gelatin.SDL2
 import Gelatin.Fruity
-import Control.Lens hiding (to)
-import Data.Maybe (isNothing)
 import Odin.Core
-import Odin.Scripts.Button
-import Odin.Styles
+import Odin.GUI
+import Odin.GUI.TextInput.Internal
 import Paths_odin
 import System.FilePath
 import System.Exit (exitFailure)
@@ -32,7 +30,7 @@ setScaleToWindowSize k sz@(V2 tw th) tex mwin = do
                  to (V2 w 0, V2 (w/tw) 0)
                  to (V2 w h, V2 (w/tw) (h/th))
                  to (V2 0 h, V2 0      (h/th))
-    k .# texPic p
+    _ <- k .# texPic p
     return ()
   nextScript $ setScaleToWindowSize k sz tex $ Just $ V2 w h
 
@@ -53,5 +51,10 @@ demo font = do
   fresh ## name "instructions"
         ## pos (V2 0 16)
         #. colorPic (coloredString font 72 16 str $ const black)
+
+  bview <- allocColorButtonView font "Test Button" 16 buttonPainter (io . print)
+  void $ freshButton 100 bview
+
+
 
   return ()

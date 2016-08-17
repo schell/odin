@@ -7,8 +7,7 @@ import qualified Data.Set as S
 
 import Gelatin.Fruity
 import Odin.Core
-import Odin.Styles
-import Odin.Scripts.Button
+import Odin.GUI
 import Odin.Scripts.DrawPhysics
 import Odin.Scripts.Status
 
@@ -66,14 +65,13 @@ loop font = do
   -- Create all of our demo actors
   actors  <- makeDemoActors
   --options %= (S.insert SystemSkipPhysicsTick)
+
   -- Make a button to reset the demo
-  let button = ButtonData font "Reset" 16 buttonPainter
-  btnMail <- mailbox
-  btn     <- freshButton button 4 btnMail ## name "btn"
-  -- When the button sends a clicked event we reset the demo
-  -- by destroying the actors, the button and then making them
-  -- again
-  recv btnMail $ \case
+  bview   <- allocColorButtonView font "Reset" 16 buttonPainter (const $ return ())
+  btn     <- freshButton 4 bview ## name "btn"
+  recv (btnMailbox bview) $ \case
+    -- When the button sends a 'clicked' message we reset the demo by destroying
+    -- the actors, the button and then making them again
     ButtonStateClicked -> do
       mapM_ destroyEntity $ status:painter:btn:actors
       loop font

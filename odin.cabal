@@ -55,20 +55,28 @@ library
 
   exposed-modules:     Data.Char.FontAwesome
                      , Data.Tiled.Utils
-                     , Odin.Scripts.Animation.Pic
-                     , Odin.Scripts.ArrowControl
-                     , Odin.Scripts.Button
-                     , Odin.Scripts.DrawPhysics
-                     , Odin.Scripts.Status
-                     , Odin.Scripts.TextInput
-                     , Odin.Styles
+
+                     , Control.Monad.Evented
 
                      , Odin.Core.Common
                      , Odin.Core.Component
                      , Odin.Core.Physics
                      , Odin.Core.System
                      , Odin.Core.Types
+
+                     , Odin.GUI.Button.Internal
+                     , Odin.GUI.TextInput.Internal
+                     , Odin.GUI.Button
+                     , Odin.GUI.Styles
+
+                     , Odin.Scripts.Animation.Pic
+                     , Odin.Scripts.ArrowControl
+                     , Odin.Scripts.DrawPhysics
+                     , Odin.Scripts.Status
+                     , Odin.Scripts.TextInput
+
                      , Odin.Core
+                     , Odin.GUI
 
                      --  App.Control.FRP
                      --, App.Control.Monad
@@ -83,6 +91,7 @@ library
   build-depends:       base >=4.8 && <5.0
                      , transformers >= 0.4
                      , mtl >= 2.2
+                     , freer -any
                      , array >= 0.5
                      , stm >= 2.4
                      , async >= 2.0
