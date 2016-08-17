@@ -1,16 +1,34 @@
 flags: {}
 packages:
 - '.'
-- '../gelatin/gelatin'
-- '../gelatin/gelatin-gl'
-- '../gelatin/gelatin-fruity'
-- '../gelatin/gelatin-sdl2'
-- '../renderable'
-- '../htiled'
-- '../varying'
-- '../sdl2'
+- location:
+    git: https://github.com/schell/gelatin.git
+    commit: c589cf340ec6b41b41f1492496c8917e4db5e2ad
+  subdirs:
+  - gelatin
+  - gelatin-gl
+  - gelatin-fruity
+  - gelatin-sdl2
+#- '../gelatin/gelatin'
+#- '../gelatin/gelatin-gl'
+#- '../gelatin/gelatin-fruity'
+#- '../gelatin/gelatin-sdl2'
+- location:
+    git: https://github.com/schell/renderable.git
+    commit: fda35ce6d0f02f3e29bf8168305f8ac5421f40fd
+- location:
+    git: https://github.com/schell/htiled.git
+    commit: b008faec3971d7088e4570abc42f94b0b510dde3
+- location:
+    git: https://github.com/schell/varying.git
+    commit: cd1fc3ab5befb59f7b7d5940e5ee8da43ed54dd4
+- location:
+    git: https://github.com/schell/sdl2.git
+    commit: aff05d74b6a11969c880ab410193ff44ec0905ee
 
-- location: '../shapes'
+- location:
+    git: https://github.com/schell/shapes.git
+    commit: 0f8a187695e9cd1228e79bb8a51f5a6a6de3469e
   subdirs:
   - shapes
   - shapes-math
