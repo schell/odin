@@ -100,8 +100,7 @@ getMyTextEvent text = do
                     else text
       in d <$> foldl g Nothing evs
 
-allocTextRndrs :: (Reads Rez m, DoesIO m)
-               => TextInputView t s r v -> m (IO(), TextInputRndrs)
+allocTextRndrs :: TextInputView t (V2 Float) r v -> System (IO(), TextInputRndrs)
 allocTextRndrs TextInputView{..} = do
   up   <- txtnCompiler $ txtnPainter (txtnData, TextInputStateUp)
   ovr  <- txtnCompiler $ txtnPainter (txtnData, TextInputStateOver)
@@ -110,92 +109,93 @@ allocTextRndrs TextInputView{..} = do
       rs = TextInputRndrs (snd up) (snd ovr) (snd down)
   return (c, rs)
 
-prepareTextInput :: TextInputView -> Entity -> System (V2 Float, TextInputRndrs)
+prepareTextInput :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
+                 => TextInputView t (V2 Float) r v -> Entity -> System (V2 Float, TextInputRndrs)
 prepareTextInput txt@TextInputView{..} k = do
-  let sz = pictureSize' $ txtnPainter (txt, TextInputStateUp)
+  let sz = pictureSize' $ txtnPainter (txtnData, TextInputStateUp)
   (c,rs) <- allocTextRndrs txt
   k .# rndr (txtRndrsUp rs)
     #. dloc c
   return (sz, rs)
 
-textInputEditing :: Mailbox TextInputState -> TextInput -> V2 Float -> Entity -> System Script
-textInputEditing mb txt0 sz k = do
-  let endEditing = do dealloc k
-                      (sz1,rs) <- prepareTextInput txt0 k
-                      send mb $ TextInputStateEdited $ T.unpack $ txtnText txt0
-                      send mb TextInputStateUp
-                      nextScript $ textInputUp mb txt0 sz1 rs k
-
-  getEscOrEnter >>= \case
-    Just _ -> endEditing
-    Nothing -> getMyTextEvent (txtnText txt0) >>= \case
-      Nothing -> do
-        isDown <- ($ ButtonLeft) <$> io getMouseButtons
-        isOver <- getMouseIsOverEntityWithSize k sz
-        if isDown && not isOver
-          then endEditing
-          else nextScript $ textInputEditing mb txt0 sz k
-      Just text -> do
-        let txt1 = txt0{txtnText = text}
-            pic  = textInputPainter (txt1, TextInputStateEditing)
-            sz1  = pictureSize' pic
-        (c,r) <- allocColorPicRenderer pic
-        dealloc k
-        k .# dloc c
-          #. rndr r
-        nextScript $ textInputEditing mb txt1 sz1 k
-
-textInputDown :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
-textInputDown mb txt sz rs k = do
-  isDown <- ($ ButtonLeft) <$> io getMouseButtons
-  if not isDown
-    then do isStillOver <- getMouseIsOverEntityWithSize k sz
-            if isStillOver
-              then do dealloc k
-                      let pic = textInputPainter (txt, TextInputStateEditing)
-                          sz1  = fst $ runPicture $ pic >> pictureSize
-                      (c,r) <- allocColorPicRenderer pic
-                      k .# dloc c
-                        #. rndr r
-                      io $ startTextInput $ Raw.Rect 0 0 100 100
-                      send mb TextInputStateEditing
-                      textInputEditing mb txt sz1 k
-              else do rndrs.at k .= Just (txtRndrsUp rs)
-                      send mb TextInputStateUp
-                      nextScript $ textInputUp mb txt sz rs k
-    else nextScript $ textInputDown mb txt sz rs k
-
-textInputOver :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
-textInputOver mb txt sz rs k = do
-  isDown <- ($ ButtonLeft) <$> io getMouseButtons
-  isOver <- getMouseIsOverEntityWithSize k sz
-  if isOver
-    then if isDown then do rndrs.at k .= Just (txtRndrsDown rs)
-                           send mb TextInputStateDown
-                           textInputDown mb txt sz rs k
-                   else nextScript $ textInputOver mb txt sz rs k
-    else do rndrs.at k .= Just (txtRndrsUp rs)
-            send mb TextInputStateUp
-            textInputUp mb txt sz rs k
-
-textInputUp :: TextInputView t (V2 Float) v r -> V2 Float -> TextInputRndrs -> Entity -> System Script
-textInputUp mb txt sz rs k = do
-  isOver <- getMouseIsOverEntityWithSize k sz
-  if isOver then do rndrs.at k .= Just (txtRndrsOver rs)
-                    send mb TextInputStateOver
-                    textInputOver mb txt sz rs k
-            else nextScript $ textInputUp mb txt sz rs k
-
-textInputLifeCycle :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
-                   => TextInputView t (V2 Float) v r -> Entity -> Evented ()
-textInputLifeCycle TextInputView{..} k = do
-
-
-
-freshTextInput :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
-               => V2 Float -> TextInputView t (V2 Float) r v -> System Entity
-freshTextInput p tview = do
-  k        <- fresh ## pos p
-  (sz, rs) <- prepareTextInput tview k
-  scripts.at k .= Just [Script $ textInputUp tview sz rs k]
-  return k
+--textInputEditing :: Mailbox TextInputState -> TextInput -> V2 Float -> Entity -> System Script
+--textInputEditing mb txt0 sz k = do
+--  let endEditing = do dealloc k
+--                      (sz1,rs) <- prepareTextInput txt0 k
+--                      send mb $ TextInputStateEdited $ T.unpack $ txtnText txt0
+--                      send mb TextInputStateUp
+--                      nextScript $ textInputUp mb txt0 sz1 rs k
+--
+--  getEscOrEnter >>= \case
+--    Just _ -> endEditing
+--    Nothing -> getMyTextEvent (txtnText txt0) >>= \case
+--      Nothing -> do
+--        isDown <- ($ ButtonLeft) <$> io getMouseButtons
+--        isOver <- getMouseIsOverEntityWithSize k sz
+--        if isDown && not isOver
+--          then endEditing
+--          else nextScript $ textInputEditing mb txt0 sz k
+--      Just text -> do
+--        let txt1 = txt0{txtnText = text}
+--            pic  = textInputPainter (txt1, TextInputStateEditing)
+--            sz1  = pictureSize' pic
+--        (c,r) <- allocColorPicRenderer pic
+--        dealloc k
+--        k .# dloc c
+--          #. rndr r
+--        nextScript $ textInputEditing mb txt1 sz1 k
+--
+--textInputDown :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
+--textInputDown mb txt sz rs k = do
+--  isDown <- ($ ButtonLeft) <$> io getMouseButtons
+--  if not isDown
+--    then do isStillOver <- getMouseIsOverEntityWithSize k sz
+--            if isStillOver
+--              then do dealloc k
+--                      let pic = textInputPainter (txt, TextInputStateEditing)
+--                          sz1  = fst $ runPicture $ pic >> pictureSize
+--                      (c,r) <- allocColorPicRenderer pic
+--                      k .# dloc c
+--                        #. rndr r
+--                      io $ startTextInput $ Raw.Rect 0 0 100 100
+--                      send mb TextInputStateEditing
+--                      textInputEditing mb txt sz1 k
+--              else do rndrs.at k .= Just (txtRndrsUp rs)
+--                      send mb TextInputStateUp
+--                      nextScript $ textInputUp mb txt sz rs k
+--    else nextScript $ textInputDown mb txt sz rs k
+--
+--textInputOver :: Mailbox TextInputState -> TextInput -> V2 Float -> TextInputRndrs -> Entity -> System Script
+--textInputOver mb txt sz rs k = do
+--  isDown <- ($ ButtonLeft) <$> io getMouseButtons
+--  isOver <- getMouseIsOverEntityWithSize k sz
+--  if isOver
+--    then if isDown then do rndrs.at k .= Just (txtRndrsDown rs)
+--                           send mb TextInputStateDown
+--                           textInputDown mb txt sz rs k
+--                   else nextScript $ textInputOver mb txt sz rs k
+--    else do rndrs.at k .= Just (txtRndrsUp rs)
+--            send mb TextInputStateUp
+--            textInputUp mb txt sz rs k
+--
+--textInputUp :: TextInputView t (V2 Float) v r -> V2 Float -> TextInputRndrs -> Entity -> System Script
+--textInputUp mb txt sz rs k = do
+--  isOver <- getMouseIsOverEntityWithSize k sz
+--  if isOver then do rndrs.at k .= Just (txtRndrsOver rs)
+--                    send mb TextInputStateOver
+--                    textInputOver mb txt sz rs k
+--            else nextScript $ textInputUp mb txt sz rs k
+--
+--textInputLifeCycle :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
+--                   => TextInputView t (V2 Float) v r -> Entity -> Evented ()
+--textInputLifeCycle TextInputView{..} k = do
+--
+--
+--
+--freshTextInput :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
+--               => V2 Float -> TextInputView t (V2 Float) r v -> System Entity
+--freshTextInput p tview = do
+--  k        <- fresh ## pos p
+--  (sz, rs) <- prepareTextInput tview k
+--  scripts.at k .= Just [Script $ textInputUp tview sz rs k]
+--  return k

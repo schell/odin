@@ -75,9 +75,9 @@ textInputPainter (TextInputData{..}, st) = do
   background
   foreground
   where textcolor= textColorForTextInputState st
-        px = txtnPointSize txt
-        txttxt = txtnText txt
-        drawText = coloredString (txtnFont txt) 72 px (T.unpack txttxt) $ const textcolor
+        px = txtnDataPointSize
+        txttxt = txtnDataText
+        drawText = coloredString txtnDataFont 72 px (T.unpack txttxt) $ const textcolor
         leaderInc = if hasLeader then V2 inc 0 else 0
         endSpaces = T.length $ T.takeWhile (== ' ') $ T.reverse txttxt
         spaceInc = V2 (px/2) 0 ^* fromIntegral endSpaces

@@ -65,7 +65,7 @@ library
                      , Odin.Core.Types
 
                      , Odin.GUI.Button.Internal
-                     , Odin.GUI.TextInput.Internal
+                     --, Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Styles
 
@@ -73,7 +73,6 @@ library
                      , Odin.Scripts.ArrowControl
                      , Odin.Scripts.DrawPhysics
                      , Odin.Scripts.Status
-                     , Odin.Scripts.TextInput
 
                      , Odin.Core
                      , Odin.GUI
@@ -138,6 +137,7 @@ executable entity
                      , halive
                      , text
                      , containers
+                     , ekg
 
   default-language:    Haskell2010
 

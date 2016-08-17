@@ -7,7 +7,7 @@ import Gelatin.SDL2
 import Gelatin.Fruity
 import Odin.Core
 import Odin.GUI
-import Odin.GUI.TextInput.Internal
+--import Odin.GUI.TextInput.Internal
 import Paths_odin
 import System.FilePath
 import System.Exit (exitFailure)
