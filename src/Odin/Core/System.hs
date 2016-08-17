@@ -22,6 +22,7 @@ import           SDL hiding (Event, get, time)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import           Data.Monoid ((<>))
+import           Data.Foldable (foldl')
 import           Control.Lens
 import           System.Exit (exitSuccess)
 
@@ -120,10 +121,11 @@ tickRender :: System ()
 tickRender = do
   rs     <- use rndrs
   ts0    <- use tfrms
-  --objs   <- getWorldObjects
-  --let ts1 = applyPhysics objs ts0
+  objs   <- use (scene.scWorld.worldObjs)
+  let objTs = worldObj2PicTfrm <$> objs
+      ts1   = IM.unionWith (<>) ts0 objTs
   ask >>= io . clearFrame
-  io $ renderIntersecting rs ts0 mempty
+  io $ renderIntersecting rs ts1 mempty
   ask >>= io . updateWindowSDL2
 
 tickSystem :: System ()

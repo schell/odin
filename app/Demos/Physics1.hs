@@ -1,23 +1,45 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Demos.Physics1 ( demo ) where
 
-import Control.Lens
+import Control.Lens hiding (to)
 import qualified Data.Set as S
+import Linear
 
+import Gelatin
 import Gelatin.Fruity
 import Odin.Core
 import Odin.GUI
-import Odin.Scripts.DrawPhysics
 import Odin.Scripts.Status
 
 makeDemoActors :: System [Entity]
 makeDemoActors = do
-  actors <- forM [(x,y) | y <- [0..5], x <- [0..5]] $ \(x,y) ->
+  let actorPic w h = do
+        setStroke [StrokeWidth 3, StrokeFeather 1]
+        setGeometry $ geometry $ do
+          let r1 = red `withAlpha` 0.1
+              r3 = red `withAlpha` 0.3
+              r5 = red `withAlpha` 0.5
+          add $ fan $ mapVertices (, r3) $ vertices $
+            rectangle (V2 (-w/2) (-h/2)) (V2 (w/2) (h/2))
+          add $ line $ vertices $ do
+            to (0, r1)
+            to (V2 (w/2) 0, r5)
+            to (V2 (w/2) (h/2), r5)
+            to (V2 (-w/2) (h/2), r5)
+            to (V2 (-w/2) (-h/2), r5)
+            to (V2 (w/2) (-h/2), r5)
+            to (V2 (w/2) 0, r5)
+  actors <- forM [(x,y) | y <- [0..5], x <- [0..5]] $ \(x,y) -> do
+    let tx = 100 + x*11
+        ty = 100 + y*11
     fresh ## name ("actor" ++ show x ++ show y)
+          ## pos 0
+          ## colorPic (actorPic 10 10)
           ## body Body{ bVel    = (5,5)
                       , bRotVel = 1
-                      , bPos    = (100 + x*11,100 + y*11)
+                      , bPos    = (tx, ty)
                       , bRot    = 0
                       , bMass   = (1,1)
                       , bMu     = 0
@@ -25,6 +47,8 @@ makeDemoActors = do
                       }
 
   biggy <- fresh ## name "biggy"
+                 ## pos 0
+                 ## colorPic (actorPic 10 30)
                  ## body Body{ bVel    = (0,0)
                              , bRotVel = 1
                              , bPos    = (180,180)
@@ -35,6 +59,8 @@ makeDemoActors = do
                              }
 
   rwall <- fresh ## name "rightwall"
+                 ## pos 0
+                 ## colorPic (actorPic 10 289)
                  ## body Body{ bVel    = (0,0)
                              , bRotVel = 0
                              , bPos    = (300, 150)
@@ -44,6 +70,8 @@ makeDemoActors = do
                              , bHull   = rectangleHull 10 289
                              }
   bwall <- fresh ## name "bottomwall"
+                 ## pos 0
+                 ## colorPic (actorPic 289 10)
                  ## body Body{ bVel    = (0,0)
                              , bRotVel = 0
                              , bPos    = (150, 300)
@@ -60,22 +88,18 @@ loop :: Font -> System ()
 loop font = do
   -- Create a status bar to tell us what's up
   status  <- freshStatusPrint ## name "status"
-  -- Create an entity that "debug" draws the physics system
-  painter <- freshPhysicsDrawingEntity ## name "phys painter"
   -- Create all of our demo actors
   actors  <- makeDemoActors
-  --options %= (S.insert SystemSkipPhysicsTick)
+  -- Keep a ref to the pristine physics scene
+  scene0  <- use scene
 
   -- Make a button to reset the demo
   bview   <- allocColorButtonView font "Reset" 16 buttonPainter (const $ return ())
   btn     <- freshButton 4 bview ## name "btn"
-  recv (btnMailbox bview) $ \case
-    -- When the button sends a 'clicked' message we reset the demo by destroying
-    -- the actors, the button and then making them again
-    ButtonStateClicked -> do
-      mapM_ destroyEntity $ status:painter:btn:actors
-      loop font
-    st -> io $ print st
+  recv (btnMailbox bview) $ \btnState ->
+    -- When the button sends a 'clicked' message we reset the demo by simply
+    -- putting the original scene back in place
+    when (btnState == ButtonStateClicked) (scene .= scene0)
 
 demo :: Font -> System ()
 demo = loop

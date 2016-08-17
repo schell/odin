@@ -18,6 +18,8 @@ module Odin.Core.Physics (
   canonicalizeVec,
   canonicalizePoint,
   canonicalizeConvexHull,
+  worldObjPos,
+  worldObjRot
 ) where
 
 import           Physics.Engine                 as PE
@@ -162,3 +164,9 @@ canonicalizeVec = toLV2
 
 canonicalizeConvexHull :: ConvexHull -> [V2 Double]
 canonicalizeConvexHull = (canonicalizePoint <$>) . A.elems . PE._hullLocalVertices
+
+worldObjPos :: WorldObj -> V2 Float
+worldObjPos = (realToFrac <$>) . canonicalizeVec . _physObjPos . _worldPhysObj
+
+worldObjRot :: WorldObj -> Float
+worldObjRot = realToFrac . _physObjRotPos . _worldPhysObj

@@ -71,7 +71,6 @@ library
 
                      , Odin.Scripts.Animation.Pic
                      , Odin.Scripts.ArrowControl
-                     , Odin.Scripts.DrawPhysics
                      , Odin.Scripts.Status
 
                      , Odin.Core
@@ -124,6 +123,7 @@ executable entity
   main-is:             EntityMain.hs
   build-depends:       base >=4.8 && <5.0
                      , odin
+                     , gelatin
                      , gelatin-sdl2
                      , gelatin-fruity
                      , varying

@@ -19,6 +19,6 @@ main = do
   t         <- newTime
   let sys = (emptySys rez win){ _sysTime = t }
   runSystem sys $ do
-    --Physics1.demo comicFont
-    MapCreator.demo comicFont
+    Physics1.demo comicFont
+    --MapCreator.demo comicFont
     forever tickSystem
