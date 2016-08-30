@@ -92,9 +92,15 @@ module Odin.Core.Common
   , send
   , recv
   -- * Painting / Graphics
-  , Painter
-  , ColorPainter
-  , TexturePainter
+  , Painting(..)
+  , Painter(..)
+  , runPainterT
+  , runPainterBounds
+  , runPainterSize
+  , runPainterOrigin
+  , runPainterCenter
+  , compilePainter
+  , compilePaintings
   -- * Time savers / Helpers
   , io
   ) where
@@ -192,3 +198,50 @@ send mbox msg = do
 
 recv :: MonadIO m => MailboxT m a -> (a -> m ()) -> m ()
 recv mbox f = void $ io $ atomically $ swapTVar mbox f
+--------------------------------------------------------------------------------
+-- Painting / Rendering
+--------------------------------------------------------------------------------
+compilePaintings :: MonadIO m => Rez -> GLRenderer -> Painting m -> m GLRenderer
+compilePaintings rz r0 (ColorPainting pic) = do
+  (_,dat) <- runPictureT pic
+  r1 <- liftIO $ compileColorPictureData rz dat
+  return $ r0 `mappend` r1
+compilePaintings rz r0 (TexturePainting pic) = do
+  (_,dat) <- runPictureT pic
+  r1 <- liftIO $ compileTexturePictureData rz dat
+  return $ r0 `mappend` r1
+
+runPainterT :: MonadIO m  => Rez -> Painter a m -> a -> m GLRenderer
+runPainterT rz f a = do
+  paintings <- (unPainter f) a
+  foldM (compilePaintings rz) mempty paintings
+
+compilePainter :: Painter a System -> a -> System GLRenderer
+compilePainter painter a = do
+  rz <- ask
+  runPainterT rz painter a
+
+runPainterBounds :: Painter a System -> a -> System (V2 Float, V2 Float)
+runPainterBounds f a = do
+  vss <- mapM measurePainting =<< (unPainter f) a
+  return $ pointsBounds $ concat vss
+  where measurePainting :: Painting System -> System [V2 Float]
+        measurePainting (ColorPainting pic) = do
+          (tl,br) <- runPictureBoundsT pic
+          return [tl,br]
+        measurePainting (TexturePainting pic) = do
+          (tl,br) <- runPictureBoundsT pic
+          return [tl,br]
+
+runPainterSize :: Painter a System -> a -> System (V2 Float)
+runPainterSize f a = do
+  (tl,br) <- runPainterBounds f a
+  return $ br - tl
+
+runPainterOrigin :: Painter a System -> a -> System (V2 Float)
+runPainterOrigin f a = runPainterBounds f a >>= return . fst
+
+runPainterCenter :: Painter a System -> a -> System (V2 Float)
+runPainterCenter f a = do
+  (tl,br) <- runPainterBounds f a
+  return $ tl + (br - tl)/2

@@ -4,7 +4,7 @@
 module Odin.GUI.Button.Internal where
 
 import Control.Monad.Evented
-import Gelatin.Fruity
+import Gelatin.FreeType2
 import Gelatin.SDL2
 import Control.Lens
 import SDL.Input.Mouse (MouseButton(..)
@@ -21,16 +21,15 @@ data ButtonState = ButtonStateUp
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
 data ButtonData = ButtonData
-  { btnDataFont      :: Font
+  { btnDataAtlas     :: Atlas
   , btnDataStr       :: String
-  , btnDataPointSize :: Float
+  , btnDataGlyphSize :: GlyphSize
   }
 
-data ButtonView t s r v = ButtonView
+data ButtonView = ButtonView
   { btnData    :: ButtonData
   , btnMailbox :: Mailbox ButtonState
-  , btnPainter :: Painter (ButtonData, ButtonState) t s r v
-  , btnCompiler:: Picture t s r v () -> System GLRenderer
+  , btnPainter :: Painter (ButtonData, ButtonState) System
   }
 
 data ButtonRndrs = ButtonRndrs { btnRndrsUp   :: RenderIO
@@ -43,23 +42,24 @@ data ButtonRndrs = ButtonRndrs { btnRndrsUp   :: RenderIO
 getMouseIsOutEntityWithSize :: Entity -> V2 Float -> System Bool
 getMouseIsOutEntityWithSize k sz = not <$> getMouseIsOverEntityWithSize k sz
 
-buttonLifeCycle :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
-                => ButtonView t (V2 Float) r v -> Entity -> Evented ()
+buttonLifeCycle :: ButtonView -> Entity -> Evented ()
 buttonLifeCycle ButtonView{..} k = do
   let ButtonData{..} = btnData
   -- Alloc all our renderers up front
   (sz,rs,d) <- lift $ do
-    let sz = pictureSize' $ btnPainter (btnData, ButtonStateUp)
-    up   <- btnCompiler $ btnPainter (btnData, ButtonStateUp)
-    ovr  <- btnCompiler $ btnPainter (btnData, ButtonStateOver)
-    down <- btnCompiler $ btnPainter (btnData, ButtonStateDown)
+    io $ putStrLn "about to size"
+    sz   <- runPainterSize btnPainter (btnData, ButtonStateUp)
+    liftIO $ print sz
+    up   <- compilePainter btnPainter (btnData, ButtonStateUp)
+    ovr  <- compilePainter btnPainter (btnData, ButtonStateOver)
+    down <- compilePainter btnPainter (btnData, ButtonStateDown)
     let d  = mapM_ fst [up,ovr,down]
         rs = ButtonRndrs (snd up) (snd ovr) (snd down)
     return (sz,rs,d)
   lift $ k .# dloc d #. rndr (btnRndrsUp rs)
 
   let upCycle = do
-        -- Wait until mouse is over the button
+        -- Wait until the mouse is over the button
         waitUntil $ getMouseIsOverEntityWithSize k sz
         -- Set the button renderer to 'over' and send the 'over' message through to
         -- the mailbox
@@ -102,38 +102,17 @@ buttonLifeCycle ButtonView{..} k = do
 -- Alloc'ing Views and Fresh Button Entities
 --------------------------------------------------------------------------------
 -- Allocs a new button view.
-allocButtonView :: Font -> String -> Float
-                 -> Painter (ButtonData, ButtonState) t s r v
-                 -> (Picture t s r v () -> System GLRenderer)
-                 -> (ButtonState -> System ())
-                 -> System (ButtonView t s r v)
-allocButtonView font str px painter compiler onRecv = do
+allocButtonView :: Atlas -> String -> GlyphSize
+                -> Painter (ButtonData, ButtonState) System
+                -> (ButtonState -> System ())
+                -> System ButtonView
+allocButtonView atlas str px painter onRecv = do
   mb <- mailbox
   recv mb onRecv
-  return $ ButtonView (ButtonData font str px) mb painter compiler
-
-type ColorButtonView   = ButtonView () (V2 Float) Float (V2 Float, V4 Float)
-type TextureButtonView = ButtonView GLuint (V2 Float) Float (V2 Float, V2 Float)
-
--- Allocs a new button view drawn with colors in two dimensions.
-allocColorButtonView :: Font -> String -> Float
-                      -> ColorPainter (ButtonData, ButtonState)
-                      -> (ButtonState -> System ())
-                      -> System ColorButtonView
-allocColorButtonView font str px painter onRecv =
-  allocButtonView font str px painter allocColorPicRenderer onRecv
-
--- Allocs a new button view drawn with textures in two dimensions.
-allocTextureButtonView :: Font -> String -> Float
-                      -> TexturePainter (ButtonData, ButtonState)
-                      -> (ButtonState -> System ())
-                      -> System TextureButtonView
-allocTextureButtonView font str px painter onRecv =
-  allocButtonView font str px painter allocTexturePicRenderer onRecv
+  return $ ButtonView (ButtonData atlas str px) mb painter
 
 -- | Creates a fresh button entity in two dimensions.
-freshButton :: (Unbox v, Monoid (PictureData t (V2 Float) r v))
-            => V2 Float -> ButtonView t (V2 Float) r v -> System Entity
+freshButton :: V2 Float -> ButtonView -> System Entity
 freshButton p bview = do
   k <- fresh
   k .# pos p

@@ -4,7 +4,7 @@ module Demos.MapCreator ( demo ) where
 
 import SDL
 import Gelatin.SDL2
-import Gelatin.Fruity
+import Gelatin.FreeType2
 import Odin.Core
 import Odin.GUI
 --import Odin.GUI.TextInput.Internal
@@ -25,7 +25,7 @@ setScaleToWindowSize k sz@(V2 tw th) tex mwin = do
                             , show (w,h)
                             ]
     let p = do setTextures [tex]
-               setGeometry $ geometry $ add $ fan $ vertices $ do
+               setGeometry $ fan $ do
                  to (0, 0)
                  to (V2 w 0, V2 (w/tw) 0)
                  to (V2 w h, V2 (w/tw) (h/th))
@@ -34,8 +34,10 @@ setScaleToWindowSize k sz@(V2 tw th) tex mwin = do
     return ()
   nextScript $ setScaleToWindowSize k sz tex $ Just $ V2 w h
 
-demo :: Font -> System ()
+demo :: FilePath -> System ()
 demo font = do
+  let gsize = PixelSize 16 16
+  Just atlas <- allocAtlas font gsize asciiChars
   let path = "assets" </> "images" </> "checker-bg.png"
   checkerBgPath <- io $ getDataFileName path
   (sz,tex) <- io $ loadImage checkerBgPath >>= \case
@@ -50,11 +52,9 @@ demo font = do
   let str = "Please drag and drop an image to use as a tileset"
   fresh ## name "instructions"
         ## pos (V2 0 16)
-        #. colorPic (coloredString font 72 16 str $ const black)
+        #. texPic (freetypePicture atlas black str)
 
-  bview <- allocColorButtonView font "Test Button" 16 buttonPainter (io . print)
+  bview <- allocButtonView atlas "Test Button" gsize buttonPainter (io . print)
   void $ freshButton 100 bview
-
-
 
   return ()

@@ -3,6 +3,7 @@ module Control.Monad.Evented where
 
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class
+import Data.Maybe
 
 --newtype EventT m a b c = EventT { unEventT :: a -> m (b, Maybe c) }
 --
@@ -60,18 +61,41 @@ instance MonadTrans (EventT a b) where
 
 instance MonadIO m => MonadIO (EventT a b m) where
   liftIO = lift . liftIO
+--------------------------------------------------------------------------------
+-- Combinators
+--------------------------------------------------------------------------------
+done :: Monad m => c -> EventT a b m c
+done = return
+
+next :: Monad m => EventT a b m c -> EventT a b m c
+next = EventT . const . return . Left
+
+-- | Waits a number of frames.
+wait :: Monad m => Int -> EventT a b m ()
+wait 0 = done ()
+wait n = next $ wait $ n - 1
 
 waitUntil :: Monad m => m Bool -> EventT a b m ()
-waitUntil f = EventT $ const $ do
-  done <- f
-  return $ if done then Right () else (Left $ waitUntil f)
+waitUntil f = do
+  isdone <- lift f
+  if isdone then return () else (next $ waitUntil f)
 
 waitUntilEither :: Monad m => m Bool -> m Bool -> EventT a b m (Either () ())
-waitUntilEither fl fr = EventT $ const $ do
-  isL <- fl
-  isR <- fr
-  let ev = if isL then Right $ Left ()
-             else if isR then Right $ Right ()
-                    else Left $ waitUntilEither fl fr
-  return ev
+waitUntilEither fl fr = do
+  isL <- lift fl
+  isR <- lift fr
+  if isL then done (Left ())
+         else if isR then done (Right ())
+                     else next $ waitUntilEither fl fr
 
+waitUntilJust :: Monad m => m (Maybe c) -> EventT a b m c
+waitUntilJust f = lift f >>= \case
+  Just c  -> done c
+  Nothing -> next $ waitUntilJust f
+
+waitUntilAny :: Monad m => [m (Maybe c)] -> EventT a b m c
+waitUntilAny fs = do
+  mcs <- lift $ sequence fs
+  case catMaybes mcs of
+    c:_ -> done c
+    []  -> next $ waitUntilAny fs

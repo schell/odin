@@ -63,6 +63,6 @@ data Sys = Sys { _sysNames    :: IntMap Name
 --------------------------------------------------------------------------------
 -- Types for Look/Feel
 --------------------------------------------------------------------------------
-type Painter a t s r v = a -> Picture t s r v ()
-type ColorPainter a    = a -> ColorPicture ()
-type TexturePainter a  = a -> TexturePicture ()
+data Painting m = ColorPainting (ColorPictureT m ())
+                | TexturePainting (TexturePictureT m ())
+newtype Painter a m = Painter { unPainter :: a -> m [Painting m] }

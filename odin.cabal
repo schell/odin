@@ -65,7 +65,7 @@ library
                      , Odin.Core.Types
 
                      , Odin.GUI.Button.Internal
-                     --, Odin.GUI.TextInput.Internal
+                     , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Styles
 
@@ -89,7 +89,6 @@ library
   build-depends:       base >=4.8 && <5.0
                      , transformers >= 0.4
                      , mtl >= 2.2
-                     , freer -any
                      , array >= 0.5
                      , stm >= 2.4
                      , async >= 2.0
@@ -99,7 +98,7 @@ library
                      , varying >= 0.5
                      , gelatin-sdl2
                      , gelatin-gl
-                     , gelatin-fruity
+                     , gelatin-freetype2
                      , gelatin
                      , sdl2 >= 2.1
                      , directory >= 1.2
@@ -118,14 +117,14 @@ library
 
 executable entity
   --buildable: False
-  ghc-options:         -threaded -Wall -fprof-auto -rtsopts -with-rtsopts=-N8
+  ghc-options:         -threaded -Wall -fprof-auto -rtsopts
   hs-source-dirs:      app
   main-is:             EntityMain.hs
   build-depends:       base >=4.8 && <5.0
                      , odin
                      , gelatin
                      , gelatin-sdl2
-                     , gelatin-fruity
+                     , gelatin-freetype2
                      , varying
                      , htiled >= 0.1.3
                      , pretty-show >= 1.6

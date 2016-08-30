@@ -9,11 +9,14 @@ import           Demos.Utils
 import qualified Demos.Physics1 as Physics1
 import qualified Demos.MapCreator as MapCreator
 
+import System.Remote.Monitoring
+
 --import Odin.Scripts.TextInput
 
 main :: IO ()
 main = do
-  Right comicFont <- getFont "KMKDSP__.ttf"
+  --forkServer "localhost" 8000
+  comicFont <- getFontPath "KMKDSP__.ttf"
   --hackFont  <- getFont "Hack-Regular.ttf"
   (rez,win) <- reacquire 0 $ startupSDL2Backend 800 600 "Entity Sandbox" True
   t         <- newTime

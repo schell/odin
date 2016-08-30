@@ -1,18 +1,19 @@
 flags: {}
 packages:
 - '.'
-- location:
-    git: https://github.com/schell/gelatin.git
-    commit: c589cf340ec6b41b41f1492496c8917e4db5e2ad
-  subdirs:
-  - gelatin
-  - gelatin-gl
-  - gelatin-fruity
-  - gelatin-sdl2
-#- '../gelatin/gelatin'
-#- '../gelatin/gelatin-gl'
-#- '../gelatin/gelatin-fruity'
-#- '../gelatin/gelatin-sdl2'
+#- location:
+#    git: https://github.com/schell/gelatin.git
+#    commit: b4474e7836f2919a8615c62f2566919f209e866d
+#  subdirs:
+#  - gelatin
+#  - gelatin-gl
+#  - gelatin-fruity
+#  - gelatin-freetype2
+#  - gelatin-sdl2
+- '../gelatin/gelatin'
+- '../gelatin/gelatin-gl'
+- '../gelatin/gelatin-freetype2'
+- '../gelatin/gelatin-sdl2'
 - location:
     git: https://github.com/schell/renderable.git
     commit: fda35ce6d0f02f3e29bf8168305f8ac5421f40fd
@@ -36,7 +37,7 @@ packages:
 extra-deps:
 - FontyFruity-0.5.3.2
 - halive-0.1.0.7
-- freer-0.2.3.0
+- freetype2-0.1.1
 
 resolver: lts-6.7
 #resolver: nightly-2016-07-14

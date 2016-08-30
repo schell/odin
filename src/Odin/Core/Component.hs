@@ -48,15 +48,17 @@ newTime = do
 ----------------------------------------------------------------------------------
 -- Rendering Pictures
 ----------------------------------------------------------------------------------
-allocColorPicRenderer :: (Reads Rez m, DoesIO m) => ColorPicture a -> m GLRenderer
+allocColorPicRenderer :: (Reads Rez m, DoesIO m) => ColorPictureT m a -> m GLRenderer
 allocColorPicRenderer pic = do
   rz <- ask
-  io $ compileColorPicture rz pic
+  (_,dat) <- runPictureT pic
+  io $ compileColorPictureData rz dat
 
-allocTexturePicRenderer ::(Reads Rez m, DoesIO m) => TexturePicture a -> m GLRenderer
+allocTexturePicRenderer ::(Reads Rez m, DoesIO m) => TexturePictureT m a -> m GLRenderer
 allocTexturePicRenderer pic = do
   rz <- ask
-  io $ compileTexturePicture rz pic
+  (_,dat) <- runPictureT pic
+  io $ compileTexturePictureData rz dat
 ----------------------------------------------------------------------------------
 ---- Deallocating (Renderings, whatevs)
 ----------------------------------------------------------------------------------
@@ -111,24 +113,34 @@ dloc :: Deallocs s m => SerialSetter m DeallocIO
 dloc = mkSetter setDealloc
   where setDealloc k d = deallocs %= IM.insert k d
 
-colorPic :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (ColorPicture ())
+paintings :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (m [Painting m])
+paintings = mkSetter mkPaintings
+  where mkPaintings k f = do
+          rz <- ask
+          (c,r) <- foldM (compilePaintings rz) mempty =<< f
+          k .# rndr r
+            ## dloc c
+
+colorPic :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (ColorPictureT m ())
 colorPic = mkSetter setPic
   where setPic k p = do
           (c,r) <- allocColorPicRenderer p
           k .# rndr r
             ## dloc c
 
-texPic :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (TexturePicture ())
+texPic :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (TexturePictureT m ())
 texPic = mkSetter setPic
   where setPic k p = do
           (c,r) <- allocTexturePicRenderer p
           k .# rndr r
             ## dloc c
 
+
+
 pos :: Tfrms s m => SerialSetter m (V2 Float)
 pos = mkSetter setPos
   where setPos k v = do
-          let t = PictureTransform (mat4Translate $ promoteV2 v) 1 1
+          let t = PictureTransform (mat4Translate $ promoteV2 v) 1 1 Nothing
           use (tfrms.at k) >>= \case
             Nothing -> tfrms.at k .= Just t
             Just t0 -> tfrms.at k .= (Just $ t <> t0)

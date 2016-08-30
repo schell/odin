@@ -22,7 +22,6 @@ import           SDL hiding (Event, get, time)
 import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import           Data.Monoid ((<>))
-import           Data.Foldable (foldl')
 import           Control.Lens
 import           System.Exit (exitSuccess)
 
@@ -138,12 +137,12 @@ tickEmbedded :: (DoesIO m
                 ,Deallocs s m
                 ) => Entity -> Sys -> m Script
 tickEmbedded k step = do
-  next@Sys{..} <- io $ execStateT tickAllExceptRender step
+  nxt@Sys{..} <- io $ execStateT tickAllExceptRender step
   -- Set its render to run all of the step's renderings
   rndrs.at k .= (Just $ renderIntersecting _sysRndrs _sysTfrms)
   -- Set its dealloc to run all of the step's deallocations
   deallocs.at k .= (Just $ sequence_ _sysDeallocs)
-  return $ Script $ tickEmbedded k next
+  return $ Script $ tickEmbedded k nxt
 
 -- | Alloc a fresh entity component system.
 -- Nests an encapsulated System within the current System.

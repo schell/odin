@@ -102,7 +102,7 @@ emptyScene = Scene world externals contactBehavior
         contactBehavior = ContactBehavior 0.01 0.02
 
 physicalObj2PicTfrm :: PhysicalObj -> PictureTransform
-physicalObj2PicTfrm PhysicalObj{..} = PictureTransform mv 1 1
+physicalObj2PicTfrm PhysicalObj{..} = PictureTransform mv 1 1 Nothing
   where vd = toLV2 _physObjPos
         v  = mat4Translate $ promoteV2 (realToFrac <$> vd)
         r = mat4Rotate (realToFrac _physObjRotPos) (V3 0 0 1)
