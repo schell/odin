@@ -36,7 +36,7 @@ bgOffsetForButtonState ButtonStateOver = V2 0 0
 bgOffsetForButtonState ButtonStateDown = V2 2 2
 bgOffsetForButtonState _ = bgOffsetForButtonState ButtonStateUp
 
-buttonPainter :: Painter (ButtonData, ButtonState) System
+buttonPainter :: MonadIO m => Painter (ButtonData, ButtonState) m
 buttonPainter = Painter $ \(ButtonData{..}, st) -> do
   let text = freetypePicture btnDataAtlas (textColorForButtonState st) btnDataStr
   tsz <- runPictureSizeT text
@@ -45,8 +45,7 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       sz = tsz + 2*pad
       shxy = V2 4 4
       bgxy = bgOffsetForButtonState st
-      gh = glyphHeight btnDataGlyphSize
-
+      gh = glyphHeight $ atlasGlyphSize btnDataAtlas
   return
     -- drop shadow and background
     [ColorPainting $ do

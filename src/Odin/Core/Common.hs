@@ -17,6 +17,7 @@ module Odin.Core.Common
   , Unbox
   -- * Entities
   , Entity
+  , Uid(..)
   -- * Components
   , Name
   , RenderIO
@@ -84,6 +85,8 @@ module Odin.Core.Common
   , Options
   , Commands
   , DoesIO
+  , Rezed
+  , Windowed
   , Reads(..)
   -- * Sending / Receiving Messages
   , MailboxT
@@ -91,6 +94,13 @@ module Odin.Core.Common
   , mailbox
   , send
   , recv
+  -- * Storing / Retreiving Values
+  , Slot
+  , allocSlot
+  , checkSlot
+  , fromSlot
+  , swapSlot
+  , modifySlot
   -- * Painting / Graphics
   , Painting(..)
   , Painter(..)
@@ -100,9 +110,16 @@ module Odin.Core.Common
   , runPainterOrigin
   , runPainterCenter
   , compilePainter
+  , compilePainterZ
   , compilePaintings
+  , RenderTransform(..)
+  , renderToPictureTransform
+  , rendersToPictureTransform
   -- * Time savers / Helpers
   , io
+  -- * Experiments
+  , Frame(..)
+  , Update
   ) where
 
 import           Gelatin.SDL2 hiding (E)
@@ -117,6 +134,34 @@ import           Control.Monad.Evented as E
 
 import           Odin.Core.Physics as OP
 import           Odin.Core.Types
+--------------------------------------------------------------------------------
+-- Experiments
+--------------------------------------------------------------------------------
+data Frame = Frame { _frameTime   :: SystemTime
+                   , _frameEvents :: [EventPayload]
+                   , _frameNextK  :: Int
+                   , _frameWindow :: Window
+                   , _frameRez    :: Rez
+                   }
+makeLenses ''Frame
+makeFields ''Frame
+
+data RenderTransform = Spatial (Affine (V2 Float) Float)
+                     | Alpha Float
+                     | Multiply (V4 Float)
+                     | ColorReplacement (V4 Float)
+
+renderToPictureTransform :: RenderTransform -> PictureTransform
+renderToPictureTransform (Spatial affine) =
+  PictureTransform (affineToModelview affine) 1 1 Nothing
+renderToPictureTransform (Alpha a) = PictureTransform identity a 1 Nothing
+renderToPictureTransform (Multiply c) = PictureTransform identity 1 c Nothing
+renderToPictureTransform (ColorReplacement c) = PictureTransform identity 1 1 (Just c)
+
+rendersToPictureTransform :: [RenderTransform] -> PictureTransform
+rendersToPictureTransform = mconcat . map renderToPictureTransform
+
+type Update = EventT (StateT Frame IO)
 --------------------------------------------------------------------------------
 -- Odin Component/System Constraints and Abilities
 --------------------------------------------------------------------------------
@@ -135,6 +180,8 @@ type Time s m       = (MonadState s m, HasTime     s SystemTime)
 type Physics s m    = (MonadState s m, HasScene    s OdinScene)
 type Options s m    = (MonadState s m, HasOptions  s SystemOptions)
 type Commands s m   = (MonadState s m, HasCommands s SystemCommands)
+type Windowed s m   = (MonadState s m, HasWindow   s Window)
+type Rezed s m      = (MonadState s m, HasRez      s Rez)
 type DoesIO = MonadIO
 
 class Monad m => Reads a m where
@@ -176,10 +223,10 @@ nextScript = return . Script
 --------------------------------------------------------------------------------
 -- Sequenced Events
 --------------------------------------------------------------------------------
-type Evented a = EventT () () System a
+type Evented a = EventT System a
 
 runEventedScript :: Evented a -> System Script
-runEventedScript ev = runEventT ev () >>= \case
+runEventedScript ev = runEventT ev >>= \case
   Left nv -> return $ Script $ runEventedScript nv
   Right _ -> endScript
 --------------------------------------------------------------------------------
@@ -199,6 +246,25 @@ send mbox msg = do
 recv :: MonadIO m => MailboxT m a -> (a -> m ()) -> m ()
 recv mbox f = void $ io $ atomically $ swapTVar mbox f
 --------------------------------------------------------------------------------
+-- Storing / Retreiving messages
+--------------------------------------------------------------------------------
+newtype Slot a = Slot { unSlot :: TVar a }
+
+allocSlot :: MonadIO m => a -> m (Slot a)
+allocSlot = (Slot <$>) . io . newTVarIO
+
+checkSlot :: MonadIO m => Slot a -> m a
+checkSlot = io . readTVarIO . unSlot
+
+fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
+fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s
+
+swapSlot :: MonadIO m => Slot a -> a -> m ()
+swapSlot s a = void $ io $ atomically $ swapTVar (unSlot s) a
+
+modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
+modifySlot s = io . atomically . modifyTVar' (unSlot s)
+--------------------------------------------------------------------------------
 -- Painting / Rendering
 --------------------------------------------------------------------------------
 compilePaintings :: MonadIO m => Rez -> GLRenderer -> Painting m -> m GLRenderer
@@ -216,16 +282,20 @@ runPainterT rz f a = do
   paintings <- (unPainter f) a
   foldM (compilePaintings rz) mempty paintings
 
-compilePainter :: Painter a System -> a -> System GLRenderer
+compilePainter :: (Rezed s m, DoesIO m) => Painter a m -> a -> m GLRenderer
 compilePainter painter a = do
-  rz <- ask
+  rz <- use rez
   runPainterT rz painter a
 
-runPainterBounds :: Painter a System -> a -> System (V2 Float, V2 Float)
+compilePainterZ :: MonadIO m => Rez -> Painter a m -> a -> m GLRenderer
+compilePainterZ rz painter a = runPainterT rz painter a
+
+
+runPainterBounds :: MonadIO m => Painter a m -> a -> m (V2 Float, V2 Float)
 runPainterBounds f a = do
   vss <- mapM measurePainting =<< (unPainter f) a
   return $ pointsBounds $ concat vss
-  where measurePainting :: Painting System -> System [V2 Float]
+  where measurePainting :: MonadIO m => Painting m -> m [V2 Float]
         measurePainting (ColorPainting pic) = do
           (tl,br) <- runPictureBoundsT pic
           return [tl,br]
@@ -233,15 +303,15 @@ runPainterBounds f a = do
           (tl,br) <- runPictureBoundsT pic
           return [tl,br]
 
-runPainterSize :: Painter a System -> a -> System (V2 Float)
+runPainterSize :: MonadIO m => Painter a m -> a -> m (V2 Float)
 runPainterSize f a = do
   (tl,br) <- runPainterBounds f a
   return $ br - tl
 
-runPainterOrigin :: Painter a System -> a -> System (V2 Float)
+runPainterOrigin :: MonadIO m => Painter a m -> a -> m (V2 Float)
 runPainterOrigin f a = runPainterBounds f a >>= return . fst
 
-runPainterCenter :: Painter a System -> a -> System (V2 Float)
+runPainterCenter :: MonadIO m => Painter a m -> a -> m (V2 Float)
 runPainterCenter f a = do
   (tl,br) <- runPainterBounds f a
   return $ tl + (br - tl)/2

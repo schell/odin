@@ -65,6 +65,7 @@ library
                      , Odin.Core.Types
 
                      , Odin.GUI.Button.Internal
+                     , Odin.GUI.Button.InternalImmediate
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Styles
@@ -119,7 +120,8 @@ executable entity
   --buildable: False
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts
   hs-source-dirs:      app
-  main-is:             EntityMain.hs
+  --main-is:             EntityMain.hs
+  main-is:             ImmediateMode.hs
   build-depends:       base >=4.8 && <5.0
                      , odin
                      , gelatin
