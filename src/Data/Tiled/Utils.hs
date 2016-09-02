@@ -87,7 +87,7 @@ allocTileRenderer rez tile Tileset{..} tex = do
       V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
   compileTexturePicture rez $ do
     setTextures [tex]
-    setGeometry $ geometry $ add $ triangles $ vertices $ do
+    setGeometry $ triangles $ do
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
 
@@ -119,6 +119,6 @@ allocLayerRenderer tmap rmap name = case layerWithName tmap name of
                  w  = tsTileWidth ts
                  h  = tsTileHeight ts
                  v  = fromIntegral <$> V2 (w * x)  (h * y)
-                 t  = tfrm <> PictureTransform (mat4Translate $ promoteV2 v) 1 1
+                 t  = tfrm <> PictureTransform (mat4Translate $ promoteV2 v) 1 1 Nothing
              snd f t
     return $ Just (return (), renderLayer)

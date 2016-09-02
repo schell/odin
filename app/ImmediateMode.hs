@@ -15,16 +15,7 @@ import           Odin.GUI
 --------------------------------------------------------------------------------
 -- Immediate mode GUI experiments
 --------------------------------------------------------------------------------
-runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
-runFrame f = do
-  use rez >>= io . clearFrame
-  tickTime
-  tickEvents
-  e <- runEventT f
-  use window >>= io . updateWindowSDL2
-  case e of
-    Left g   -> runFrame g
-    Right a  -> return a
+
 
 getTextTask :: MonadIO m => Atlas -> UpdateT m (Maybe String)
 getTextTask atlas = do
@@ -52,6 +43,17 @@ setupFrame font =
         Nothing  -> io $ putStrLn "Cancelled"
         Just str -> io $ putStrLn $ "Got text: " ++ show str
       next task
+
+runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
+runFrame f = do
+  use rez >>= io . clearFrame
+  tickTime
+  tickEvents
+  e <- runEventT f
+  use window >>= io . updateWindowSDL2
+  case e of
+    Left g   -> runFrame g
+    Right a  -> return a
 
 main :: IO ()
 main = do

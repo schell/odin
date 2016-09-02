@@ -68,6 +68,8 @@ library
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Styles
+                     , Odin.GUI.TextInput
+                     , Odin.GUI.Transformations
 
                      , Odin.Scripts.Animation.Pic
                      , Odin.Scripts.ArrowControl

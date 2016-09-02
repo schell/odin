@@ -67,7 +67,7 @@ arrowControlMove :: (Events s m
 arrowControlMove actor dir = do
   -- Update the transform of the actom
   dt <- readTimeDeltaSeconds
-  let t = PictureTransform (mat4Translate $ promoteV2 $ dt * 100 *^ directionToV2 dir) 1 1
+  let t = PictureTransform (mat4Translate $ promoteV2 $ dt * 100 *^ directionToV2 dir) 1 1 Nothing
   tfrms.at actor %= Just . (maybe t (t <>))
   -- Find if the arrow key was released
   let isArrowReleased (KeyboardEvent (KeyboardEventData _ Released False Keysym{..})) =
