@@ -7,8 +7,6 @@ import           Data.IntMap.Strict (IntMap)
 import           Data.Set (Set)
 import           Data.Word (Word32)
 import           Control.Monad.State.Strict
-import           Control.Monad.Reader
-import           Control.Monad.Evented
 
 import Odin.Core.Physics as OP
 

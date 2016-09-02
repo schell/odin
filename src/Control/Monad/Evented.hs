@@ -7,13 +7,6 @@ import Data.Maybe
 
 newtype EventT m b = EventT { runEventT :: m (Either (EventT m b) b) }
 --------------------------------------------------------------------------------
--- Runners
---------------------------------------------------------------------------------
-runUntilDone :: Monad m => EventT m b -> m b
-runUntilDone f = runEventT f >>= \case
-  Left g  -> runUntilDone g
-  Right b -> return b
---------------------------------------------------------------------------------
 -- Constructors
 --------------------------------------------------------------------------------
 done :: Monad m => a -> EventT m a
@@ -29,6 +22,29 @@ wait :: Monad m => Int -> EventT m ()
 wait 0 = done ()
 wait n = next $ wait $ n - 1
 
+-- | Runs both evented computations (left and then right) each frame and returns
+-- the first computation that completes.
+withEither :: Monad m => EventT m a -> EventT m b -> EventT m (Either a b)
+withEither ea eb = do
+  lift ((,) <$> runEventT ea <*> runEventT eb) >>= \case
+    (Right a,_) -> done $ Left a
+    (_,Right b) -> done $ Right b
+    (Left a, Left b) -> next $ withEither a b
+
+-- | Runs all evented computations (left to right) on each frame and returns
+-- the first computation that completes.
+withAny :: Monad m => [EventT m a] -> EventT m a
+withAny ts0 = do
+  es <- lift $ mapM runEventT ts0
+  case foldl f (Left []) es of
+    Left ts -> next $ withAny ts
+    Right a -> done a
+  where f (Right a) _         = Right a
+        f (Left ts) (Left t)  = Left $ ts ++ [t]
+        f _         (Right a) = Right a
+--------------------------------------------------------------------------------
+-- Combinators that use predicates in the inner Monad
+--------------------------------------------------------------------------------
 waitUntil :: Monad m => m Bool -> EventT m ()
 waitUntil f = do
   isdone <- lift f

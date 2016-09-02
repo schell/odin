@@ -1,7 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 module Odin.GUI.TextInput.Internal where
@@ -9,36 +8,70 @@ module Odin.GUI.TextInput.Internal where
 import           Gelatin.SDL2
 import           Gelatin.FreeType2
 import           Odin.Core
+import           Odin.GUI.Button.Internal
 import           SDL
 import qualified SDL.Raw.Types as Raw
+import           Data.List (intercalate)
+import           Data.Monoid
+import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Map (Map)
+import qualified Data.Map as M
+import qualified Data.IntMap as IM
 import           Control.Lens hiding (to)
-
+--------------------------------------------------------------------------------
+-- Types
+--------------------------------------------------------------------------------
 data TextInputState = TextInputStateUp
                     | TextInputStateOver
                     | TextInputStateDown
                     | TextInputStateEditing
-                    | TextInputStateEdited String
+                    | TextInputStateEdited
                     deriving (Show, Eq)
 
-data TextInputData = TextInputData { txtnDataAtlas     :: Atlas
-                                   , txtnDataText      :: Text
-                                   , txtnDataGlyphSize :: GlyphSize
-                                   --, txtnInterval  :: Float
-                                   }
-
-data TextInputView = TextInputView
-  { txtnData    :: TextInputData
-  , txtnMailbox :: Mailbox TextInputState
-  , txtnPainter :: Painter (TextInputData, TextInputState) System
+data TextInputForegroundData = TextInputForegroundData
+  { txtnDataAtlas     :: Atlas
+  , txtnDataString    :: String
   }
 
-data TextInputRndrs = TextInputRndrs { txtRndrsUp   :: RenderIO
-                                     , txtRndrsOver :: RenderIO
-                                     , txtRndrsDown :: RenderIO
+data TextInputBackgroundData = TextInputBackgroundData
+  { txtnDataSize :: V2 Float }
+
+type TextInputStateRndr = (GLRenderer, WordMap)
+
+renderTISR :: TextInputStateRndr -> PictureTransform -> IO ()
+renderTISR isr t = snd (fst isr) t
+
+deallocTISR :: TextInputStateRndr -> IO ()
+deallocTISR isr = do
+  fst $ fst isr
+  void $ unloadMissingWords (snd isr) ""
+
+-- | Dealloc the TISR but do not dealloc its word map.
+deallocTISRBG :: TextInputStateRndr -> IO ()
+deallocTISRBG = fst . fst
+
+data TextInputRndrs = TextInputRndrs { txtnRndrsUp       :: TextInputStateRndr
+                                     , txtnRndrsOver     :: TextInputStateRndr
+                                     , txtnRndrsDown     :: TextInputStateRndr
+                                     , txtnRndrsEdit     :: TextInputStateRndr
                                      }
 
+type WordMap = Map String (V2 Float, GLRenderer)
+
+data TextInput m = TextInput { txtnUid       :: Int
+                             , txtnSize      :: V2 Float
+                             , txtnRndrs     :: TextInputRndrs
+                             , txtnState     :: TextInputState
+                             , txtnString    :: String
+                             , txtnFGPainter :: Painter (TextInputForegroundData, TextInputState) m
+                             , txtnBGPainter :: Painter (TextInputBackgroundData, TextInputState) m
+                             , txtnAtlas     :: Atlas
+                             }
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
 symIsDel :: Keysym -> Bool
 symIsDel sym = key == KeycodeBackspace || key == KeycodeDelete
   where key = keysymKeycode sym
@@ -50,8 +83,8 @@ symIsReturn :: Keysym -> Bool
 symIsReturn sym = key == KeycodeReturn || key == KeycodeReturn2
     where key = keysymKeycode sym
 
-deleteText :: Text -> Text
-deleteText t = if T.null t then T.empty else T.init t
+deleteString :: String -> String
+deleteString t = if null t then [] else init t
 
 getKeyboardEvent :: Events s m => m (Maybe KeyboardEventData)
 getKeyboardEvent = do
@@ -81,210 +114,273 @@ getEscOrEnter = do
   ment <- getEnterEvent
   return $ msum [mesc,ment]
 
-getMyTextEvent :: Events s m => Text -> m (Maybe Text)
-getMyTextEvent text = do
+getMyTextEvent :: Events s m => String -> m (Maybe String)
+getMyTextEvent str = do
   evs <- use events
   let f Nothing (TextInputEvent (TextInputEventData _ t)) = Just t
       f acc _ = acc
       txtIn = foldl f Nothing evs
   return $ case txtIn of
-    Just t -> Just $ text `T.append` t
+    Just t -> Just $ str ++ T.unpack t
     Nothing ->
       let g :: Maybe Keysym -> EventPayload -> Maybe Keysym
           g Nothing (KeyboardEvent (KeyboardEventData _ Pressed _ sym)) = Just sym
           g acc _ = acc
-          d :: Keysym -> Text
+          d :: Keysym -> String
           d sym = if symIsDel sym
-                    then deleteText text
-                    else text
+                    then deleteString str
+                    else str
       in d <$> foldl g Nothing evs
-
-allocTextRndrs :: TextInputView -> System (IO(), TextInputRndrs)
-allocTextRndrs TextInputView{..} = do
-  up   <- compilePainter txtnPainter (txtnData, TextInputStateUp)
-  ovr  <- compilePainter txtnPainter (txtnData, TextInputStateOver)
-  down <- compilePainter txtnPainter (txtnData, TextInputStateDown)
-  let c = mapM_ fst [up,ovr,down]
-      rs = TextInputRndrs (snd up) (snd ovr) (snd down)
-  return (c, rs)
-
-prepareTextInput :: TextInputView -> Entity -> System (V2 Float, TextInputRndrs)
-prepareTextInput txt@TextInputView{..} k = do
-  sz     <- runPainterSize txtnPainter (txtnData, TextInputStateUp)
-  (c,rs) <- allocTextRndrs txt
-  k .# rndr (txtRndrsUp rs)
-    #. dloc c
-  return (sz, rs)
-
-textInputDown :: TextInputView -> V2 Float -> TextInputRndrs -> Entity
-              -> System Script
-textInputDown tview@TextInputView{..} sz rs k = do
-  isDown <- ($ ButtonLeft) <$> io getMouseButtons
-  if not isDown
-    then do isStillOver <- getMouseIsOverEntityWithSize k sz
-            if isStillOver
-              then do dealloc k
-                      sz1   <- runPainterSize txtnPainter
-                                              (txtnData, TextInputStateEditing)
-                      (c,r) <- compilePainter txtnPainter
-                                               (txtnData, TextInputStateEditing)
-                      k .# dloc c
-                        #. rndr r
-                      io $ startTextInput $ Raw.Rect 0 0 100 100
-                      send txtnMailbox TextInputStateEditing
-                      textInputEditing tview sz1 k
-              else do rndrs.at k .= Just (txtRndrsUp rs)
-                      send txtnMailbox TextInputStateUp
-                      nextScript $ textInputUp tview sz rs k
-    else nextScript $ textInputDown tview sz rs k
-
-textInputOver :: TextInputView -> V2 Float -> TextInputRndrs -> Entity -> System Script
-textInputOver tview@TextInputView{..} sz rs k = do
-  isDown <- ($ ButtonLeft) <$> io getMouseButtons
-  isOver <- getMouseIsOverEntityWithSize k sz
-  if isOver
-    then if isDown then do rndrs.at k .= Just (txtRndrsDown rs)
-                           send txtnMailbox TextInputStateDown
-                           textInputDown tview sz rs k
-                   else nextScript $ textInputOver tview sz rs k
-    else do rndrs.at k .= Just (txtRndrsUp rs)
-            send txtnMailbox TextInputStateUp
-            textInputUp tview sz rs k
-
-textInputUp :: TextInputView -> V2 Float -> TextInputRndrs -> Entity -> System Script
-textInputUp tview@TextInputView{..} sz rs k = do
-  isOver <- getMouseIsOverEntityWithSize k sz
-  if isOver then do rndrs.at k .= Just (txtRndrsOver rs)
-                    send txtnMailbox TextInputStateOver
-                    textInputOver tview sz rs k
-            else nextScript $ textInputUp tview sz rs k
-
-textInputEditing :: TextInputView -> V2 Float -> Entity -> System Script
-textInputEditing tview@TextInputView{..} sz k = do
-  let TextInputData{..} = txtnData
-      endEditing = do dealloc k
-                      (sz1,rs) <- prepareTextInput tview k
-                      send txtnMailbox $ TextInputStateEdited $ T.unpack txtnDataText
-                      send txtnMailbox TextInputStateUp
-                      nextScript $ textInputUp tview sz1 rs k
-
-  getEscOrEnter >>= \case
-    Just _ -> endEditing
-    Nothing -> getMyTextEvent txtnDataText >>= \case
-      Nothing -> do
-        isDown <- ($ ButtonLeft) <$> io getMouseButtons
-        isOver <- getMouseIsOverEntityWithSize k sz
-        if isDown && not isOver
-          then endEditing
-          else nextScript $ textInputEditing tview sz k
-      Just text -> do
-        let dat = txtnData{txtnDataText = text}
-        sz1   <- runPainterSize txtnPainter (dat, TextInputStateEditing)
-        (c,r) <- compilePainter txtnPainter (dat, TextInputStateEditing)
-        dealloc k
-        k .# dloc c
-          #. rndr r
-        nextScript $ textInputEditing tview{txtnData=dat} sz1 k
-
-editingCycle :: TextInputView -> V2 Float -> Entity -> Evented ()
-editingCycle tview@TextInputView{..} sz k = do
-  let TextInputData{..} = txtnData
-  e <- waitUntilAny [ (EditingEnd <$) <$> getEscOrEnter
-                    , (Editing <$>) <$> getMyTextEvent txtnDataText
-                    , do isDown <- ($ ButtonLeft) <$> io getMouseButtons
-                         isOver <- getMouseIsOverEntityWithSize k sz
-                         return $ if isDown && not isOver
-                           then Just EditingEnd
-                           else Nothing
-                    ]
-  io $ putStrLn $ "Text event:" ++ show e
-  lift $ dealloc k
-  case e of
-    EditingEnd -> do
-      lift $ do
-        send txtnMailbox $ TextInputStateEdited $ T.unpack txtnDataText
-        send txtnMailbox TextInputStateUp
-      textInputLifeCycle tview{txtnData=txtnData} k
-    Editing newText -> do
-      let newDat = txtnData{txtnDataText = newText}
-      sz2 <- lift $ do
-        sz2   <- runPainterSize txtnPainter (newDat, TextInputStateEditing)
-        (c,r) <- compilePainter txtnPainter (newDat, TextInputStateEditing)
-        k .# dloc c
-          #. rndr r
-        return sz2
-      next $ editingCycle tview{txtnData = newDat} sz2 k
-
-downCycle :: TextInputView -> TextInputRndrs -> V2 Float -> Entity -> Evented ()
-downCycle tview@TextInputView{..} rs sz k = do
-  waitUntil $ (not . ($ ButtonLeft)) <$> io getMouseButtons
-  (lift $ getMouseIsOverEntityWithSize k sz) >>= \case
-    True -> do
-      sz1 <- lift $ do
-        dealloc k
-        sz1   <- runPainterSize txtnPainter (txtnData, TextInputStateEditing)
-        (c,r) <- compilePainter txtnPainter (txtnData, TextInputStateEditing)
-        k .# dloc c
-          #. rndr r
-        io $ startTextInput $ Raw.Rect 0 0 100 100
-        send txtnMailbox TextInputStateEditing
-        return sz1
-      editingCycle tview sz1 k
-    False -> do
-      lift $ do
-        rndrs.at k .= Just (txtRndrsUp rs)
-        send txtnMailbox TextInputStateUp
-      upCycle tview rs sz k
-
-overCycle :: TextInputView -> TextInputRndrs -> V2 Float -> Entity -> Evented ()
-overCycle tview@TextInputView{..} rs sz k = do
-  e <- waitUntilEither (($ ButtonLeft) <$> io getMouseButtons)
-                       (not <$> getMouseIsOverEntityWithSize k sz)
-  case e of
-    Left ()  -> do lift $ do rndrs.at k .= Just (txtRndrsDown rs)
-                             send txtnMailbox TextInputStateDown
-                   downCycle tview rs sz k
-    Right () -> do lift $ do rndrs.at k .= Just (txtRndrsUp rs)
-                             send txtnMailbox TextInputStateUp
-                   upCycle tview rs sz k
-
-upCycle :: TextInputView -> TextInputRndrs -> V2 Float
-        -> Entity -> Evented ()
-upCycle tview@TextInputView{..} rs sz k = do
-  -- Wait until the mouse is over the input
-  waitUntil $ getMouseIsOverEntityWithSize k sz
-  -- Set the input renderer to 'over' and send the 'over' message through to
-  -- the mailbox
-  lift $ do rndrs.at k .= Just (txtRndrsOver rs)
-            send txtnMailbox TextInputStateOver
-  -- Run the 'over' cycle
-  overCycle tview rs sz k
-
-data EditingEvent = Editing Text
-                  | EditingEnd
-                  deriving (Show, Eq)
-
-textInputLifeCycle :: TextInputView -> Entity -> Evented ()
-textInputLifeCycle tview k = do
-  (sz, rs) <- lift $ prepareTextInput tview k
-  upCycle tview rs sz k
 --------------------------------------------------------------------------------
--- Alloc'ing Views and Fresh TextInput Entities
+-- WordMap stuff
 --------------------------------------------------------------------------------
+loadWords :: (MonadIO m, Rezed s m)
+          =>  WordMap
+          -> Painter (TextInputForegroundData, TextInputState) m
+          -> TextInputState -> Atlas -> String
+          -> m WordMap
+loadWords wm0 painter st atlas str = foldM loadWord wm0 $ words str
+  where loadWord wm word
+          | Just _ <- M.lookup word wm = return wm
+          | otherwise = do
+            let dat = TextInputForegroundData atlas word
+            sz <- runPainterSize painter (dat,st)
+            r  <- compilePainter painter (dat,st)
+            return $ M.insert word (sz,r) wm
+
+unloadMissingWords :: MonadIO m => WordMap -> String -> m WordMap
+unloadMissingWords wm str = do
+  let ws = M.fromList $ zip (words str) [(0::Int)..]
+      missing = M.difference wm ws
+      retain  = M.difference wm missing
+      dealoc  = (io . fst . snd) <$> missing
+  sequence_ dealoc
+  return retain
+--------------------------------------------------------------------------------
+-- Alloc'ing and releasing TextInputs
+--------------------------------------------------------------------------------
+allocFGRndr :: (MonadIO m, Rezed s m)
+               => Painter (TextInputForegroundData, TextInputState) m
+               -> TextInputState -> WordMap -> Atlas -> String
+               -> m (RenderIO, V2 Float, WordMap)
+allocFGRndr fgp st wm0 atlas str = do
+  wm <- flip unloadMissingWords str =<< loadWords wm0 fgp st atlas str
+  let glyphw  = glyphWidth $ atlasGlyphSize atlas
+      spacew  = fromMaybe glyphw $ do
+        metrics <- IM.lookup (fromEnum ' ') $ atlasMetrics atlas
+        let V2 x _ = glyphAdvance metrics
+        return $ fromIntegral x
+      glyphh = glyphHeight $ atlasGlyphSize atlas
+      renderWord :: PictureTransform -> Float -> String -> IO ()
+      renderWord _ _ ""       = return ()
+      renderWord t x (' ':cs) = renderWord t (x + spacew) cs
+      renderWord t x cs       = do
+        let word = takeWhile (/= ' ') cs
+            rest = drop (length word) cs
+        case M.lookup word wm of
+          Nothing          -> renderWord t x rest
+          Just (V2 w _, r) -> do
+            snd r (t <> renderToPictureTransform (Spatial $ Translate $ V2 x 0))
+            renderWord t (x + w) rest
+      rr t = renderWord t 0 str
+      measureWord x ""       = x
+      measureWord x (' ':cs) = measureWord (x + spacew) cs
+      measureWord x cs       =
+        let word = takeWhile (/= ' ') cs
+            rest = drop (length word) cs
+            n    = case M.lookup word wm of
+                     Nothing          -> x
+                     Just (V2 w _, _) -> x + w
+        in measureWord n rest
+      ww = measureWord 0 str
+  return (rr, V2 ww glyphh, wm)
+
+allocFGRndr' :: (MonadIO m, Rezed s m)
+               => Painter (TextInputForegroundData, TextInputState) m
+               -> TextInputState -> WordMap -> Atlas -> String
+               -> m (RenderIO, V2 Float, WordMap)
+allocFGRndr' fgp st wm0 atlas str = do
+  wm <- flip unloadMissingWords str =<< loadWords wm0 fgp st atlas str
+  let ws = words str
+      rs = map (`M.lookup` wm) ws
+      glyphw  = glyphWidth $ atlasGlyphSize atlas
+      spacew  = fromMaybe glyphw $ do
+        metrics <- IM.lookup (fromEnum ' ') $ atlasMetrics atlas
+        let V2 x _ = glyphAdvance metrics
+        return $ fromIntegral x
+      glyphh = glyphHeight $ atlasGlyphSize atlas
+      rr t = when (not $ null rs) $ do
+               x <- foldM (render t) 0 $ init rs
+               void $ render t x $ last rs
+      render _ x Nothing                = return x
+      render t x (Just (V2 w _, (_,r))) = do
+        let tt = renderToPictureTransform $ Spatial $ Translate $ V2 x 0
+        r $ t <> tt
+        return $ x + w + spacew
+      measure x Nothing         = x
+      measure x (Just (V2 w _,_)) = x + w + spacew
+      tw = let tw0 = foldl measure 0 rs
+           in if not $ null str
+                then if last str == ' ' then tw0 - spacew else tw0 - 2*spacew
+                else tw0
+  return (rr, V2 tw glyphh, wm)
+
+-- | Allocs a TextInput renderer for ONE TextInputState.
+allocTextRndr :: (MonadIO m, Rezed s m)
+              => Painter (TextInputForegroundData, TextInputState) m
+              -> Painter (TextInputBackgroundData, TextInputState) m
+              -> TextInputState
+              -> WordMap -> Atlas -> String
+              -> m (TextInputStateRndr, V2 Float)
+allocTextRndr fg bg st wm0 atlas str = do
+  (r,sz,wm) <- allocFGRndr fg st wm0 atlas str
+  let dat = (TextInputBackgroundData sz, st)
+  bgsz <- runPainterSize bg dat
+  bgr  <- compilePainter bg dat
+  let glrend :: GLRenderer
+      glrend = bgr <> (return (),r)
+      isr :: TextInputStateRndr
+      isr = (glrend,wm)
+  return (isr, bgsz)
+
+allocTextRndrs :: (MonadIO m, Rezed s m)
+               => Painter (TextInputForegroundData, TextInputState) m
+               -> Painter (TextInputBackgroundData, TextInputState) m
+               -> Atlas -> String
+               -> m (TextInputRndrs, V2 Float)
+allocTextRndrs fg bg atlas str = do
+  (up  , sz) <- allocTextRndr fg bg TextInputStateUp      mempty atlas str
+  (ovr ,  _) <- allocTextRndr fg bg TextInputStateOver    mempty atlas str
+  (down,  _) <- allocTextRndr fg bg TextInputStateDown    mempty atlas str
+  (edit,  _) <- allocTextRndr fg bg TextInputStateEditing mempty atlas str
+  let rs = TextInputRndrs up ovr down edit
+  return (rs, sz)
+
 -- Allocs a new text input view.
-allocTextInputView :: Atlas -> String -> GlyphSize
-                   -> Painter (TextInputData, TextInputState) System
-                   -> (TextInputState -> System ())
-                   -> System TextInputView
-allocTextInputView font str px painter onRecv = do
-  mb <- mailbox
-  recv mb onRecv
-  return $ TextInputView (TextInputData font (T.pack str) px) mb painter
+allocTextInput :: (MonadIO m, Rezed s m, Fresh s m)
+               => Atlas -> String
+               -> Painter (TextInputForegroundData, TextInputState) m
+               -> Painter (TextInputBackgroundData, TextInputState) m
+               -> m (Slot (TextInput m))
+allocTextInput atlas str fgpainter bgpainter = do
+  (rs,sz) <- allocTextRndrs fgpainter bgpainter atlas str
+  k  <- fresh
+  allocSlot TextInput{ txtnUid       = k
+                     , txtnSize      = sz
+                     , txtnRndrs     = rs
+                     , txtnState     = TextInputStateUp
+                     , txtnString    = str
+                     , txtnFGPainter = fgpainter
+                     , txtnBGPainter = bgpainter
+                     , txtnAtlas     = atlas
+                     }
 
-freshTextInput :: V2 Float -> TextInputView -> System Entity
-freshTextInput p tview = do
-  k        <- fresh ## pos p
-  (sz, rs) <- prepareTextInput tview k
-  scripts.at k .= Just [Script $ textInputUp tview sz rs k]
-  --scripts.at k .= Just [Script $ runEventedScript $ textInputLifeCycle tview k]
-  return k
+freeTextInput :: MonadIO m => Slot (TextInput x) -> m ()
+freeTextInput s = fromSlot s f >>= io
+  where f txt = do
+          let TextInputRndrs{..} = txtnRndrs txt
+              rs = [txtnRndrsUp,txtnRndrsOver,txtnRndrsDown,txtnRndrsEdit]
+          forM_ rs deallocTISR
+
+withTextInput :: (MonadIO m, Rezed s m, Fresh s m)
+              => Atlas -> String
+              -> Painter (TextInputForegroundData, TextInputState) m
+              -> Painter (TextInputBackgroundData, TextInputState) m
+              -> (Slot (TextInput m) -> m b) -> m b
+withTextInput atlas str fgpainter bgpainter f = do
+  txtn <- allocTextInput atlas str fgpainter bgpainter
+  a    <- f txtn
+  freeTextInput txtn
+  return a
+
+renderTextInput :: (MonadIO m, Rezed s m, Events s m)
+                => Slot (TextInput m) -> [RenderTransform] -> m (TextInputState, String)
+renderTextInput s rs = do
+  txt@TextInput{..} <- readSlot s
+  let t  = rendersToPictureTransform rs
+      mv = ptfrmMV t
+      renderUp   = io $ (renderTISR $ txtnRndrsUp   txtnRndrs) t
+      renderOver = io $ (renderTISR $ txtnRndrsOver txtnRndrs) t
+      renderDown = io $ (renderTISR $ txtnRndrsDown txtnRndrs) t
+      renderEdit = io $ (renderTISR $ txtnRndrsEdit txtnRndrs) t
+      update st = do
+        swapSlot s $ txt{txtnState=st}
+        return (st, txtnString)
+      downAndOver = (,) <$> (($ ButtonLeft) <$> io getMouseButtons)
+                        <*> (getMouseIsOverBox mv txtnSize)
+      continueEditing str = do
+        let ewm = snd $ txtnRndrsEdit txtnRndrs
+        (r,sz) <- allocTextRndr txtnFGPainter txtnBGPainter
+                                TextInputStateEditing ewm txtnAtlas str
+        let newRndrs = txtnRndrs{txtnRndrsEdit=r}
+        io $ do -- dealloc the previous edit renderer
+                deallocTISRBG $ txtnRndrsEdit txtnRndrs
+                -- render the new edit
+                renderTISR r t
+        swapSlot s txt{txtnSize     = sz
+                      ,txtnRndrs    = newRndrs
+                      ,txtnString   = str
+                      ,txtnState    = TextInputStateEditing
+                      }
+        return $ (TextInputStateEditing, str)
+      endEditing = do
+        let str = txtnString
+            uwm = snd $ txtnRndrsUp   txtnRndrs
+            owm = snd $ txtnRndrsOver txtnRndrs
+            dwm = snd $ txtnRndrsDown txtnRndrs
+        -- realloc the other three rndrs
+        (up,   sz) <- allocTextRndr txtnFGPainter txtnBGPainter
+                                    TextInputStateUp uwm txtnAtlas
+                                    str
+        (ovr,   _) <- allocTextRndr txtnFGPainter txtnBGPainter
+                                    TextInputStateOver owm txtnAtlas str
+        (down,  _) <- allocTextRndr txtnFGPainter txtnBGPainter
+                                    TextInputStateDown dwm txtnAtlas str
+        let newRndrs = txtnRndrs{txtnRndrsUp    = up
+                                ,txtnRndrsOver  = ovr
+                                ,txtnRndrsDown  = down
+                                }
+        io $ do -- dealloc the previous 3 rndrs
+                deallocTISRBG $ txtnRndrsUp   txtnRndrs
+                deallocTISRBG $ txtnRndrsOver txtnRndrs
+                deallocTISRBG $ txtnRndrsDown txtnRndrs
+                -- render the new up
+                renderTISR up t
+        swapSlot s txt{txtnSize    = sz
+                      ,txtnRndrs   = newRndrs
+                      ,txtnState   = TextInputStateUp
+                      }
+        return $ (TextInputStateEdited, str)
+  case txtnState of
+    TextInputStateUp -> getMouseIsOverBox mv txtnSize >>= \case
+      True  -> renderOver >> update TextInputStateOver
+      False -> renderUp >> return (TextInputStateUp, txtnString)
+
+    TextInputStateOver -> downAndOver >>= \case
+    --(down,over)
+      (False,True) -> renderOver >> return (TextInputStateOver, txtnString)
+      (True,True)  -> renderDown >> update TextInputStateDown
+      _            -> renderUp   >> update TextInputStateUp
+    TextInputStateDown -> downAndOver >>= \case
+    --(down,over)
+      (False,True)  -> renderEdit >> update TextInputStateEditing
+      (False,False) -> renderUp   >> update TextInputStateUp
+      _             -> renderDown >> return (TextInputStateDown, txtnString)
+
+    TextInputStateEditing -> getEscOrEnter >>= \case
+      Just _  -> endEditing
+      Nothing -> getMyTextEvent txtnString >>= \case
+        Nothing  -> downAndOver >>= \case
+        --(down,over)
+          (True,False) -> endEditing
+          _            -> renderEdit >> return (TextInputStateEditing, txtnString)
+        Just str -> continueEditing str
+
+    TextInputStateEdited -> getMouseIsOverBox mv txtnSize >>= \case
+      True  -> renderOver >> update TextInputStateOver
+      False -> renderUp >> update TextInputStateUp
+--------------------------------------------------------------------------------
+-- TextInput properties
+--------------------------------------------------------------------------------
+sizeOfTextInput :: MonadIO m => Slot (TextInput m) -> m (V2 Float)
+sizeOfTextInput = flip fromSlot txtnSize

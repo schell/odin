@@ -65,7 +65,6 @@ library
                      , Odin.Core.Types
 
                      , Odin.GUI.Button.Internal
-                     , Odin.GUI.Button.InternalImmediate
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Styles

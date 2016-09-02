@@ -13,6 +13,8 @@
 module Odin.Core.Common
   -- * Reexporting Effects
   ( module State
+  -- * Reexporting Linear
+  , module L
   -- * Rexporting Common Vector Typeclasses
   , Unbox
   -- * Entities
@@ -97,7 +99,7 @@ module Odin.Core.Common
   -- * Storing / Retreiving Values
   , Slot
   , allocSlot
-  , checkSlot
+  , readSlot
   , fromSlot
   , swapSlot
   , modifySlot
@@ -119,7 +121,7 @@ module Odin.Core.Common
   , io
   -- * Experiments
   , Frame(..)
-  , Update
+  , UpdateT
   ) where
 
 import           Gelatin.SDL2 hiding (E)
@@ -129,6 +131,7 @@ import           Data.Vector.Unboxed (Unbox)
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
+import           Linear as L
 
 import           Control.Monad.Evented as E
 
@@ -161,7 +164,11 @@ renderToPictureTransform (ColorReplacement c) = PictureTransform identity 1 1 (J
 rendersToPictureTransform :: [RenderTransform] -> PictureTransform
 rendersToPictureTransform = mconcat . map renderToPictureTransform
 
-type Update = EventT (StateT Frame IO)
+type UpdateT m = EventT (StateT Frame m)
+
+instance Monad m => MonadState Frame (UpdateT m) where
+  get = lift get
+  put = lift . put
 --------------------------------------------------------------------------------
 -- Odin Component/System Constraints and Abilities
 --------------------------------------------------------------------------------
@@ -253,8 +260,8 @@ newtype Slot a = Slot { unSlot :: TVar a }
 allocSlot :: MonadIO m => a -> m (Slot a)
 allocSlot = (Slot <$>) . io . newTVarIO
 
-checkSlot :: MonadIO m => Slot a -> m a
-checkSlot = io . readTVarIO . unSlot
+readSlot :: MonadIO m => Slot a -> m a
+readSlot = io . readTVarIO . unSlot
 
 fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
 fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s

@@ -4,20 +4,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
-import           Gelatin.SDL2
+import           Gelatin.SDL2 (startupSDL2Backend, clearFrame, updateWindowSDL2)
 import           Gelatin.FreeType2
-import           SDL hiding (time)
 import           Odin.Core
 import           Halive.Utils
 import           Demos.Utils
 import           Control.Lens
-import           Odin.GUI.Button
-import           Odin.GUI.Styles
+import           Odin.GUI
 --import System.Remote.Monitoring
 --------------------------------------------------------------------------------
 -- Immediate mode GUI experiments
 --------------------------------------------------------------------------------
-runFrame :: Update a -> StateT Frame IO a
+runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
 runFrame f = do
   use rez >>= io . clearFrame
   tickTime
@@ -28,18 +26,32 @@ runFrame f = do
     Left g   -> runFrame g
     Right a  -> return a
 
-mainFrame :: Atlas -> Slot Button -> Int -> Update ()
-mainFrame atlas button i = do
-  waitUntil ((== ButtonStateClicked) <$> renderButton button [])
-  newbutton <- allocButton atlas ("Clicked " ++ show i) buttonPainter
-  freeButton button
-  next $ mainFrame atlas newbutton $ i + 1
+getTextTask :: MonadIO m => Atlas -> UpdateT m (Maybe String)
+getTextTask atlas = do
+  withDefaultTextInput  atlas "text"    $ \input  ->
+    withDefaultButton   atlas "Okay"    $ \okay   ->
+      withDefaultButton atlas "Cancel"  $ \cancel -> do
+        V2 _ inputh  <- sizeOfTextInput input
+        V2 okayw _   <- sizeOfButton okay
+        fix $ \task -> do
+          (_, str) <- renderTextInput input []
+          okayst   <- renderButton okay   [move $ V2 0 $ inputh + 4]
+          cancelst <- renderButton cancel [move $ V2 (okayw + 4) (inputh + 4)
+                                          ,multiply $ V4 0.9 0.9 0.9 1
+                                          ]
+          case (okayst,cancelst) of
+            (ButtonStateClicked,_                 ) -> return $ Just str
+            (_                 ,ButtonStateClicked) -> return Nothing
+            _        -> next task
 
-setupFrame :: FilePath -> Update ()
-setupFrame font = do
-  Just atlas <- allocAtlas font (PixelSize 16 16) asciiChars
-  button     <- allocButton atlas "Button" buttonPainter
-  mainFrame atlas button 0
+setupFrame :: MonadIO m => FilePath -> UpdateT m ()
+setupFrame font =
+  void $ withAtlas font (PixelSize 16 16) asciiChars $ \atlas -> do
+    fix $ \task -> do
+      getTextTask atlas >>= \case
+        Nothing  -> io $ putStrLn "Cancelled"
+        Just str -> io $ putStrLn $ "Got text: " ++ show str
+      next task
 
 main :: IO ()
 main = do

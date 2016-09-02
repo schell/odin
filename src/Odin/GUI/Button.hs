@@ -1,16 +1,10 @@
 module Odin.GUI.Button
   ( ButtonState(..)
   , ButtonData(..)
-  --, ButtonView(..)
-  --, allocButtonView
-  --, freshButton
-  , allocButton
-  , freeButton
+  , Button
   , withButton
   , renderButton
-  , stateOfButton
   , sizeOfButton
-  , Button
   ) where
 
-import Odin.GUI.Button.InternalImmediate
+import Odin.GUI.Button.Internal
