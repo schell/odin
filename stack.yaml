@@ -1,19 +1,14 @@
 flags: {}
 packages:
 - '.'
-#- location:
-#    git: https://github.com/schell/gelatin.git
-#    commit: b4474e7836f2919a8615c62f2566919f209e866d
-#  subdirs:
-#  - gelatin
-#  - gelatin-gl
-#  - gelatin-fruity
-#  - gelatin-freetype2
-#  - gelatin-sdl2
-- '../gelatin/gelatin'
-- '../gelatin/gelatin-gl'
-- '../gelatin/gelatin-freetype2'
-- '../gelatin/gelatin-sdl2'
+- location:
+    git: https://github.com/schell/gelatin.git
+    commit: 60b5a760cd0a7f9fad83149b52897f772aac3a76
+  subdirs:
+  - gelatin
+  - gelatin-gl
+  - gelatin-sdl2
+  - gelatin-freetype2
 - location:
     git: https://github.com/schell/renderable.git
     commit: fda35ce6d0f02f3e29bf8168305f8ac5421f40fd
