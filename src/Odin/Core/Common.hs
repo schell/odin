@@ -90,12 +90,6 @@ module Odin.Core.Common
   , Rezed
   , Windowed
   , Reads(..)
-  -- * Sending / Receiving Messages
-  , MailboxT
-  , Mailbox
-  , mailbox
-  , send
-  , recv
   -- * Storing / Retreiving Values
   , Slot
   , allocSlot
@@ -145,6 +139,7 @@ data Frame = Frame { _frameTime   :: SystemTime
                    , _frameNextK  :: Int
                    , _frameWindow :: Window
                    , _frameRez    :: Rez
+                   , _frameScene  :: OdinScene
                    }
 makeLenses ''Frame
 makeFields ''Frame
@@ -237,22 +232,6 @@ runEventedScript ev = runEventT ev >>= \case
   Left nv -> return $ Script $ runEventedScript nv
   Right _ -> endScript
 --------------------------------------------------------------------------------
--- Sending / Recieving messages
---------------------------------------------------------------------------------
-type MailboxT m a = TVar (a -> m ())
-type Mailbox a = MailboxT System a
-
-mailbox :: MonadIO m => m (MailboxT m a)
-mailbox = io $ newTVarIO $ const $ return ()
-
-send :: MonadIO m => MailboxT m a -> a -> m ()
-send mbox msg = do
-  f <- io $ readTVarIO mbox
-  f msg
-
-recv :: MonadIO m => MailboxT m a -> (a -> m ()) -> m ()
-recv mbox f = void $ io $ atomically $ swapTVar mbox f
---------------------------------------------------------------------------------
 -- Storing / Retreiving messages
 --------------------------------------------------------------------------------
 newtype Slot a = Slot { unSlot :: TVar a }
@@ -296,7 +275,6 @@ compilePainter painter a = do
 
 compilePainterZ :: MonadIO m => Rez -> Painter a m -> a -> m GLRenderer
 compilePainterZ rz painter a = runPainterT rz painter a
-
 
 runPainterBounds :: MonadIO m => Painter a m -> a -> m (V2 Float, V2 Float)
 runPainterBounds f a = do

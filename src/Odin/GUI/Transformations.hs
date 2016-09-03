@@ -4,17 +4,17 @@ import Odin.Core
 import Linear
 import Gelatin (Affine(..))
 
-move :: V2 Float -> RenderTransform
-move = Spatial . Translate
+move :: Float -> Float -> RenderTransform
+move x y = Spatial $ Translate $ V2 x y
 
-scale :: V2 Float -> RenderTransform
-scale = Spatial . Scale
+scale :: Float -> Float -> RenderTransform
+scale x y = Spatial $ Scale $ V2 x y
 
 rotate :: Float -> RenderTransform
 rotate = Spatial . Rotate
 
-multiply :: V4 Float -> RenderTransform
-multiply = Multiply
+multiply :: Float -> Float -> Float -> Float -> RenderTransform
+multiply r g b a = Multiply $ V4 r g b a
 
-redChannelReplacement :: V4 Float -> RenderTransform
-redChannelReplacement = ColorReplacement
+redChannelReplacement :: Float -> Float -> Float -> Float -> RenderTransform
+redChannelReplacement r g b a = ColorReplacement $ V4 r g b a

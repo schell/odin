@@ -8,7 +8,10 @@ import Gelatin
 import Gelatin.SDL2
 import Control.Lens
 import Linear.Affine (Point(..))
-import SDL
+import SDL hiding (freeCursor)
+import qualified SDL.Raw.Event as Raw
+import qualified SDL.Raw.Enum as Raw
+import qualified SDL.Raw.Types as Raw
 import Odin.Core
 --------------------------------------------------------------------------------
 -- Button Types
@@ -78,6 +81,13 @@ withButton atlas str painter f = do
   freeButton btn
   return a
 
+switchCursor :: MonadIO m => Raw.SystemCursor -> m ()
+switchCursor k = do
+  acursor <- Raw.getCursor
+  ncursor <- Raw.createSystemCursor k
+  Raw.setCursor ncursor
+  Raw.freeCursor acursor
+
 renderButton :: MonadIO m => Slot Button -> [RenderTransform] -> m ButtonState
 renderButton s rs = do
   btn@Button{..} <- readSlot s
@@ -112,8 +122,14 @@ renderButton s rs = do
       isOver <- getMouseIsOverBox mv btnSize
       if isOver
         then do renderBtnOver
+                -- we can't switch cursors because this gets run on every button
+                -- that gets rendered, causing only the last rendered button to
+                -- have real effect. when we switch out to using some kind of
+                -- quadtree-backed hit-testing we can enable this
+                --switchCursor Raw.SDL_SYSTEM_CURSOR_HAND
                 updateBtn ButtonStateOver
         else do renderBtnUp
+                --switchCursor Raw.SDL_SYSTEM_CURSOR_ARROW
                 return ButtonStateUp
 --------------------------------------------------------------------------------
 -- Button properties

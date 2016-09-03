@@ -60,8 +60,6 @@ data Sys = Sys { _sysNames    :: IntMap Name
                , _sysOptions  :: SystemOptions
                , _sysCommands :: SystemCommands
                }
-
-
 --------------------------------------------------------------------------------
 -- Types for Look/Feel
 --------------------------------------------------------------------------------

@@ -7,12 +7,11 @@ import Control.Lens hiding (to)
 import qualified Data.Set as S
 import Linear
 
-import Gelatin
+import Gelatin hiding (move)
 import Gelatin.FreeType2
 import Odin.Core
 import Odin.GUI
-import Odin.Scripts.Status
-import Odin.GUI.TextInput.Internal
+import Odin.GUI.Text.Internal
 
 makeDemoActors :: System [Entity]
 makeDemoActors = do
@@ -85,30 +84,28 @@ makeDemoActors = do
 
   return $ actors ++ [biggy, rwall, bwall]
 
-loop :: FilePath -> System ()
-loop font = do
-  -- Alloc a text atlas to use for our UI
-  let sz = PixelSize 16 16
-  Just atlas <- allocAtlas font sz asciiChars
-  -- Create a status bar to tell us what's up
-  status  <- freshStatusBar atlas ## name "status"
-                                  ## pos (V2 400 16)
-  -- Create all of our demo actors
-  actors  <- makeDemoActors
-  -- Keep a ref to the pristine physics scene
-  scene0  <- use scene
+demo :: MonadIO m => Atlas -> UpdateT m ()
+demo atlas = withText atlas white "Physics1 demo" $ \title -> fix $ \task -> do
+  renderText title [move 0 16]
+  next task
 
-  -- Make a button to reset the demo
-  bview   <- allocButtonView atlas "Reset" sz buttonPainter (const $ return ())
-  btn     <- freshButton 4 bview ## name "btn"
-  recv (btnMailbox bview) $ \btnState ->
-    -- When the button sends a 'clicked' message we reset the demo by simply
-    -- putting the original scene back in place
-    when (btnState == ButtonStateClicked) (scene .= scene0)
+  ---- Create a status bar to tell us what's up
+  --status  <- freshStatusBar atlas ## name "status"
+  --                                ## pos (V2 400 16)
+  ---- Create all of our demo actors
+  --actors  <- makeDemoActors
+  ---- Keep a ref to the pristine physics scene
+  --scene0  <- use scene
 
-  tview   <- allocTextInputView atlas "text..." sz textInputPainter $
-    io . print
-  void $ freshTextInput (V2 4 400) tview
+  ---- Make a button to reset the demo
+  --bview   <- allocButtonView atlas "Reset" sz buttonPainter (const $ return ())
+  --btn     <- freshButton 4 bview ## name "btn"
+  --recv (btnMailbox bview) $ \btnState ->
+  --  -- When the button sends a 'clicked' message we reset the demo by simply
+  --  -- putting the original scene back in place
+  --  when (btnState == ButtonStateClicked) (scene .= scene0)
 
-demo :: FilePath -> System ()
-demo = loop
+  --tview   <- allocTextInputView atlas "text..." sz textInputPainter $
+  --  io . print
+  --void $ freshTextInput (V2 4 400) tview
+

@@ -11,6 +11,7 @@ module Odin.Core.System (
   , tickTime
   , tickEvents
   , tickScripts
+  , tickPhysics
   , tickRender
   , tickSystem
   , tickEmbedded
