@@ -22,10 +22,8 @@ data ButtonState = ButtonStateUp
                  | ButtonStateClicked
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
-data ButtonData = ButtonData
-  { btnDataAtlas     :: Atlas
-  , btnDataStr       :: String
-  }
+newtype ButtonData = ButtonData
+  { btnDataStr  :: String }
 
 data ButtonRndrs = ButtonRndrs
   { btnRndrsUp   :: RenderIO
@@ -53,30 +51,29 @@ getMouseIsOverBox mv sz = do
 -- A Button's life cycle
 --------------------------------------------------------------------------------
 -- Allocs a new button.
-allocButton :: (MonadIO m, Fresh s m, Rezed s m)
-            => Atlas -> String -> Painter (ButtonData, ButtonState) m
+allocButton :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
+            => Painter (ButtonData, ButtonState) m -> String
             -> m (Slot Button)
-allocButton atlas str painter = do
+allocButton painter str = do
   -- Alloc all our renderers up front
-  let dat = ButtonData atlas str
+  let dat = ButtonData str
   k    <- fresh
-  sz   <- runPainterSize painter (dat, ButtonStateUp)
-  up   <- compilePainter painter (dat, ButtonStateUp)
-  ovr  <- compilePainter painter (dat, ButtonStateOver)
-  down <- compilePainter painter (dat, ButtonStateDown)
+  Painting (bounds, up  ) <- unPainter painter (dat, ButtonStateUp)
+  Painting (     _, ovr ) <- unPainter painter (dat, ButtonStateOver)
+  Painting (     _, down) <- unPainter painter (dat, ButtonStateDown)
   let d  = mapM_ fst [up,ovr,down]
       rs = ButtonRndrs (snd up) (snd ovr) (snd down)
-  allocSlot $ Button k sz rs d ButtonStateUp
+  allocSlot $ Button k (uncurry (flip (-)) bounds) rs d ButtonStateUp
 
 freeButton :: MonadIO m => Slot Button -> m ()
 freeButton s = fromSlot s btnDealloc >>= io
 
-withButton :: (MonadIO m, Fresh s m, Rezed s m)
-           => Atlas -> String -> Painter (ButtonData, ButtonState) m
+withButton :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
+           => Painter (ButtonData, ButtonState) m -> String
            -> (Slot Button -> m b)
            -> m b
-withButton atlas str painter f = do
-  btn <- allocButton atlas str painter
+withButton painter str f = do
+  btn <- allocButton painter str
   a <- f btn
   freeButton btn
   return a

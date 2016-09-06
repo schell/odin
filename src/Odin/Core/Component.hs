@@ -113,14 +113,6 @@ dloc :: Deallocs s m => SerialSetter m DeallocIO
 dloc = mkSetter setDealloc
   where setDealloc k d = deallocs %= IM.insert k d
 
-paintings :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (m [Painting m])
-paintings = mkSetter mkPaintings
-  where mkPaintings k f = do
-          rz <- ask
-          (c,r) <- foldM (compilePaintings rz) mempty =<< f
-          k .# rndr r
-            ## dloc c
-
 colorPic :: (Rndrs s m, Deallocs s m, Reads Rez m, DoesIO m) => SerialSetter m (ColorPictureT m ())
 colorPic = mkSetter setPic
   where setPic k p = do

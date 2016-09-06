@@ -1,7 +1,6 @@
 module Odin.GUI.TextInput
   ( TextInputState(..)
-  , TextInputForegroundData(..)
-  , TextInputBackgroundData(..)
+  , TextInputData(..)
   , TextInput
   , withTextInput
   , renderTextInput

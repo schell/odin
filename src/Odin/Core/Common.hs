@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE RecordWildCards #-}
 module Odin.Core.Common
   -- * Reexporting Effects
   ( module State
@@ -64,6 +65,12 @@ module Odin.Core.Common
   , sysWindow
   , window
   , emptySys
+  , fonts
+  -- * Working with fonts/atlases
+  , loadAtlas
+  , saveAtlas
+  , fontDescriptor
+  , getFontPath
   -- * Scripts
   , ScriptStep
   , isRunningScript
@@ -89,6 +96,7 @@ module Odin.Core.Common
   , DoesIO
   , Rezed
   , Windowed
+  , Fonts
   , Reads(..)
   -- * Storing / Retreiving Values
   , Slot
@@ -97,20 +105,22 @@ module Odin.Core.Common
   , fromSlot
   , swapSlot
   , modifySlot
+  -- * Fonts
+  , FontDescriptor(..)
   -- * Painting / Graphics
   , Painting(..)
   , Painter(..)
-  , runPainterT
-  , runPainterBounds
-  , runPainterSize
-  , runPainterOrigin
-  , runPainterCenter
-  , compilePainter
-  , compilePainterZ
-  , compilePaintings
+  , paintingBounds
+  , paintingSize
+  , paintingOrigin
+  , paintingCenter
   , RenderTransform(..)
   , renderToPictureTransform
   , rendersToPictureTransform
+  , move
+  , scale
+  , rotate
+  , redChannelReplacement
   -- * Time savers / Helpers
   , io
   -- * Experiments
@@ -118,14 +128,19 @@ module Odin.Core.Common
   , UpdateT
   ) where
 
-import           Gelatin.SDL2 hiding (E)
+import           Gelatin.SDL2 hiding (E, move, scale, rotate)
+import           Gelatin.FreeType2
 import           SDL hiding (Event, get, time)
+import           Data.Map (Map)
+import qualified Data.Map as M
 import           Data.IntMap.Strict (IntMap)
 import           Data.Vector.Unboxed (Unbox)
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
-import           Linear as L
+import           Linear as L hiding (rotate)
+import           System.FilePath
+import           System.Directory
 
 import           Control.Monad.Evented as E
 
@@ -134,20 +149,21 @@ import           Odin.Core.Types
 --------------------------------------------------------------------------------
 -- Experiments
 --------------------------------------------------------------------------------
+newtype FontDescriptor = FontDescriptor (FilePath, GlyphSize)
+                       deriving (Show, Eq, Ord)
+
+type FontMap = Map FontDescriptor Atlas
+
 data Frame = Frame { _frameTime   :: SystemTime
                    , _frameEvents :: [EventPayload]
                    , _frameNextK  :: Int
                    , _frameWindow :: Window
                    , _frameRez    :: Rez
                    , _frameScene  :: OdinScene
+                   , _frameFonts  :: FontMap
                    }
 makeLenses ''Frame
 makeFields ''Frame
-
-data RenderTransform = Spatial (Affine (V2 Float) Float)
-                     | Alpha Float
-                     | Multiply (V4 Float)
-                     | ColorReplacement (V4 Float)
 
 renderToPictureTransform :: RenderTransform -> PictureTransform
 renderToPictureTransform (Spatial affine) =
@@ -184,6 +200,7 @@ type Options s m    = (MonadState s m, HasOptions  s SystemOptions)
 type Commands s m   = (MonadState s m, HasCommands s SystemCommands)
 type Windowed s m   = (MonadState s m, HasWindow   s Window)
 type Rezed s m      = (MonadState s m, HasRez      s Rez)
+type Fonts s m      = (MonadState s m, HasFonts    s FontMap)
 type DoesIO = MonadIO
 
 class Monad m => Reads a m where
@@ -206,6 +223,32 @@ emptySys rz win =
 --------------------------------------------------------------------------------
 io :: MonadIO m => IO a -> m a
 io = liftIO
+--------------------------------------------------------------------------------
+-- Working with Fonts
+--------------------------------------------------------------------------------
+loadAtlas :: (MonadIO m, Fonts s m) => FontDescriptor -> String
+         -> m (Maybe Atlas)
+loadAtlas desc@(FontDescriptor (font, sz)) chars = do
+  atlases <- use fonts
+  case M.lookup desc atlases of
+    Nothing -> allocAtlas font sz chars >>= \case
+      Nothing    -> return Nothing
+      Just atlas -> do fonts .= M.insert desc atlas atlases
+                       return $ Just atlas
+    Just atlas -> return $ Just atlas
+
+saveAtlas :: Fonts s m => Atlas -> m ()
+saveAtlas atlas = fonts %= M.insert (atlasDescriptor atlas) atlas
+
+atlasDescriptor :: Atlas -> FontDescriptor
+atlasDescriptor Atlas{..} = FontDescriptor (atlasFilePath, atlasGlyphSize)
+
+fontDescriptor :: FilePath -> Int -> FontDescriptor
+fontDescriptor file px = FontDescriptor (file, PixelSize px px)
+
+getFontPath :: MonadIO m => String -> m FilePath
+getFontPath fontname =
+  (</> "assets" </> "fonts" </> fontname) <$> (io getCurrentDirectory)
 --------------------------------------------------------------------------------
 -- Scripts
 --------------------------------------------------------------------------------
@@ -251,52 +294,42 @@ swapSlot s a = void $ io $ atomically $ swapTVar (unSlot s) a
 modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
 modifySlot s = io . atomically . modifyTVar' (unSlot s)
 --------------------------------------------------------------------------------
--- Painting / Rendering
+-- Look/Feel
 --------------------------------------------------------------------------------
-compilePaintings :: MonadIO m => Rez -> GLRenderer -> Painting m -> m GLRenderer
-compilePaintings rz r0 (ColorPainting pic) = do
-  (_,dat) <- runPictureT pic
-  r1 <- liftIO $ compileColorPictureData rz dat
-  return $ r0 `mappend` r1
-compilePaintings rz r0 (TexturePainting pic) = do
-  (_,dat) <- runPictureT pic
-  r1 <- liftIO $ compileTexturePictureData rz dat
-  return $ r0 `mappend` r1
+move :: Float -> Float -> RenderTransform
+move x y = Spatial $ Translate $ V2 x y
 
-runPainterT :: MonadIO m  => Rez -> Painter a m -> a -> m GLRenderer
-runPainterT rz f a = do
-  paintings <- (unPainter f) a
-  foldM (compilePaintings rz) mempty paintings
+scale :: Float -> Float -> RenderTransform
+scale x y = Spatial $ Scale $ V2 x y
 
-compilePainter :: (Rezed s m, DoesIO m) => Painter a m -> a -> m GLRenderer
-compilePainter painter a = do
-  rz <- use rez
-  runPainterT rz painter a
+rotate :: Float -> RenderTransform
+rotate = Spatial . Rotate
 
-compilePainterZ :: MonadIO m => Rez -> Painter a m -> a -> m GLRenderer
-compilePainterZ rz painter a = runPainterT rz painter a
+multiply :: Float -> Float -> Float -> Float -> RenderTransform
+multiply r g b a = Multiply $ V4 r g b a
 
-runPainterBounds :: MonadIO m => Painter a m -> a -> m (V2 Float, V2 Float)
-runPainterBounds f a = do
-  vss <- mapM measurePainting =<< (unPainter f) a
-  return $ pointsBounds $ concat vss
-  where measurePainting :: MonadIO m => Painting m -> m [V2 Float]
-        measurePainting (ColorPainting pic) = do
-          (tl,br) <- runPictureBoundsT pic
-          return [tl,br]
-        measurePainting (TexturePainting pic) = do
-          (tl,br) <- runPictureBoundsT pic
-          return [tl,br]
+redChannelReplacement :: Float -> Float -> Float -> Float -> RenderTransform
+redChannelReplacement r g b a = ColorReplacement $ V4 r g b a
 
-runPainterSize :: MonadIO m => Painter a m -> a -> m (V2 Float)
-runPainterSize f a = do
-  (tl,br) <- runPainterBounds f a
-  return $ br - tl
+paintingBounds :: Painting -> (V2 Float, V2 Float)
+paintingBounds = fst . unPainting
 
-runPainterOrigin :: MonadIO m => Painter a m -> a -> m (V2 Float)
-runPainterOrigin f a = runPainterBounds f a >>= return . fst
+paintingSize :: Painting -> V2 Float
+paintingSize p = let (tl,br) = paintingBounds p in br - tl
 
-runPainterCenter :: MonadIO m => Painter a m -> a -> m (V2 Float)
-runPainterCenter f a = do
-  (tl,br) <- runPainterBounds f a
-  return $ tl + (br - tl)/2
+paintingOrigin :: Painting -> V2 Float
+paintingOrigin = fst . fst . unPainting
+
+paintingCenter :: Painting -> V2 Float
+paintingCenter p = let (tl,br) = paintingBounds p in tl + (br - tl)/2
+
+renderPainting :: MonadIO m => [RenderTransform] -> Painting -> m ()
+renderPainting rs p = do
+  let t = rendersToPictureTransform rs
+      r = snd $ snd $ unPainting p
+  liftIO $ r t
+
+freePainting :: MonadIO m => Painting -> m ()
+freePainting = liftIO . fst . snd . unPainting
+
+

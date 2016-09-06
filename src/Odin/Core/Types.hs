@@ -61,8 +61,19 @@ data Sys = Sys { _sysNames    :: IntMap Name
                , _sysCommands :: SystemCommands
                }
 --------------------------------------------------------------------------------
--- Types for Look/Feel
+-- Look/Feel
 --------------------------------------------------------------------------------
-data Painting m = ColorPainting (ColorPictureT m ())
-                | TexturePainting (TexturePictureT m ())
-newtype Painter a m = Painter { unPainter :: a -> m [Painting m] }
+data RenderTransform = Spatial (Affine (V2 Float) Float)
+                     | Alpha Float
+                     | Multiply (V4 Float)
+                     | ColorReplacement (V4 Float)
+
+newtype Painting = Painting { unPainting :: ((V2 Float, V2 Float) , GLRenderer) }
+
+instance Monoid Painting where
+  mempty = Painting ((0,0), mempty)
+  mappend (Painting (abb,a)) (Painting (bbb,b)) = Painting (cbb,c)
+    where cbb = pointsBounds [fst abb, snd abb, fst bbb, snd bbb]
+          c   = a `mappend` b
+
+newtype Painter a m = Painter { unPainter :: a -> m Painting }

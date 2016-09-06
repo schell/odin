@@ -11,7 +11,6 @@ import Gelatin hiding (move)
 import Gelatin.FreeType2
 import Odin.Core
 import Odin.GUI
-import Odin.GUI.Text.Internal
 
 makeDemoActors :: System [Entity]
 makeDemoActors = do
@@ -84,10 +83,11 @@ makeDemoActors = do
 
   return $ actors ++ [biggy, rwall, bwall]
 
-demo :: MonadIO m => Atlas -> UpdateT m ()
-demo atlas = withText atlas white "Physics1 demo" $ \title -> fix $ \task -> do
-  renderText title [move 0 16]
-  next task
+demo :: MonadIO m => UpdateT m ()
+demo = do
+  withDefaultText white "Physics1 demo" $ \title -> fix $ \task -> do
+    renderText title [move 0 16]
+    next task
 
   ---- Create a status bar to tell us what's up
   --status  <- freshStatusBar atlas ## name "status"

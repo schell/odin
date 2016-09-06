@@ -8,14 +8,8 @@ import           Odin.GUI
 import           Odin.Core
 import           Control.Lens
 import           Halive.Utils
-import           Demos.Utils
 import qualified Demos.Physics1 as Physics1
 --import qualified Demos.MapCreator as MapCreator
-
-
-frame :: MonadIO m => FilePath -> UpdateT m ()
-frame font = void $ withAtlas font (PixelSize 16 16) asciiChars $ \atlas -> do
-  Physics1.demo atlas
 
 runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
 runFrame f = do
@@ -32,8 +26,6 @@ runFrame f = do
 main :: IO ()
 main = do
   --forkServer "localhost" 8000
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  --hackFont  <- getFont "Hack-Regular.ttf"
   (rz,win)  <- reacquire 0 $ startupSDL2Backend 800 600 "Entity Sandbox" True
   t         <- newTime
   let firstFrame = Frame { _frameTime   = t
@@ -42,5 +34,6 @@ main = do
                          , _frameWindow = win
                          , _frameRez    = rz
                          , _frameScene  = emptyScene
+                         , _frameFonts  = mempty
                          }
-  void $ flip runStateT firstFrame $ runFrame $ frame comicFont
+  void $ runStateT (runFrame Physics1.demo) firstFrame
