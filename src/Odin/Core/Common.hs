@@ -16,6 +16,8 @@ module Odin.Core.Common
   ( module State
   -- * Reexporting Linear
   , module L
+  -- * Reexporting Lens pieces
+  , use
   -- * Rexporting Common Vector Typeclasses
   , Unbox
   -- * Entities
@@ -24,6 +26,7 @@ module Odin.Core.Common
   -- * Components
   , Name
   , RenderIO
+  , RenderGUI
   , DeallocIO
   , Script(..)
   , module OP
@@ -120,7 +123,12 @@ module Odin.Core.Common
   , move
   , scale
   , rotate
+  , multiply
   , redChannelReplacement
+  , moveV2
+  , scaleV2
+  , multiplyV4
+  , redChannelReplacementV4
   -- * Time savers / Helpers
   , io
   -- * Experiments
@@ -128,7 +136,7 @@ module Odin.Core.Common
   , UpdateT
   ) where
 
-import           Gelatin.SDL2 hiding (E, move, scale, rotate)
+import           Gelatin.SDL2 hiding (E, move, scale, rotate, multiply)
 import           Gelatin.FreeType2
 import           SDL hiding (Event, get, time)
 import           Data.Map (Map)
@@ -299,8 +307,14 @@ modifySlot s = io . atomically . modifyTVar' (unSlot s)
 move :: Float -> Float -> RenderTransform
 move x y = Spatial $ Translate $ V2 x y
 
+moveV2 :: V2 Float -> RenderTransform
+moveV2 (V2 x y) = move x y
+
 scale :: Float -> Float -> RenderTransform
 scale x y = Spatial $ Scale $ V2 x y
+
+scaleV2 :: V2 Float -> RenderTransform
+scaleV2 (V2 x y) = scale x y
 
 rotate :: Float -> RenderTransform
 rotate = Spatial . Rotate
@@ -308,8 +322,14 @@ rotate = Spatial . Rotate
 multiply :: Float -> Float -> Float -> Float -> RenderTransform
 multiply r g b a = Multiply $ V4 r g b a
 
+multiplyV4 :: V4 Float -> RenderTransform
+multiplyV4 (V4 r g b a) = multiply r g b a
+
 redChannelReplacement :: Float -> Float -> Float -> Float -> RenderTransform
 redChannelReplacement r g b a = ColorReplacement $ V4 r g b a
+
+redChannelReplacementV4 :: V4 Float -> RenderTransform
+redChannelReplacementV4 (V4 r g b a) = redChannelReplacement r g b a
 
 paintingBounds :: Painting -> (V2 Float, V2 Float)
 paintingBounds = fst . unPainting

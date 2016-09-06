@@ -8,19 +8,19 @@ module Odin.GUI.Styles
   , withDefaultButton
   , withDefaultTextInput
   , withDefaultText
+  , withDefaultStatusBar
   ) where
 
-import           Gelatin.SDL2 hiding (move, scale, rotate)
+import           Gelatin hiding (move)
 import qualified Gelatin as G
 import           Gelatin.FreeType2
-import           Data.Maybe (fromMaybe)
-import           Control.Monad (when)
-import           Control.Lens hiding (to)
+import           Gelatin.GL (transformRenderer, compileColorPictureData)
 
 import Odin.Core
 import Odin.GUI.Button
 import Odin.GUI.TextInput
 import Odin.GUI.Text
+import Odin.GUI.StatusBar
 --------------------------------------------------------------------------------
 -- Button Styling
 --------------------------------------------------------------------------------
@@ -52,9 +52,9 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       return mempty
     Just atlas0 -> do
       rz <- use rez
-      (textr, V2 tw th, atlas) <- freetypeGLRenderer rz atlas0
-                                                     (textColorForButtonState st)
-                                                     btnDataStr
+      (textr, V2 tw _, atlas) <- freetypeGLRenderer rz atlas0
+                                                    (textColorForButtonState st)
+                                                    btnDataStr
       saveAtlas atlas
 
       let pad  = V2 4 4
@@ -72,7 +72,7 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
         pictureBounds
       bgr <- liftIO $ compileColorPictureData rz dat
 
-      let t = mempty{ptfrmMV = affineToModelview $ Translate $ (V2 4 gh) + bgxy}
+      let t = renderToPictureTransform $ moveV2 $ (V2 4 gh) + bgxy
       return $ Painting (bb, bgr `mappend` transformRenderer t textr)
 
 withDefaultButton :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
@@ -136,9 +136,7 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
 
       bgr <- io $ compileColorPictureData rz dat
 
-      let t = mempty{ptfrmMV = affineToModelview $ Translate $
-                  V2 0 $ glyphHeight $ atlasGlyphSize atlas
-               }
+      let t = renderToPictureTransform $ move 0 $ glyphHeight $ atlasGlyphSize atlas
       return $ Painting (bb, bgr `mappend` transformRenderer t textr)
 
 withDefaultTextInput :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
@@ -152,3 +150,11 @@ withDefaultText :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
 withDefaultText color str f = do
   comicFont <- getFontPath "KMKDSP__.ttf"
   withText (fontDescriptor comicFont 16) color str f
+--------------------------------------------------------------------------------
+-- StatusBar
+--------------------------------------------------------------------------------
+withDefaultStatusBar :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
+                     => V4 Float -> (Slot StatusBar -> m b) -> m b
+withDefaultStatusBar color f = do
+  comicFont <- getFontPath "KMKDSP__.ttf"
+  withStatusBar (fontDescriptor comicFont 16) color f

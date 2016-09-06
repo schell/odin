@@ -7,19 +7,20 @@ module Odin.Core.Physics (
   OdinScene,
   World(..),
   Body(..),
+  emptyBody,
   odinBodyToWorldObj,
   physicalObj,
   worldObject,
   physicalObj2PicTfrm,
   worldObj2PicTfrm,
+  worldObjPos,
+  worldObjRot,
   applyPhysics,
   emptyScene,
   rectangleHull,
   canonicalizeVec,
   canonicalizePoint,
-  canonicalizeConvexHull,
-  worldObjPos,
-  worldObjRot
+  canonicalizeConvexHull
 ) where
 
 import           Physics.Engine                 as PE
@@ -89,6 +90,16 @@ data Body = Body { bVel    :: (Double, Double)
                  , bMass   :: (Double, Double)
                  , bMu     :: Double
                  , bHull   :: ConvexHull
+                 }
+
+emptyBody :: Body
+emptyBody = Body { bVel    = (0, 0)
+                 , bRotVel = 0
+                 , bPos    = (0, 0)
+                 , bRot    = 0
+                 , bMass   = (0, 0)
+                 , bMu     = 0
+                 , bHull   = rectangleHull 0 0
                  }
 
 odinBodyToWorldObj :: Body -> WorldObj

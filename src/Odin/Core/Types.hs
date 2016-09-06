@@ -27,8 +27,9 @@ type Name = String
 type Entity = Int
 
 type RenderIO = PictureTransform -> IO ()
-
 type DeallocIO = IO ()
+
+type RenderGUI m a = [RenderTransform] -> m a
 
 type System = StateT Sys IO
 

@@ -46,6 +46,23 @@ newTime = do
                       }
   return tt
 ----------------------------------------------------------------------------------
+-- Bracketing Physics Bodies
+----------------------------------------------------------------------------------
+withBody :: (Monad m, Physics s m) => Int -> Body -> m b -> m b
+withBody k b f = do
+  _ <- k .# body b
+  c <- f
+  scene.scWorld.worldObjs.at k .= Nothing
+  return c
+
+withFreshBody :: (Monad m, Fresh s m, Physics s m)
+              => Body -> (Int -> m b) -> m b
+withFreshBody b f = do
+  k <- fresh ## body b
+  c <- f k
+  scene.scWorld.worldObjs.at k .= Nothing
+  return c
+----------------------------------------------------------------------------------
 -- Rendering Pictures
 ----------------------------------------------------------------------------------
 allocColorPicRenderer :: (Reads Rez m, DoesIO m) => ColorPictureT m a -> m GLRenderer

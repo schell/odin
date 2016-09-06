@@ -65,27 +65,17 @@ library
                      , Odin.Core.Types
 
                      , Odin.GUI.Button.Internal
+                     , Odin.GUI.Text.Internal
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
+                     , Odin.GUI.Picture
+                     , Odin.GUI.StatusBar
                      , Odin.GUI.Styles
+                     , Odin.GUI.Text
                      , Odin.GUI.TextInput
-
-                     , Odin.Scripts.Animation.Pic
-                     , Odin.Scripts.ArrowControl
-                     , Odin.Scripts.Status
 
                      , Odin.Core
                      , Odin.GUI
-
-                     --  App.Control.FRP
-                     --, App.Control.Monad
-                     --, App.GUI.Button
-                     --, App.GUI.Picker
-                     --, App.GUI.TextInput
-                     --, App.Framework
-                     --, App.GUI
-
-
 
   build-depends:       base >=4.8 && <5.0
                      , transformers >= 0.4

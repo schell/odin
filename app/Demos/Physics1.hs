@@ -1,19 +1,49 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Demos.Physics1 ( demo ) where
 
 import Control.Lens hiding (to)
-import qualified Data.Set as S
-import Linear
+import Linear hiding (rotate)
 
-import Gelatin hiding (move)
-import Gelatin.FreeType2
+import Gelatin hiding (move,rotate)
 import Odin.Core
 import Odin.GUI
 
-makeDemoActors :: System [Entity]
-makeDemoActors = do
+data Demo m = Demo { demoBiggy         :: Int
+                   , demoRightWall     :: Int
+                   , demoBottomWall    :: Int
+                   , demoSquares       :: [Int]
+                   , demoRndSquare     :: RenderGUI (UpdateT m) ()
+                   , demoRndBiggy      :: RenderGUI (UpdateT m) ()
+                   , demoRndRightWall  :: RenderGUI (UpdateT m) ()
+                   , demoRndBottomWall :: RenderGUI (UpdateT m) ()
+                   }
+
+withDemo :: MonadIO m => (Demo m -> UpdateT m ()) -> UpdateT m ()
+withDemo f = do
+  blankScene <- use scene
+  -- Create our physics bodies
+  biggy <- fresh ## body emptyBody{ bRotVel = 1
+                                  , bPos    = (180,180)
+                                  , bHull   = rectangleHull 10 30
+                                  }
+  rwall <- fresh ## body emptyBody{ bPos    = (300, 150)
+                                  , bHull   = rectangleHull 10 289
+                                  }
+  bwall <- fresh ## body emptyBody{ bPos    = (150, 300)
+                                  , bHull   = rectangleHull 289 10
+                                  }
+  squares <- forM [(x,y) | y <- [0..5], x <- [0..5]] $ \(x,y) -> do
+    let tx = 100 + x*11
+        ty = 100 + y*11
+    fresh ## body emptyBody{ bVel    = (5,5)
+                           , bPos    = (tx, ty)
+                           , bMass   = (1,1)
+                           , bHull   = rectangleHull 10 10
+                           }
+  -- A function to draw our physics actors
   let actorPic w h = do
         setStroke [StrokeWidth 3, StrokeFeather 1]
         setGeometry $ do
@@ -24,88 +54,58 @@ makeDemoActors = do
             rectangle (V2 (-w/2) (-h/2)) (V2 (w/2) (h/2))
           line $ do
             to (0, r1)
-            to (V2 (w/2) 0, r5)
-            to (V2 (w/2) (h/2), r5)
-            to (V2 (-w/2) (h/2), r5)
+            to (V2 (w/2)       0, r5)
+            to (V2 (w/2)   (h/2), r5)
+            to (V2 (-w/2)  (h/2), r5)
             to (V2 (-w/2) (-h/2), r5)
-            to (V2 (w/2) (-h/2), r5)
-            to (V2 (w/2) 0, r5)
-  actors <- forM [(x,y) | y <- [0..5], x <- [0..5]] $ \(x,y) -> do
-    let tx = 100 + x*11
-        ty = 100 + y*11
-    fresh ## name ("actor" ++ show x ++ show y)
-          ## pos 0
-          ## colorPic (actorPic 10 10)
-          ## body Body{ bVel    = (5,5)
-                      , bRotVel = 0
-                      , bPos    = (tx, ty)
-                      , bRot    = 0
-                      , bMass   = (1,1)
-                      , bMu     = 0
-                      , bHull   = rectangleHull 10 10
-                      }
+            to (V2 (w/2)  (-h/2), r5)
+            to (V2 (w/2)       0, r5)
+  -- Alloc our renderers
+  withColorPicture (actorPic 10 30) $ \(_,biggyr) ->
+    withColorPicture (actorPic 10 289) $ \(_,rwallr) ->
+      withColorPicture (actorPic 289 10) $ \(_,bwallr) ->
+        withColorPicture (actorPic 10 10) $ \(_,squarer) ->
+          f Demo{ demoBiggy         = biggy
+                , demoRightWall     = rwall
+                , demoBottomWall    = bwall
+                , demoSquares       = squares
+                , demoRndSquare     = squarer
+                , demoRndBiggy      = biggyr
+                , demoRndRightWall  = rwallr
+                , demoRndBottomWall = bwallr
+                }
+  -- Replace the scene
+  scene .= blankScene
 
-  biggy <- fresh ## name "biggy"
-                 ## pos 0
-                 ## colorPic (actorPic 10 30)
-                 ## body Body{ bVel    = (0,0)
-                             , bRotVel = 1
-                             , bPos    = (180,180)
-                             , bRot    = 0
-                             , bMass   = (0,0)
-                             , bMu     = 0
-                             , bHull   = rectangleHull 10 30
-                             }
+renderMObj :: Monad m => RenderGUI (UpdateT m) () -> Maybe WorldObj -> UpdateT m ()
+renderMObj _ Nothing = return ()
+renderMObj r (Just obj) = r [moveV2 $ worldObjPos obj, rotate $ worldObjRot obj]
 
-  rwall <- fresh ## name "rightwall"
-                 ## pos 0
-                 ## colorPic (actorPic 10 289)
-                 ## body Body{ bVel    = (0,0)
-                             , bRotVel = 0
-                             , bPos    = (300, 150)
-                             , bRot    = 0
-                             , bMass   = (0,0)
-                             , bMu     = 0
-                             , bHull   = rectangleHull 10 289
-                             }
-  bwall <- fresh ## name "bottomwall"
-                 ## pos 0
-                 ## colorPic (actorPic 289 10)
-                 ## body Body{ bVel    = (0,0)
-                             , bRotVel = 0
-                             , bPos    = (150, 300)
-                             , bRot    = 0
-                             , bMass   = (0,0)
-                             , bMu     = 0
-                             , bHull   = rectangleHull 289 10
-                             }
-
-
-  return $ actors ++ [biggy, rwall, bwall]
+renderDemo :: MonadIO m => Demo m -> UpdateT m ()
+renderDemo Demo{..} = do
+  -- Get the position and rotation of our bodies
+  mbiggyObj <- use (scene.scWorld.worldObjs.at demoBiggy)
+  mrwallObj <- use (scene.scWorld.worldObjs.at demoRightWall)
+  mbwallObj <- use (scene.scWorld.worldObjs.at demoBottomWall)
+  msObjs    <- forM demoSquares $ \k -> use (scene.scWorld.worldObjs.at k)
+  -- Render them
+  renderMObj demoRndBiggy      mbiggyObj
+  renderMObj demoRndRightWall  mrwallObj
+  renderMObj demoRndBottomWall mbwallObj
+  mapM_ (renderMObj demoRndSquare) msObjs
 
 demo :: MonadIO m => UpdateT m ()
 demo = do
-  withDefaultText white "Physics1 demo" $ \title -> fix $ \task -> do
-    renderText title [move 0 16]
-    next task
-
-  ---- Create a status bar to tell us what's up
-  --status  <- freshStatusBar atlas ## name "status"
-  --                                ## pos (V2 400 16)
-  ---- Create all of our demo actors
-  --actors  <- makeDemoActors
-  ---- Keep a ref to the pristine physics scene
-  --scene0  <- use scene
-
-  ---- Make a button to reset the demo
-  --bview   <- allocButtonView atlas "Reset" sz buttonPainter (const $ return ())
-  --btn     <- freshButton 4 bview ## name "btn"
-  --recv (btnMailbox bview) $ \btnState ->
-  --  -- When the button sends a 'clicked' message we reset the demo by simply
-  --  -- putting the original scene back in place
-  --  when (btnState == ButtonStateClicked) (scene .= scene0)
-
-  --tview   <- allocTextInputView atlas "text..." sz textInputPainter $
-  --  io . print
-  --void $ freshTextInput (V2 4 400) tview
-
+  withDefaultStatusBar white $ \status -> do
+    withDefaultButton "Reset" $ \reset -> do
+      V2 btnw _ <- sizeOfButton reset
+      withDefaultText white "Physics1 demo" $ \title -> fix $ \resetTask -> do
+        withDemo $ \d -> fix $ \frame -> do
+          btnState <- renderButton reset []
+          renderText title [move btnw 16]
+          renderStatusBar status [move 0 320]
+          if btnState == ButtonStateClicked
+            then return ()
+            else do renderDemo d
+                    next frame
+        next resetTask
