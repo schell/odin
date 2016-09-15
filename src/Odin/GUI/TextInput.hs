@@ -2,7 +2,7 @@ module Odin.GUI.TextInput
   ( TextInputState(..)
   , TextInputData(..)
   , TextInput
-  , withTextInput
+  , allocTextInput
   , renderTextInput
   , sizeOfTextInput
   ) where

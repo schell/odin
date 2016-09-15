@@ -3,12 +3,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Odin.GUI.Styles
-  ( buttonPainter
+  ( getDefaultFontDescriptor
+  , buttonPainter
+  , iconButtonPainter
   , textInputPainter
-  , withDefaultButton
-  , withDefaultTextInput
-  , withDefaultText
-  , withDefaultStatusBar
+  , allocDefaultText
   ) where
 
 import           Gelatin hiding (move)
@@ -19,8 +18,15 @@ import           Gelatin.GL (transformRenderer, compileColorPictureData)
 import Odin.Core
 import Odin.GUI.Button
 import Odin.GUI.TextInput
-import Odin.GUI.Text
+import Odin.GUI.Text.Internal
 import Odin.GUI.StatusBar
+import Control.Monad (when)
+import Data.Char.FontAwesome
+
+getDefaultFontDescriptor :: MonadIO m => m FontDescriptor
+getDefaultFontDescriptor = do
+  comicFont <- getFontPath "KMKDSP__.ttf"
+  return $ fontDescriptor comicFont 16
 --------------------------------------------------------------------------------
 -- Button Styling
 --------------------------------------------------------------------------------
@@ -52,7 +58,42 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       return mempty
     Just atlas0 -> do
       rz <- use rez
-      (textr, V2 tw _, atlas) <- freetypeGLRenderer rz atlas0
+      ((textc,textr), V2 tw th, atlas) <- freetypeGLRenderer rz atlas0
+                                                    (textColorForButtonState st)
+                                                    btnDataStr
+      saveAtlas atlas
+
+      let pad  = V2 4 4
+          sz = V2 tw th + 2*pad
+          shxy = V2 4 4
+          bgxy = bgOffsetForButtonState st
+          gh = glyphHeight $ atlasGlyphSize atlas
+
+      -- drop shadow and background
+      (bb,dat) <- runPictureT $ do
+        embed $ setGeometry $ fan $
+          mapVertices (,V4 0 0 0 0.4) $ rectangle shxy (shxy + sz)
+        embed $ setGeometry $ fan $
+          mapVertices (,bgColorForButtonState st) $ rectangle bgxy (bgxy + sz)
+        pictureBounds
+      (bgc,bgr) <- io $ compileColorPictureData rz dat
+
+      let t = moveV2 $ (V2 4 gh) + bgxy
+          r rs = do bgr rs
+                    textr $ t:rs
+      return $ Painting (bb, (bgc >> textc, r))
+
+iconButtonPainter :: (MonadIO m, Rezed s m, Fonts s m)
+                  => Int -> Painter (ButtonData, ButtonState) m
+iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
+  iconFont <- getFontPath "FontAwesome.otf"
+  loadAtlas (fontDescriptor iconFont px ) allFontAwesomeChars >>= \case
+    Nothing    -> do
+      io $ putStrLn "ERROR PAINTING BUTTON!"
+      return mempty
+    Just atlas0 -> do
+      rz <- use rez
+      ((textc,textr), V2 tw _, atlas) <- freetypeGLRenderer rz atlas0
                                                     (textColorForButtonState st)
                                                     btnDataStr
       saveAtlas atlas
@@ -70,14 +111,12 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
         embed $ setGeometry $ fan $
           mapVertices (,bgColorForButtonState st) $ rectangle bgxy (bgxy + sz)
         pictureBounds
-      bgr <- liftIO $ compileColorPictureData rz dat
+      (bgc,bgr) <- io $ compileColorPictureData rz dat
 
-      let t = renderToPictureTransform $ moveV2 $ (V2 4 gh) + bgxy
-      return $ Painting (bb, bgr `mappend` transformRenderer t textr)
-
-withDefaultButton :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
-                  => String -> (Slot Button -> m a) -> m a
-withDefaultButton = withButton buttonPainter
+      let t = moveV2 $ (V2 4 gh) + bgxy
+          r rs = do bgr rs
+                    textr $ t:rs
+      return $ Painting (bb, (bgc >> textc, r))
 --------------------------------------------------------------------------------
 -- TextInput Styling
 --------------------------------------------------------------------------------
@@ -87,7 +126,7 @@ textColorForTextInputState st = if st == TextInputStateEditing then canary else 
 bgColorForTextInputState :: TextInputState -> V4 Float
 bgColorForTextInputState TextInputStateDown = V4 0.3 0.3 0.3 1
 bgColorForTextInputState TextInputStateEditing = V4 0.2 0.2 0.2 1
-bgColorForTextInputState _ = V4 1 1 1 0
+bgColorForTextInputState _ = V4 0 0 0 1
 
 lnColorForTextInputState :: TextInputState -> V4 Float
 lnColorForTextInputState TextInputStateUp = white `withAlpha` 0.4
@@ -106,8 +145,9 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
     Just atlas0 -> do
       let color = textColorForTextInputState st
       rz <- use rez
-      (textr, size@(V2 tw th), atlas) <- freetypeGLRenderer rz atlas0 color
-                                                            txtnDataStr
+      ((textc,textr), size@(V2 tw th), atlas) <- freetypeGLRenderer rz atlas0
+                                                                    color
+                                                                    txtnDataStr
       saveAtlas atlas
 
       let hasLeader = st == TextInputStateEditing
@@ -134,27 +174,20 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
               rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
         pictureBounds
 
-      bgr <- io $ compileColorPictureData rz dat
+      (bgc,bgr) <- io $ compileColorPictureData rz dat
 
-      let t = renderToPictureTransform $ move 0 $ glyphHeight $ atlasGlyphSize atlas
-      return $ Painting (bb, bgr `mappend` transformRenderer t textr)
-
-withDefaultTextInput :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
-                     => String -> (Slot (TextInput m) -> m b) -> m b
-withDefaultTextInput = withTextInput textInputPainter
+      let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
+          r rs = do bgr rs
+                    textr $ t:rs
+      return $ Painting (bb, (bgc >> textc, r))
 --------------------------------------------------------------------------------
 -- Text
 --------------------------------------------------------------------------------
-withDefaultText :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
-                => V4 Float -> String -> (Slot Text -> m b) -> m b
-withDefaultText color str f = do
+allocDefaultText :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
+                 => V4 Float -> String -> m (Slot Text)
+allocDefaultText color str = do
   comicFont <- getFontPath "KMKDSP__.ttf"
-  withText (fontDescriptor comicFont 16) color str f
+  allocText (fontDescriptor comicFont 16) color str
 --------------------------------------------------------------------------------
 -- StatusBar
 --------------------------------------------------------------------------------
-withDefaultStatusBar :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
-                     => V4 Float -> (Slot StatusBar -> m b) -> m b
-withDefaultStatusBar color f = do
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  withStatusBar (fontDescriptor comicFont 16) color f

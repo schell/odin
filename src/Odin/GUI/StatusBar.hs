@@ -5,7 +5,8 @@ module Odin.GUI.StatusBar where
 import Text.Printf
 import Data.Word (Word32)
 
-import Odin.Core.Common
+import Odin.Core
+import Odin.GUI.Common
 import Odin.GUI.Text.Internal
 
 data StatusBar = StatusBar { statusText :: Slot Text
@@ -15,8 +16,8 @@ data StatusBar = StatusBar { statusText :: Slot Text
                            , statusCurrent :: Word32
                            }
 
-renderStatusBar :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m, Time s m)
-             => Slot StatusBar -> [RenderTransform] -> m ()
+renderStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Time s m, Resources s m)
+                => Slot StatusBar -> [RenderTransform] -> m ()
 renderStatusBar s rs = do
   sb@StatusBar{..} <- readSlot s
   dt         <- use (time.timeDelta)
@@ -29,11 +30,9 @@ renderStatusBar s rs = do
 
   if (statusCurrent >= elapsed)
     then do
-      freeText statusText
-      txt <- allocText statusFont statusColor str
-      renderText txt rs
-      swapSlot s sb{ statusText = txt
-                   , statusFrames = deltas
+      reallocText statusText statusFont statusColor str
+      renderText statusText rs
+      swapSlot s sb{ statusFrames = deltas
                    , statusCurrent = statusCurrent - elapsed
                    }
   else do renderText statusText rs
@@ -41,19 +40,13 @@ renderStatusBar s rs = do
                        , statusFrames = deltas
                        }
 
-allocStatusBar :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
+allocStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
                => FontDescriptor -> V4 Float -> m (Slot StatusBar)
 allocStatusBar desc color = do
   txt <- allocText desc color "Status..."
-  allocSlot $ StatusBar txt desc color [] 0
+  s   <- allocSlot $ StatusBar txt desc color [] 0
+  registerFree $ freeStatusBar s
+  return s
 
 freeStatusBar :: MonadIO m => Slot StatusBar -> m ()
 freeStatusBar s = fromSlot s statusText >>= freeText
-
-withStatusBar :: (MonadIO m, Fresh s m, Rezed s m, Fonts s m)
-               => FontDescriptor -> V4 Float -> (Slot StatusBar -> m b) -> m b
-withStatusBar desc color f = do
-  s <- allocStatusBar desc color
-  b <- f s
-  freeStatusBar s
-  return b

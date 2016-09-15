@@ -2,7 +2,7 @@ module Odin.GUI.Button
   ( ButtonState(..)
   , ButtonData(..)
   , Button
-  , withButton
+  , allocButton
   , renderButton
   , sizeOfButton
   ) where

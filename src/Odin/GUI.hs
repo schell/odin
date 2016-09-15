@@ -2,6 +2,7 @@ module Odin.GUI
   ( module G
   ) where
 
+import Odin.GUI.Common as G
 import Odin.GUI.Styles as G
 import Odin.GUI.TextInput as G
 import Odin.GUI.Button as G

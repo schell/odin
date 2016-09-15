@@ -43,33 +43,6 @@ withAny ts0 = do
         f (Left ts) (Left t)  = Left $ ts ++ [t]
         f _         (Right a) = Right a
 --------------------------------------------------------------------------------
--- Combinators that use predicates in the inner Monad
---------------------------------------------------------------------------------
-waitUntil :: Monad m => m Bool -> EventT m ()
-waitUntil f = do
-  isdone <- lift f
-  if isdone then return () else (next $ waitUntil f)
-
-waitUntilEither :: Monad m => m Bool -> m Bool -> EventT m (Either () ())
-waitUntilEither fl fr = do
-  isL <- lift fl
-  isR <- lift fr
-  if isL then done (Left ())
-         else if isR then done (Right ())
-                     else next $ waitUntilEither fl fr
-
-waitUntilJust :: Monad m => m (Maybe b) -> EventT m b
-waitUntilJust f = lift f >>= \case
-  Just c  -> done c
-  Nothing -> next $ waitUntilJust f
-
-waitUntilAny :: Monad m => [m (Maybe b)] -> EventT m b
-waitUntilAny fs = do
-  mcs <- lift $ sequence fs
-  case catMaybes mcs of
-    c:_ -> done c
-    []  -> next $ waitUntilAny fs
---------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
 instance Monad m => Functor (EventT m) where

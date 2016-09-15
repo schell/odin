@@ -11,152 +11,58 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE RecordWildCards #-}
-module Odin.Core.Common
-  -- * Reexporting Effects
-  ( module State
-  -- * Reexporting Linear
-  , module L
-  -- * Reexporting Lens pieces
-  , use
-  -- * Rexporting Common Vector Typeclasses
-  , Unbox
-  -- * Entities
-  , Entity
-  , Uid(..)
-  -- * Components
-  , Name
-  , RenderIO
-  , RenderGUI
-  , DeallocIO
-  , Script(..)
-  , module OP
-  -- * The System
-  , System
-  , SystemTime(..)
-  , timeDelta
-  , timeLast
-  , timeLeft
-  , SystemOption(..)
-  , SystemOptions
-  , SystemCommand(..)
-  , SystemCommands
-  , Sys(..)
-  , sysCommands
-  , commands
-  , sysDeallocs
-  , deallocs
-  , sysEvents
-  , events
-  , sysNextK
-  , nextK
-  , sysNames
-  , names
-  , sysOptions
-  , options
-  , sysRez
-  , rez
-  , sysRndrs
-  , rndrs
-  , sysScene
-  , scene
-  , sysScripts
-  , scripts
-  , sysTfrms
-  , tfrms
-  , sysTime
-  , time
-  , sysWindow
-  , window
-  , emptySys
-  , fonts
-  -- * Working with fonts/atlases
-  , loadAtlas
-  , saveAtlas
-  , fontDescriptor
-  , getFontPath
-  -- * Scripts
-  , ScriptStep
-  , isRunningScript
-  , runScript
-  , nextScript
-  , endScript
-  -- * Sequenced Events
-  , module E
-  , Evented
-  , runEventedScript
-  -- * Constraints / Abilities
-  , Names
-  , Tfrms
-  , Rndrs
-  , Deallocs
-  , Scripts
-  , Fresh
-  , Events
-  , Time
-  , Physics
-  , Options
-  , Commands
-  , DoesIO
-  , Rezed
-  , Windowed
-  , Fonts
-  , Reads(..)
-  -- * Storing / Retreiving Values
-  , Slot
-  , allocSlot
-  , readSlot
-  , fromSlot
-  , swapSlot
-  , modifySlot
-  -- * Fonts
-  , FontDescriptor(..)
-  -- * Painting / Graphics
-  , Painting(..)
-  , Painter(..)
-  , paintingBounds
-  , paintingSize
-  , paintingOrigin
-  , paintingCenter
-  , RenderTransform(..)
-  , renderToPictureTransform
-  , rendersToPictureTransform
-  , move
-  , scale
-  , rotate
-  , multiply
-  , redChannelReplacement
-  , moveV2
-  , scaleV2
-  , multiplyV4
-  , redChannelReplacementV4
-  -- * Time savers / Helpers
-  , io
-  -- * Experiments
-  , Frame(..)
-  , UpdateT
-  ) where
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module Odin.Core.Common where
 
 import           Gelatin.SDL2 hiding (E, move, scale, rotate, multiply)
 import           Gelatin.FreeType2
 import           SDL hiding (Event, get, time)
+import           Data.Monoid ((<>))
 import           Data.Map (Map)
 import qualified Data.Map as M
+import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import           Data.Vector.Unboxed (Unbox)
+import           Data.Word (Word32)
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
 import           Linear as L hiding (rotate)
+import           Linear.Affine (Point(..))
 import           System.FilePath
 import           System.Directory
+import           System.Exit (exitSuccess)
 
 import           Control.Monad.Evented as E
 
 import           Odin.Core.Physics as OP
-import           Odin.Core.Types
 --------------------------------------------------------------------------------
--- Experiments
+-- Core types for building applications
 --------------------------------------------------------------------------------
+newtype Uid = Uid { unUid :: Int } deriving (Show, Eq, Num, Enum)
+
+data SystemTime = SystemTime
+  { _timeLast  :: Word32
+  -- ^ The number of milliseconds from initialization to the last
+  -- time the system was ticked.
+  , _timeDelta :: Word32
+  -- ^ The difference between timeLast and the timeLast before it
+  , _timeLeft  :: Word32
+  -- ^ The number of milliseconds left unconsumed by the last
+  -- physics tick
+  } deriving (Show, Eq)
+
+type GUIRenderer = GLRenderer
+newtype Painting = Painting {unPainting :: ((V2 Float, V2 Float) , GUIRenderer)}
+
+instance Monoid Painting where
+  mempty = Painting ((0,0), mempty)
+  mappend (Painting (abb,a)) (Painting (bbb,b)) = Painting (cbb,c)
+    where cbb = pointsBounds [fst abb, snd abb, fst bbb, snd bbb]
+          c   = a `mappend` b
+
+newtype Painter a m = Painter { unPainter :: a -> m Painting }
+
 newtype FontDescriptor = FontDescriptor (FilePath, GlyphSize)
                        deriving (Show, Eq, Ord)
 
@@ -167,21 +73,11 @@ data Frame = Frame { _frameTime   :: SystemTime
                    , _frameNextK  :: Int
                    , _frameWindow :: Window
                    , _frameRez    :: Rez
-                   , _frameScene  :: OdinScene
                    , _frameFonts  :: FontMap
+                   , _frameRsrcs  :: [IO ()]
                    }
 makeLenses ''Frame
 makeFields ''Frame
-
-renderToPictureTransform :: RenderTransform -> PictureTransform
-renderToPictureTransform (Spatial affine) =
-  PictureTransform (affineToModelview affine) 1 1 Nothing
-renderToPictureTransform (Alpha a) = PictureTransform identity a 1 Nothing
-renderToPictureTransform (Multiply c) = PictureTransform identity 1 c Nothing
-renderToPictureTransform (ColorReplacement c) = PictureTransform identity 1 1 (Just c)
-
-rendersToPictureTransform :: [RenderTransform] -> PictureTransform
-rendersToPictureTransform = mconcat . map renderToPictureTransform
 
 type UpdateT m = EventT (StateT Frame m)
 
@@ -189,48 +85,74 @@ instance Monad m => MonadState Frame (UpdateT m) where
   get = lift get
   put = lift . put
 --------------------------------------------------------------------------------
--- Odin Component/System Constraints and Abilities
+-- Type Constraints and Abilities
 --------------------------------------------------------------------------------
 makeLenses ''SystemTime
-makeLenses ''Sys
-makeFields ''Sys
 
-type Names s m      = (MonadState s m, HasNames    s (IntMap String))
-type Tfrms s m      = (MonadState s m, HasTfrms    s (IntMap PictureTransform))
-type Rndrs s m      = (MonadState s m, HasRndrs    s (IntMap RenderIO))
-type Deallocs s m   = (MonadState s m, HasDeallocs s (IntMap DeallocIO))
-type Scripts s m    = (MonadState s m, HasScripts  s (IntMap [Script]))
+class HasScene s a | s -> a where
+  scene :: Lens' s a
+
 type Fresh s m      = (MonadState s m, HasNextK    s Int)
 type Events s m     = (MonadState s m, HasEvents   s [EventPayload])
 type Time s m       = (MonadState s m, HasTime     s SystemTime)
 type Physics s m    = (MonadState s m, HasScene    s OdinScene)
-type Options s m    = (MonadState s m, HasOptions  s SystemOptions)
-type Commands s m   = (MonadState s m, HasCommands s SystemCommands)
 type Windowed s m   = (MonadState s m, HasWindow   s Window)
 type Rezed s m      = (MonadState s m, HasRez      s Rez)
 type Fonts s m      = (MonadState s m, HasFonts    s FontMap)
-type DoesIO = MonadIO
-
-class Monad m => Reads a m where
-  ask :: m a
-
-instance Reads Window System where
-  ask = use window
-
-instance Reads Rez System where
-  ask = use rez
-
-instance Reads SystemTime System where
-  ask = use time
-
-emptySys :: Rez -> Window -> Sys
-emptySys rz win =
-  Sys mempty mempty mempty mempty mempty 0 win rz [] (SystemTime 0 0 0) emptyScene mempty mempty
+type Resources s m  = (MonadState s m, HasRsrcs    s [IO ()])
 --------------------------------------------------------------------------------
--- Doing IO
+-- Time Savers/Aliases
 --------------------------------------------------------------------------------
 io :: MonadIO m => IO a -> m a
 io = liftIO
+--------------------------------------------------------------------------------
+-- Generating Unique IDs
+--------------------------------------------------------------------------------
+fresh :: Fresh s m => m Int
+fresh = do
+  k <- use nextK
+  nextK += 1
+  return k
+--------------------------------------------------------------------------------
+-- Time
+--------------------------------------------------------------------------------
+readTimeDeltaSeconds :: (Time s m, Fractional f) => m f
+readTimeDeltaSeconds = (/1000) . fromIntegral <$> use (time.timeDelta)
+
+withTiming :: (Time s m, Fractional f) => m a -> m (f, a)
+withTiming f = do
+  t0 <- readTimeDeltaSeconds
+  a  <- f
+  t1 <- readTimeDeltaSeconds
+  return (t1 - t0, a)
+
+newTime :: MonadIO m => m SystemTime
+newTime = do
+  t <- io ticks
+  let tt = SystemTime { _timeLast  = t
+                      , _timeDelta = 0
+                      , _timeLeft  = 0
+                      }
+  return tt
+----------------------------------------------------------------------------------
+-- Rendering Pictures
+----------------------------------------------------------------------------------
+allocColorPicRenderer :: (Rezed s m, MonadIO m) => ColorPictureT m a -> m GLRenderer
+allocColorPicRenderer pic = do
+  rz <- use rez
+  (_,dat) <- runPictureT pic
+  io $ compileColorPictureData rz dat
+
+allocTexturePicRenderer ::(Rezed s m, MonadIO m) => TexturePictureT m a -> m GLRenderer
+allocTexturePicRenderer pic = do
+  rz <- use rez
+  (_,dat) <- runPictureT pic
+  io $ compileTexturePictureData rz dat
+--------------------------------------------------------------------------------
+-- Chaining Setters
+--------------------------------------------------------------------------------
+setBody :: Physics s m => Int -> Body -> m ()
+setBody k b = scene.scWorld.worldObjs %= IM.insert k (odinBodyToWorldObj b)
 --------------------------------------------------------------------------------
 -- Working with Fonts
 --------------------------------------------------------------------------------
@@ -258,31 +180,6 @@ getFontPath :: MonadIO m => String -> m FilePath
 getFontPath fontname =
   (</> "assets" </> "fonts" </> fontname) <$> (io getCurrentDirectory)
 --------------------------------------------------------------------------------
--- Scripts
---------------------------------------------------------------------------------
-isRunningScript :: Script -> Bool
-isRunningScript ScriptEnd = False
-isRunningScript _ = True
-
-runScript :: Script -> System Script
-runScript (Script s) = s
-runScript ScriptEnd = return ScriptEnd
-
-endScript :: Monad m => m Script
-endScript = return ScriptEnd
-
-nextScript :: Monad m => ScriptStep -> m Script
-nextScript = return . Script
---------------------------------------------------------------------------------
--- Sequenced Events
---------------------------------------------------------------------------------
-type Evented a = EventT System a
-
-runEventedScript :: Evented a -> System Script
-runEventedScript ev = runEventT ev >>= \case
-  Left nv -> return $ Script $ runEventedScript nv
-  Right _ -> endScript
---------------------------------------------------------------------------------
 -- Storing / Retreiving messages
 --------------------------------------------------------------------------------
 newtype Slot a = Slot { unSlot :: TVar a }
@@ -290,17 +187,32 @@ newtype Slot a = Slot { unSlot :: TVar a }
 allocSlot :: MonadIO m => a -> m (Slot a)
 allocSlot = (Slot <$>) . io . newTVarIO
 
+slot :: MonadIO m => a -> m (Slot a)
+slot = allocSlot
+
 readSlot :: MonadIO m => Slot a -> m a
 readSlot = io . readTVarIO . unSlot
+
+unslot :: MonadIO m => Slot a -> m a
+unslot = readSlot
 
 fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
 fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s
 
+fromSlotM :: MonadIO m => Slot a -> (a -> m b) -> m b
+fromSlotM s f = readSlot s >>= f
+
 swapSlot :: MonadIO m => Slot a -> a -> m ()
 swapSlot s a = void $ io $ atomically $ swapTVar (unSlot s) a
 
+is :: MonadIO m => Slot a -> a -> m ()
+is = swapSlot
+
 modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
 modifySlot s = io . atomically . modifyTVar' (unSlot s)
+
+modifySlotM :: MonadIO m => Slot a -> (a -> m a) -> m ()
+modifySlotM s f = readSlot s >>= f >>= swapSlot s
 --------------------------------------------------------------------------------
 -- Look/Feel
 --------------------------------------------------------------------------------
@@ -342,14 +254,45 @@ paintingOrigin = fst . fst . unPainting
 
 paintingCenter :: Painting -> V2 Float
 paintingCenter p = let (tl,br) = paintingBounds p in tl + (br - tl)/2
+--------------------------------------------------------------------------------
+-- Sytem Control Stuff
+--------------------------------------------------------------------------------
+isQuit :: Keysym -> Bool
+isQuit (Keysym (Scancode 20) (Keycode 113) m) = any ($ m)
+    [ keyModifierLeftCtrl
+    , keyModifierRightCtrl
+    , keyModifierLeftGUI
+    , keyModifierRightGUI
+    ]
+isQuit _ = False
 
-renderPainting :: MonadIO m => [RenderTransform] -> Painting -> m ()
-renderPainting rs p = do
-  let t = rendersToPictureTransform rs
-      r = snd $ snd $ unPainting p
-  liftIO $ r t
+tickTime :: (Time s m, MonadIO m) => m ()
+tickTime = do
+  lastT <- use (time.timeLast)
+  t <- io ticks
+  time.timeLast .= t
+  time.timeDelta .= t - lastT
 
-freePainting :: MonadIO m => Painting -> m ()
-freePainting = liftIO . fst . snd . unPainting
+tickEvents :: (Events s m, MonadIO m) => m ()
+tickEvents = do
+  evs <- io (pollEvents >>= mapM (processEvent . eventPayload))
+  events .= evs
+  where processEvent QuitEvent = exitSuccess
+        processEvent ev@(KeyboardEvent (KeyboardEventData _ _ _ k)) = do
+          when (isQuit k) exitSuccess
+          --print (m,r,k)
+          return ev
+        processEvent e = return e
 
-
+tickPhysics :: (Physics s m, Time s m, MonadIO m) => m ()
+tickPhysics = do
+  oscene <- use scene
+  -- Time is in milliseconds
+  dt <- use (time.timeDelta)
+  t0 <- use (time.timeLeft)
+  let tt = dt + t0
+      -- one physics step should be 0.01
+      n = floor (fromIntegral tt / 10 :: Double)
+      t1 = tt - (fromIntegral n * 10)
+  time.timeLeft .= t1
+  scene.scWorld .= runWorldOver 0.01 oscene n

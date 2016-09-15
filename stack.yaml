@@ -1,23 +1,29 @@
 flags: {}
 packages:
-- '.'
-- location:
-    git: https://github.com/schell/gelatin.git
-    commit: 2e1475ebab37f53961c33416924b7adfbf560496
-  subdirs:
-  - gelatin
-  - gelatin-gl
-  - gelatin-sdl2
-  - gelatin-freetype2
+- .
+- ../varying
+- ../gelatin/gelatin
+- ../gelatin/gelatin-gl
+- ../gelatin/gelatin-sdl2
+- ../gelatin/gelatin-freetype2
+
+#- location:
+#    git: https://github.com/schell/gelatin.git
+#    commit: 2e1475ebab37f53961c33416924b7adfbf560496
+#  subdirs:
+#  - gelatin
+#  - gelatin-gl
+#  - gelatin-sdl2
+#  - gelatin-freetype2
 - location:
     git: https://github.com/schell/renderable.git
     commit: fda35ce6d0f02f3e29bf8168305f8ac5421f40fd
 - location:
     git: https://github.com/schell/htiled.git
     commit: b008faec3971d7088e4570abc42f94b0b510dde3
-- location:
-    git: https://github.com/schell/varying.git
-    commit: cd1fc3ab5befb59f7b7d5940e5ee8da43ed54dd4
+#- location:
+#    git: https://github.com/schell/varying.git
+#    commit: cd1fc3ab5befb59f7b7d5940e5ee8da43ed54dd4
 - location:
     git: https://github.com/schell/sdl2.git
     commit: aff05d74b6a11969c880ab410193ff44ec0905ee
@@ -29,10 +35,14 @@ packages:
   - shapes
   - shapes-math
 
+- location:
+    git: https://github.com/lukexi/halive.git
+    commit: c1ded911d7cd37df4192aaa4f05c05f53b796bb3
+
 extra-deps:
 - FontyFruity-0.5.3.2
-- halive-0.1.0.7
 - freetype2-0.1.1
 
 resolver: lts-6.7
 #resolver: nightly-2016-07-14
+#resolver: nightly-2016-08-17

@@ -1,27 +1,28 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MagicHash #-}
-module Odin.Core.Physics (
-  module PE,
-  External,
-  OdinWorld,
-  OdinScene,
-  World(..),
-  Body(..),
-  emptyBody,
-  odinBodyToWorldObj,
-  physicalObj,
-  worldObject,
-  physicalObj2PicTfrm,
-  worldObj2PicTfrm,
-  worldObjPos,
-  worldObjRot,
-  applyPhysics,
-  emptyScene,
-  rectangleHull,
-  canonicalizeVec,
-  canonicalizePoint,
-  canonicalizeConvexHull
-) where
+{-# LANGUAGE TemplateHaskell #-}
+module Odin.Core.Physics
+  ( module PE
+  , External
+  , OdinWorld
+  , OdinScene
+  , World(..)
+  , Body(..)
+  , emptyBody
+  , odinBodyToWorldObj
+  , physicalObj
+  , worldObject
+  , physicalObj2RndTfrms
+  , worldObj2RndTfrms
+  , worldObjPos
+  , worldObjRot
+  , applyPhysics
+  , emptyScene
+  , rectangleHull
+  , canonicalizeVec
+  , canonicalizePoint
+  , canonicalizeConvexHull
+  ) where
 
 import           Physics.Engine                 as PE
 import           Physics.Engine.Main            as PE
@@ -36,12 +37,13 @@ import           Physics.Scenes.Scene           as PE
 import qualified Physics.Linear                 as PE
 import           Physics.Linear.Convert         as PE
 
-
 import           Gelatin.SDL2
 import qualified Data.Array as A
 import           Data.Monoid ((<>))
 import           Data.IntMap.Strict
 import qualified Data.IntMap.Strict as IM
+import           Control.Lens
+import           Control.Monad.State.Strict
 import           Linear.Affine (Point(..))
 import           GHC.Exts (Double(..))
 
@@ -112,60 +114,22 @@ emptyScene = Scene world externals contactBehavior
         externals = []
         contactBehavior = ContactBehavior 0.01 0.02
 
-physicalObj2PicTfrm :: PhysicalObj -> PictureTransform
-physicalObj2PicTfrm PhysicalObj{..} = PictureTransform mv 1 1 Nothing
+physicalObj2RndTfrms :: PhysicalObj -> [RenderTransform]
+physicalObj2RndTfrms PhysicalObj{..} = [v,r]
   where vd = toLV2 _physObjPos
-        v  = mat4Translate $ promoteV2 (realToFrac <$> vd)
-        r = mat4Rotate (realToFrac _physObjRotPos) (V3 0 0 1)
-        mv = v !*! r
+        v  = Spatial $ Translate $ realToFrac <$> vd
+        r  = Spatial $ Rotate $ realToFrac _physObjRotPos
 
-worldObj2PicTfrm :: WorldObj -> PictureTransform
-worldObj2PicTfrm = physicalObj2PicTfrm . _worldPhysObj
+worldObj2RndTfrms :: WorldObj -> [RenderTransform]
+worldObj2RndTfrms = physicalObj2RndTfrms . _worldPhysObj
 
-applyPhysics :: IntMap WorldObj -> IntMap PictureTransform
-             -> IntMap PictureTransform
-applyPhysics objs = IM.intersectionWith (<>) objTfrms
-  where objTfrms = worldObj2PicTfrm <$> objs
+applyPhysics :: IntMap WorldObj -> IntMap [RenderTransform]
+             -> IntMap [RenderTransform]
+applyPhysics objs = IM.intersectionWith (++) objTfrms
+  where objTfrms = worldObj2RndTfrms <$> objs
 --------------------------------------------------------------------------------
 -- Converting Shapes types to Linear types
 --------------------------------------------------------------------------------
---instance ToCanonical V2 where
---  type Canonical V2 = V2'
---  toCanonical = toLV2
---
---instance ToCanonical P2 where
---  type Canonical P2 = P2'
---  toCanonical = toLP2
---
---instance ToCanonical O.ContactPoints where
---  type Canonical O.ContactPoints = ContactPoints
---  toCanonical =
---    mapBoth f (fromSP . spMap f)
---    where f = toCanonical . _neighborhbdCenter
---
---instance ToCanonical O.Contact where
---  type Canonical O.Contact = Contact
---  toCanonical O.Contact{..} =
---    Contact
---    (toCanonical _contactPenetrator)
---    (toCanonical . _neighborhbdUnitNormal $ _contactEdge)
---
---instance ToCanonical O.Contact' where
---  type Canonical O.Contact' = Contact
---  toCanonical O.Contact'{..} =
---    Contact
---    (Left . toCanonical $ _contactPenetrator')
---    (toCanonical _contactEdgeNormal')
---
---  type Canonical O.Overlap = Overlap
---  toCanonical O.Overlap{..} =
---    Overlap (e0, e1) depth pen
---    where e0 = toCanonical $ _neighborhbdCenter _overlapEdge
---          e1 = toCanonical . _neighborhbdCenter . _neighborhbdNext $ _overlapEdge
---          n = toCanonical $ _neighborhbdUnitNormal _overlapEdge
---          depth = fmap (*(-_overlapDepth)) n
---          pen = toCanonical $ _neighborhbdCenter _overlapPenetrator
-
 canonicalizePoint :: PE.P2 -> V2 Double
 canonicalizePoint = unPoint . toLP2
   where unPoint (P v) = v

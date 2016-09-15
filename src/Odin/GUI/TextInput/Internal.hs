@@ -8,9 +8,13 @@ module Odin.GUI.TextInput.Internal where
 import           Gelatin.SDL2
 import           Gelatin.FreeType2
 import           Odin.Core
+import           Odin.GUI.Common
 import           Odin.GUI.Button.Internal
 import           SDL
 import qualified SDL.Raw.Types as Raw
+import           Control.Lens hiding (to)
+import           Control.Arrow (first)
+import           Control.Monad (forM_, msum)
 import           Data.List (intercalate)
 import           Data.Monoid
 import           Data.Maybe (fromMaybe)
@@ -19,8 +23,6 @@ import qualified Data.Text as T
 import           Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
-import           Control.Lens hiding (to)
-import           Control.Arrow (first)
 --------------------------------------------------------------------------------
 -- Types
 --------------------------------------------------------------------------------
@@ -34,16 +36,15 @@ data TextInputState = TextInputStateUp
 newtype TextInputData = TextInputData
   { txtnDataStr :: String }
 
-data TextInputRndrs = TextInputRndrs { txtnRndrsUp       :: GLRenderer
-                                     , txtnRndrsOver     :: GLRenderer
-                                     , txtnRndrsDown     :: GLRenderer
-                                     , txtnRndrsEdit     :: GLRenderer
+data TextInputRndrs = TextInputRndrs { txtnRndrsUp       :: GUIRenderer
+                                     , txtnRndrsOver     :: GUIRenderer
+                                     , txtnRndrsDown     :: GUIRenderer
+                                     , txtnRndrsEdit     :: GUIRenderer
                                      }
 
 type WordMap = Map String (V2 Float, GLRenderer)
 
-data TextInput m = TextInput { txtnUid     :: Int
-                             , txtnSize    :: V2 Float
+data TextInput m = TextInput { txtnSize    :: V2 Float
                              , txtnRndrs   :: TextInputRndrs
                              , txtnState   :: TextInputState
                              , txtnString  :: String
@@ -119,7 +120,7 @@ allocTextRndr :: (MonadIO m, Rezed s m, Fonts s m)
               => Painter (TextInputData, TextInputState) m
               -> TextInputState
               -> String
-              -> m (GLRenderer, V2 Float)
+              -> m (GUIRenderer, V2 Float)
 allocTextRndr painter st str = do
   let dat = TextInputData str
   Painting ((tl,br), r) <- unPainter painter (dat, st)
@@ -138,20 +139,20 @@ allocTextRndrs painter str = do
   return (rs, sz)
 
 -- Allocs a new text input view.
-allocTextInput :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
+allocTextInput :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
                => Painter (TextInputData, TextInputState) m
                -> String
                -> m (Slot (TextInput m))
 allocTextInput painter str = do
   (rs,sz) <- allocTextRndrs painter str
-  k  <- fresh
-  allocSlot TextInput{ txtnUid     = k
-                     , txtnSize    = sz
-                     , txtnRndrs   = rs
-                     , txtnState   = TextInputStateUp
-                     , txtnString  = str
-                     , txtnPainter = painter
-                     }
+  s  <- allocSlot TextInput{ txtnSize    = sz
+                           , txtnRndrs   = rs
+                           , txtnState   = TextInputStateUp
+                           , txtnString  = str
+                           , txtnPainter = painter
+                           }
+  registerFree $ freeTextInput s
+  return s
 
 freeTextInput :: MonadIO m => Slot (TextInput x) -> m ()
 freeTextInput s = fromSlot s f >>= io
@@ -160,26 +161,15 @@ freeTextInput s = fromSlot s f >>= io
               rs = [txtnRndrsUp,txtnRndrsOver,txtnRndrsDown,txtnRndrsEdit]
           forM_ rs fst
 
-withTextInput :: (MonadIO m, Rezed s m, Fresh s m, Fonts s m)
-              => Painter (TextInputData, TextInputState) m
-              -> String
-              -> (Slot (TextInput m) -> m b) -> m b
-withTextInput painter str f = do
-  txtn <- allocTextInput painter str
-  a    <- f txtn
-  freeTextInput txtn
-  return a
-
 renderTextInput :: (MonadIO m, Rezed s m, Fonts s m, Events s m)
                 => Slot (TextInput m) -> [RenderTransform] -> m (TextInputState, String)
 renderTextInput s rs = do
   txt@TextInput{..} <- readSlot s
-  let t  = rendersToPictureTransform rs
-      mv = ptfrmMV t
-      renderUp   = io $ (snd $ txtnRndrsUp   txtnRndrs) t
-      renderOver = io $ (snd $ txtnRndrsOver txtnRndrs) t
-      renderDown = io $ (snd $ txtnRndrsDown txtnRndrs) t
-      renderEdit = io $ (snd $ txtnRndrsEdit txtnRndrs) t
+  let mv = affine2sModelview $ extractSpatial rs
+      renderUp   = io $ (snd $ txtnRndrsUp   txtnRndrs) rs
+      renderOver = io $ (snd $ txtnRndrsOver txtnRndrs) rs
+      renderDown = io $ (snd $ txtnRndrsDown txtnRndrs) rs
+      renderEdit = io $ (snd $ txtnRndrsEdit txtnRndrs) rs
       update st = do
         swapSlot s $ txt{txtnState=st}
         return (st, txtnString)
@@ -192,7 +182,7 @@ renderTextInput s rs = do
         io $ do -- dealloc the previous edit renderer
                 fst $ txtnRndrsEdit txtnRndrs
                 -- render the new edit
-                snd r t
+                snd r rs
         swapSlot s txt{txtnSize     = sz
                       ,txtnRndrs    = newRndrs
                       ,txtnString   = str
@@ -214,7 +204,7 @@ renderTextInput s rs = do
                 fst $ txtnRndrsOver txtnRndrs
                 fst $ txtnRndrsDown txtnRndrs
                 -- render the new up
-                snd up t
+                snd up rs
         swapSlot s txt{txtnSize    = sz
                       ,txtnRndrs   = newRndrs
                       ,txtnState   = TextInputStateUp
