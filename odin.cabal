@@ -149,6 +149,7 @@ executable mapmaker
                      , pretty-show >= 1.6
                      , hashable
                      , mtl
+                     , transformers
                      , filepath
                      , directory
                      , linear

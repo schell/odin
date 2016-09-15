@@ -85,11 +85,12 @@ allocTileRenderer rez tile Tileset{..} tex = do
       V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
       -- the tile's uv bottom left
       V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
-  compileTexturePicture rez $ do
+  (_,glr) <- compileTexturePicture rez $ do
     setTextures [tex]
     setGeometry $ triangles $ do
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
+  return glr
 
 mapOfTiles :: Rez -> TiledMap -> IO TileGLRendererMap
 mapOfTiles rez t@TiledMap{..} = do
@@ -110,7 +111,7 @@ allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRen
 allocLayerRenderer tmap rmap name = case layerWithName tmap name of
   Nothing -> return Nothing
   Just layer -> do
-    let  renderLayer :: PictureTransform -> IO ()
+    let  renderLayer :: [RenderTransform] -> IO ()
          renderLayer tfrm = mapM_ (tileRenderer tfrm) $ M.toList $ layerData layer
          tileRenderer tfrm ((x,y), tile) = case M.lookup tile rmap of
            Nothing -> putStrLn $ "Could not find renderer for tile:" ++ show tile
@@ -119,6 +120,6 @@ allocLayerRenderer tmap rmap name = case layerWithName tmap name of
                  w  = tsTileWidth ts
                  h  = tsTileHeight ts
                  v  = fromIntegral <$> V2 (w * x)  (h * y)
-                 t  = tfrm <> PictureTransform (mat4Translate $ promoteV2 v) 1 1 Nothing
+                 t  = tfrm ++ [Spatial $ Translate v]
              snd f t
     return $ Just (return (), renderLayer)
