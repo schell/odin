@@ -86,12 +86,15 @@ renderButton s rs = do
       renderBtnUp   = io $ snd (btnRndrsUp btnRndrs) rs
       renderBtnOver = io $ snd (btnRndrsOver btnRndrs) rs
       renderBtnDown = io $ snd (btnRndrsDown btnRndrs) rs
-      updateBtn st  = swapSlot s btn{btnState = st} >> return st
+      updateBtn st  = do
+        swapSlot s btn{btnState = st}
+        return st
   case btnState of
     ButtonStateOver -> do
       isOver <- getMouseIsOverBox mv btnSize
       if isOver
-        then do leftMouseIsDown <- queryMouseButton ButtonLeft
+        then do ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+                leftMouseIsDown <- queryMouseButton ButtonLeft
                 if leftMouseIsDown
                   then do renderBtnDown
                           updateBtn ButtonStateDown
@@ -104,22 +107,22 @@ renderButton s rs = do
       if leftMouseIsUp
         then do renderBtnUp
                 isOver <- getMouseIsOverBox mv btnSize
-                updateBtn $ if isOver then ButtonStateClicked else ButtonStateUp
+                st <- if isOver
+                  then do ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+                          return ButtonStateClicked
+                  else return ButtonStateUp
+                updateBtn st
         else do renderBtnDown
+                ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
                 return ButtonStateDown
     -- ButtonStateUp or ButtonStateClicked
     _   -> do
       isOver <- getMouseIsOverBox mv btnSize
       if isOver
         then do renderBtnOver
-                -- we can't switch cursors because this gets run on every button
-                -- that gets rendered, causing only the last rendered button to
-                -- have real effect. when we switch out to using some kind of
-                -- quadtree-backed hit-testing we can enable this
-                --switchCursor Raw.SDL_SYSTEM_CURSOR_HAND
+                ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
                 updateBtn ButtonStateOver
         else do renderBtnUp
-                --switchCursor Raw.SDL_SYSTEM_CURSOR_ARROW
                 return ButtonStateUp
 --------------------------------------------------------------------------------
 -- Button properties

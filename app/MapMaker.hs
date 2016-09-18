@@ -380,8 +380,9 @@ runFrame f = do
   io $ glClearColor 0.5 0.5 0.5 1
   use rez >>= io . clearFrame
   tickTime
-  tickEvents
+  tickUIPrepare
   e <- runEventT f
+  tickUIFinish
   use window >>= io . updateWindowSDL2
   case e of
     Left g   -> runFrame g

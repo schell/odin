@@ -46,7 +46,7 @@ runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
 runFrame f = do
   use rez >>= io . clearFrame
   tickTime
-  tickEvents
+  tickUIPrepare
   e <- runEventT f
   use window >>= io . updateWindowSDL2
   case e of

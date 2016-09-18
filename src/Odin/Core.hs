@@ -16,6 +16,7 @@ module Odin.Core
   , foldM_
   -- * SDL stuff
   , module KeyCodes
+  , module Enum
   , MouseButton(..)
   , InputMotion(..)
   ) where
@@ -25,6 +26,7 @@ import Odin.Core.Physics   as O
 import Gelatin.GL.Common   as GC
 import SDL.Event
 import SDL.Input.Keyboard.Codes as KeyCodes
+import SDL.Raw.Enum as Enum hiding (Keycode, Scancode)
 import Data.Function (fix)
 import Control.Monad (void, when, unless, forM, forM_, foldM, foldM_)
 import Control.Monad.Evented as E

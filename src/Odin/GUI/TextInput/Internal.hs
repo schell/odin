@@ -173,19 +173,36 @@ renderTextInput s rs = do
         return $ (TextInputStateEdited, str)
   case txtnState of
     TextInputStateUp -> getMouseIsOverBox mv txtnSize >>= \case
-      True  -> renderOver >> update TextInputStateOver
+      True  -> do
+        renderOver
+        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        update TextInputStateOver
       False -> renderUp >> return (TextInputStateUp, txtnString)
 
     TextInputStateOver -> downAndOver >>= \case
     --(down,over)
-      (False,True) -> renderOver >> return (TextInputStateOver, txtnString)
-      (True,True)  -> renderDown >> update TextInputStateDown
-      _            -> renderUp   >> update TextInputStateUp
+      (False,True) -> do
+        renderOver
+        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        return (TextInputStateOver, txtnString)
+      (True,True)  -> do
+        renderDown
+        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        update TextInputStateDown
+      _            -> do
+        renderUp
+        update TextInputStateUp
     TextInputStateDown -> downAndOver >>= \case
     --(down,over)
-      (False,True)  -> renderEdit >> update TextInputStateEditing
-      (False,False) -> renderUp   >> update TextInputStateUp
-      _             -> renderDown >> return (TextInputStateDown, txtnString)
+      (False, True) -> do
+        renderEdit
+        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        update TextInputStateEditing
+      (False, False) -> renderUp   >> update TextInputStateUp
+      (True, ovr) -> do
+        renderDown
+        when ovr $ ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        return (TextInputStateDown, txtnString)
 
     TextInputStateEditing -> escOrEnterPressed >>= \case
       True -> endEditing
@@ -193,11 +210,17 @@ renderTextInput s rs = do
         Nothing  -> downAndOver >>= \case
         --(down,over)
           (True,False) -> endEditing
-          _            -> renderEdit >> return (TextInputStateEditing, txtnString)
+          (_, ovr) -> do
+            renderEdit
+            when ovr $ ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+            return (TextInputStateEditing, txtnString)
         Just str -> continueEditing str
 
     TextInputStateEdited -> getMouseIsOverBox mv txtnSize >>= \case
-      True  -> renderOver >> update TextInputStateOver
+      True  -> do
+        renderOver
+        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        update TextInputStateOver
       False -> renderUp >> update TextInputStateUp
 --------------------------------------------------------------------------------
 -- TextInput properties

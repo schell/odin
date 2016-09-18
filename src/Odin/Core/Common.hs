@@ -16,7 +16,10 @@ module Odin.Core.Common where
 
 import           Gelatin.SDL2 hiding (E, move, scale, rotate, multiply)
 import           Gelatin.FreeType2
-import           SDL hiding (Event, get, time)
+import           SDL hiding (freeCursor, Cursor, Event, get, time)
+import           SDL.Raw.Event hiding (getModState)
+import           SDL.Raw.Enum hiding (Keycode, Scancode)
+import           SDL.Raw.Types (Cursor)
 import           Data.Monoid ((<>))
 import           Data.Map (Map)
 import qualified Data.Map as M
@@ -83,7 +86,8 @@ data Ui = Ui { _uiHotId         :: UiItem
              , _uiQueryScan     :: Scancode -> InputMotion -> Bool -> Bool
              , _uiQueryKey      :: Keycode -> InputMotion -> Bool -> Bool
              , _uiQueryMouseBtn :: MouseButton -> InputMotion -> Int -> Bool
-             , _uiSystemCursor  :: Maybe Int
+             , _uiSystemCursor  :: Word32
+             , _uiSavedCursor   :: Maybe (Word32, Cursor)
              }
 makeFields ''Ui
 
@@ -99,7 +103,8 @@ emptyUi = Ui { _uiHotId        = UiItemNone
              , _uiQueryScan     = \_ _ _ -> False
              , _uiQueryKey      = \_ _ _ -> False
              , _uiQueryMouseBtn = \_ _ _ -> False
-             , _uiSystemCursor  = Nothing
+             , _uiSystemCursor  = SDL_SYSTEM_CURSOR_ARROW
+             , _uiSavedCursor   = Nothing
              }
 data Frame = Frame { _frameTime   :: SystemTime
                    , _frameNextK  :: Int
@@ -363,9 +368,10 @@ tickTime = do
   time.timeDelta .= t - lastT
 
 -- | Poll for new events from the backend, then fold them up into a Ui state
-tickEvents :: (UIState s m, MonadIO m) => m ()
-tickEvents = do
+tickUIPrepare :: (UIState s m, MonadIO m) => m ()
+tickUIPrepare = do
   evs <- map eventPayload <$> io pollEvents
+  lastUi <- use ui
   if any isQuitKeyEvent evs
     then io exitSuccess
     else do
@@ -381,7 +387,8 @@ tickEvents = do
           textevs  = concatMap textev evs
           drpfiles = concatMap drpfile evs
       files <- mapM (io . peekCString) drpfiles
-      ui .= emptyUi{ _uiMousePos      = fromIntegral <$> mousepos
+      ui .= lastUi { _uiHotId         = UiItemNone
+                   , _uiMousePos      = fromIntegral <$> mousepos
                    , _uiMouseBtn      = mousebtnf
                    , _uiTextEvent     = textevs
                    , _uiDroppedFiles  = files
@@ -389,6 +396,7 @@ tickEvents = do
                    , _uiQueryScan     = querys scancodes
                    , _uiQueryKey      = queryk keycodes
                    , _uiQueryMouseBtn = querymbtn mousebtns
+                   , _uiSystemCursor  = SDL_SYSTEM_CURSOR_ARROW
                    }
   where isQuitKeyEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) = isQuit k
         isQuitKeyEvent _ = False
@@ -414,6 +422,26 @@ tickEvents = do
         querymbtn m k im clk = case M.lookup k m of
           Nothing -> False
           Just (im0, clk0) -> im == im0 && clk == clk0
+
+-- | Finishes up some book keeping about the Ui state.
+tickUIFinish :: (UIState s m, MonadIO m) => m ()
+tickUIFinish = do
+  msaved <- use (ui . savedCursor)
+  cursor <- use (ui . systemCursor)
+  let mkNewCursor new = do
+        newcursor <- io $ do newcursor <-createSystemCursor new
+                             setCursor newcursor
+                             return newcursor
+        ui.savedCursor .= Just (new, newcursor)
+  case msaved of
+    Nothing -> if cursor == SDL_SYSTEM_CURSOR_ARROW
+      then return ()
+      else mkNewCursor cursor
+    Just (oldname, old) -> if cursor == oldname
+      then return ()
+      else do
+        io $ freeCursor old
+        mkNewCursor cursor
 
 tickPhysics :: (Physics s m, Time s m, MonadIO m) => m ()
 tickPhysics = do
