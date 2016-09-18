@@ -40,9 +40,9 @@ data Button = Button
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-getMouseIsOverBox :: MonadIO m => M44 Float -> V2 Float -> m Bool
+getMouseIsOverBox :: UIState s m => M44 Float -> V2 Float -> m Bool
 getMouseIsOverBox mv sz = do
-  P vi  <- io getAbsoluteMouseLocation
+  vi <-use (ui . mousePos)
   let vf = fromIntegral <$> vi
       bb = over both (transformV2 mv) (0,sz)
   return $ pointInBounds vf bb
@@ -78,7 +78,8 @@ switchCursor k = do
   Raw.setCursor ncursor
   Raw.freeCursor acursor
 
-renderButton :: MonadIO m => Slot Button -> [RenderTransform] -> m ButtonState
+renderButton :: (MonadIO m, UIState s m)
+             => Slot Button -> [RenderTransform] -> m ButtonState
 renderButton s rs = do
   btn@Button{..} <- readSlot s
   let mv            = affine2sModelview $ extractSpatial rs
@@ -90,7 +91,7 @@ renderButton s rs = do
     ButtonStateOver -> do
       isOver <- getMouseIsOverBox mv btnSize
       if isOver
-        then do leftMouseIsDown <- ($ ButtonLeft) <$> io getMouseButtons
+        then do leftMouseIsDown <- queryMouseButton ButtonLeft
                 if leftMouseIsDown
                   then do renderBtnDown
                           updateBtn ButtonStateDown
@@ -99,7 +100,7 @@ renderButton s rs = do
         else do renderBtnUp
                 updateBtn ButtonStateUp
     ButtonStateDown -> do
-      leftMouseIsUp <- (not . ($ ButtonLeft)) <$> io getMouseButtons
+      leftMouseIsUp <- not <$> queryMouseButton ButtonLeft
       if leftMouseIsUp
         then do renderBtnUp
                 isOver <- getMouseIsOverBox mv btnSize

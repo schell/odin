@@ -24,9 +24,11 @@ import qualified Data.IntMap.Strict as IM
 import           Data.IntMap.Strict (IntMap)
 import           Data.Vector.Unboxed (Unbox)
 import           Data.Word (Word32)
+import qualified Data.Text as T
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
+import           Foreign.C.String
 import           Linear as L hiding (rotate)
 import           Linear.Affine (Point(..))
 import           System.FilePath
@@ -68,15 +70,45 @@ newtype FontDescriptor = FontDescriptor (FilePath, GlyphSize)
 
 type FontMap = Map FontDescriptor Atlas
 
+data UiItem = UiItemNone | UiItemBlocked | UiItemJust Int
+
+-- | All the UIState our apps will need to query each frame.
+data Ui = Ui { _uiHotId         :: UiItem
+             , _uiActiveId      :: UiItem
+             , _uiMousePos      :: V2 Int
+             , _uiMouseBtn      :: MouseButton -> Bool
+             , _uiTextEvent     :: String
+             , _uiDroppedFiles  :: [FilePath]
+             , _uiKeyMod        :: KeyModifier
+             , _uiQueryScan     :: Scancode -> InputMotion -> Bool -> Bool
+             , _uiQueryKey      :: Keycode -> InputMotion -> Bool -> Bool
+             , _uiQueryMouseBtn :: MouseButton -> InputMotion -> Int -> Bool
+             , _uiSystemCursor  :: Maybe Int
+             }
+makeFields ''Ui
+
+emptyUi :: Ui
+emptyUi = Ui { _uiHotId        = UiItemNone
+             , _uiActiveId     = UiItemNone
+             , _uiMousePos     = V2 (-1) (-1)
+             , _uiMouseBtn     = const False
+             , _uiTextEvent    = []
+             , _uiDroppedFiles = []
+             , _uiKeyMod = KeyModifier False False False False False False
+                                       False False False False False
+             , _uiQueryScan     = \_ _ _ -> False
+             , _uiQueryKey      = \_ _ _ -> False
+             , _uiQueryMouseBtn = \_ _ _ -> False
+             , _uiSystemCursor  = Nothing
+             }
 data Frame = Frame { _frameTime   :: SystemTime
-                   , _frameEvents :: [EventPayload]
                    , _frameNextK  :: Int
                    , _frameWindow :: Window
                    , _frameRez    :: Rez
                    , _frameFonts  :: FontMap
                    , _frameRsrcs  :: [IO ()]
+                   , _frameUi     :: Ui
                    }
-makeLenses ''Frame
 makeFields ''Frame
 
 type UpdateT m = EventT (StateT Frame m)
@@ -92,19 +124,76 @@ makeLenses ''SystemTime
 class HasScene s a | s -> a where
   scene :: Lens' s a
 
-type Fresh s m      = (MonadState s m, HasNextK    s Int)
-type Events s m     = (MonadState s m, HasEvents   s [EventPayload])
-type Time s m       = (MonadState s m, HasTime     s SystemTime)
-type Physics s m    = (MonadState s m, HasScene    s OdinScene)
-type Windowed s m   = (MonadState s m, HasWindow   s Window)
-type Rezed s m      = (MonadState s m, HasRez      s Rez)
-type Fonts s m      = (MonadState s m, HasFonts    s FontMap)
-type Resources s m  = (MonadState s m, HasRsrcs    s [IO ()])
+type Fresh s m      = (MonadState s m, HasNextK  s Int)
+type Time s m       = (MonadState s m, HasTime   s SystemTime)
+type Physics s m    = (MonadState s m, HasScene  s OdinScene)
+type Windowed s m   = (MonadState s m, HasWindow s Window)
+type Rezed s m      = (MonadState s m, HasRez    s Rez)
+type Fonts s m      = (MonadState s m, HasFonts  s FontMap)
+type Resources s m  = (MonadState s m, HasRsrcs  s [IO ()])
+type UIState s m    = (MonadState s m, HasUi     s Ui)
+
+type GUI s m =
+  (MonadIO m, UIState s m, Fresh s m, Fonts s m, Rezed s m, Resources s m)
 --------------------------------------------------------------------------------
 -- Time Savers/Aliases
 --------------------------------------------------------------------------------
 io :: MonadIO m => IO a -> m a
 io = liftIO
+--------------------------------------------------------------------------------
+-- Querying the UI state
+--------------------------------------------------------------------------------
+queryKeycodeEvent :: UIState s m
+                  => Keycode
+                  -- ^ The key code to query for
+                  -> InputMotion
+                  -- ^ Pressed or Released
+                  -> Bool
+                  -- ^ True if querying for a repeating key press from the user
+                  -- holding the key down.
+                  -> m Bool
+queryKeycodeEvent k im rep = do
+  q <- use (ui . queryKey)
+  return $ q k im rep
+
+queryScancodeEvent :: UIState s m
+                   => Scancode
+                   -- ^ The key code to query for.
+                   -> InputMotion
+                   -- ^ Pressed or Released.
+                   -> Bool
+                   -- ^ True if querying for a repeating key press from the user
+                   -- holding the key down.
+                   -> m Bool
+queryScancodeEvent k im rep = do
+  q <- use (ui . queryScan)
+  return $ q k im rep
+
+queryMouseButtonEvent :: UIState s m
+                      => MouseButton
+                      -- ^ The mouse button to query for.
+                      -> InputMotion
+                      -- ^ Pressed or Released.
+                      -> Int
+                      -- ^ The amount of clicks. 1 for a single-click, 2 for a
+                      -- double-click, etc.
+                      -> m Bool
+queryMouseButtonEvent k im clk = do
+  q <- use (ui . queryMouseBtn)
+  return $ q k im clk
+
+queryMouseButton :: UIState s m => MouseButton -> m Bool
+queryMouseButton k = do
+  f <- use (ui . mouseBtn)
+  return $ f k
+
+uiLocal :: UIState s m => (Ui -> Ui) -> m a -> m a
+uiLocal f m = do
+  ui0 <- use ui
+  ui .= f ui0
+  a <- m
+  ui .= ui0
+  return a
 --------------------------------------------------------------------------------
 -- Generating Unique IDs
 --------------------------------------------------------------------------------
@@ -273,16 +362,58 @@ tickTime = do
   time.timeLast .= t
   time.timeDelta .= t - lastT
 
-tickEvents :: (Events s m, MonadIO m) => m ()
+-- | Poll for new events from the backend, then fold them up into a Ui state
+tickEvents :: (UIState s m, MonadIO m) => m ()
 tickEvents = do
-  evs <- io (pollEvents >>= mapM (processEvent . eventPayload))
-  events .= evs
-  where processEvent QuitEvent = exitSuccess
-        processEvent ev@(KeyboardEvent (KeyboardEventData _ _ _ k)) = do
-          when (isQuit k) exitSuccess
-          --print (m,r,k)
-          return ev
-        processEvent e = return e
+  evs <- map eventPayload <$> io pollEvents
+  if any isQuitKeyEvent evs
+    then io exitSuccess
+    else do
+      modstate   <- io getModState
+      P mousepos <- io getAbsoluteMouseLocation
+      mousebtnf  <- io getMouseButtons
+      let keycodes :: Map Keycode (InputMotion, Bool)
+          keycodes  = M.fromList $ concatMap keycode evs
+          scancodes :: Map Scancode (InputMotion, Bool)
+          scancodes = M.fromList $ concatMap scancode evs
+          mousebtns :: Map MouseButton (InputMotion, Int)
+          mousebtns = M.fromList $ concatMap mousebtn evs
+          textevs  = concatMap textev evs
+          drpfiles = concatMap drpfile evs
+      files <- mapM (io . peekCString) drpfiles
+      ui .= emptyUi{ _uiMousePos      = fromIntegral <$> mousepos
+                   , _uiMouseBtn      = mousebtnf
+                   , _uiTextEvent     = textevs
+                   , _uiDroppedFiles  = files
+                   , _uiKeyMod        = modstate
+                   , _uiQueryScan     = querys scancodes
+                   , _uiQueryKey      = queryk keycodes
+                   , _uiQueryMouseBtn = querymbtn mousebtns
+                   }
+  where isQuitKeyEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) = isQuit k
+        isQuitKeyEvent _ = False
+        keycode (KeyboardEvent (KeyboardEventData _ im rep (Keysym _ k _))) =
+          [(k, (im,rep))]
+        keycode _ = []
+        scancode (KeyboardEvent (KeyboardEventData _ im rep (Keysym s _ _))) =
+          [(s, (im,rep))]
+        scancode _ = []
+        mousebtn (MouseButtonEvent (MouseButtonEventData _ im _ btn clk _)) =
+          [(btn, (im,fromIntegral clk))]
+        mousebtn _ = []
+        textev (TextInputEvent (TextInputEventData _ t)) = T.unpack t
+        textev _ = []
+        drpfile (DropEvent (DropEventData file)) = [file]
+        drpfile _ = []
+        queryk m k im rep = case M.lookup k m of
+          Nothing -> False
+          Just (im0, rep0) -> im == im0 && rep == rep0
+        querys m s im rep = case M.lookup s m of
+          Nothing -> False
+          Just (im0, rep0) -> im == im0 && rep == rep0
+        querymbtn m k im clk = case M.lookup k m of
+          Nothing -> False
+          Just (im0, clk0) -> im == im0 && clk == clk0
 
 tickPhysics :: (Physics s m, Time s m, MonadIO m) => m ()
 tickPhysics = do

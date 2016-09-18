@@ -4,21 +4,20 @@
 {-# LANGUAGE RecordWildCards  #-}
 module Main where
 
-import           Gelatin.SDL2 hiding (move)
+import           Gelatin.SDL2 hiding (move, scale)
 import           SDL
 import           Gelatin.FreeType2
-import           Gelatin.Picture.Internal hiding (move)
 import           Odin.GUI
 import           Odin.GUI.Text.Internal
 import           Odin.Core
-import           Control.Lens (over, both)
+import           Control.Lens (over, both, (&), (%~))
 import           Control.Monad.Trans.State.Strict
 import           Data.Maybe (listToMaybe)
 import           Data.Hashable
 import           System.FilePath
 import           System.Exit (exitFailure)
 import           Paths_odin
-import           Foreign.C.String
+import           Foreign.Marshal hiding (void)
 import           Linear.Affine (Point(..))
 
 import           Halive.Utils
@@ -30,6 +29,18 @@ getWindowSize :: (Windowed s m, MonadIO m) => m (V2 Float)
 getWindowSize = do
   win <- use window
   (fmap fromIntegral) <$> io (SDL.get $ windowSize win)
+
+getFramebufferSize :: (MonadIO m, Rezed s m) => m (V2 Float)
+getFramebufferSize = do
+  Rez{..} <- use rez
+  (w,h) <- io $ ctxFramebufferSize rezContext
+  return $ fromIntegral <$> V2 w h
+
+getResolutionScale :: (MonadIO m, Windowed s m, Rezed s m) => m (V2 Float)
+getResolutionScale = do
+  wsz  <- getWindowSize
+  fbsz <- getFramebufferSize
+  return $ fbsz/wsz
 
 bgPicture :: Monad m => V2 Float -> V2 Float -> GLuint -> TexturePictureT m ()
 bgPicture (V2 ww wh) (V2 tw th) tex = do
@@ -50,17 +61,14 @@ renderBG texsz tex lastWindowSize bg = do
   renderPicture bg []
   return winsz2
 
-getDroppedFile :: (MonadIO m, Events s m) => m [FilePath]
-getDroppedFile = do
-  let dd fs (DropEvent (DropEventData file)) = fs ++ [file]
-      dd fs _ = fs
-  (foldl dd [] <$> use events) >>= \case
-    []    -> return []
-    files -> mapM (io . peekCString) files
+getDroppedFile :: (UIState s m) => m [FilePath]
+getDroppedFile = use (ui . droppedFiles)
 
 maybeRead :: Read a => String -> Maybe a
 maybeRead = fmap fst . listToMaybe . reads
-
+--------------------------------------------------------------------------------
+-- TileSet
+--------------------------------------------------------------------------------
 data TileSet = TileSet { tilesetAll      :: Slot GUIRenderer
                        -- ^ A renderer for all tiles at once
                        , tilesetSelector :: Slot GUIRenderer
@@ -83,13 +91,13 @@ tilesetTextureSize :: TileSet -> V2 Float
 tilesetTextureSize TileSet{..} =
   tilesetTileSize * (fromIntegral <$> V2 tilesetWidth tilesetHeight)
 
-renderTileSet :: MonadIO m => Slot TileSet -> [RenderTransform] -> m ()
+renderTileSet :: GUI s m => Slot TileSet -> [RenderTransform] -> m ()
 renderTileSet s rs = do
   tset@TileSet{..} <- readSlot s
   (_,ts)          <- readSlot tilesetAll
   (_,hov)         <- readSlot tilesetSelector
   (_,out)         <- readSlot tilesetOutline
-  P vi  <- io getAbsoluteMouseLocation
+  vi  <- use (ui . mousePos)
   let mxy = fromIntegral <$> vi
       mv  = affine2sModelview $ extractSpatial rs
       textureSize = tilesetTextureSize tset
@@ -205,7 +213,81 @@ reallocTileSet s imgsz tsz tex = do
               , tilesetWidth    = w
               , tilesetHeight   = h
               }
+--------------------------------------------------------------------------------
+-- WindowPane
+--------------------------------------------------------------------------------
+data WindowPane = WindowPane { wpFramebuffer :: GLuint
+                             , wpTexture     :: GLuint
+                             , wpSize        :: V2 Int
+                             , wpGUI         :: Slot GUIRenderer
+                             }
 
+allocWindowPane :: (MonadIO m, Windowed s m, Rezed s m, Resources s m)
+                => V2 Int -> m (Slot WindowPane)
+allocWindowPane wsz@(V2 w h) = do
+  V2 sx sy <- getResolutionScale
+  fbsz@(V2 fbw fbh) <- getFramebufferSize
+  io $ putStrLn $ unlines ["scale:" ++ show (sx,sy)
+                          ,"fbsz: " ++ show (fbw, fbh)
+                          ]
+  (fb,tex) <- io $ do
+    [fb] <- allocaArray 1 $ \ptr -> do
+      glGenFramebuffers 1 ptr
+      peekArray 1 ptr
+    glBindFramebuffer GL_FRAMEBUFFER fb
+
+    tex <- allocAndActivateTex GL_TEXTURE0
+    let V2 wf hf = fromIntegral <$> wsz
+    initializeTexImage2D (floor fbw) (floor fbh)
+
+    glFramebufferTexture GL_FRAMEBUFFER GL_COLOR_ATTACHMENT0 tex 0
+    withArray [GL_COLOR_ATTACHMENT0] $ glDrawBuffers 1
+    status <- glCheckFramebufferStatus GL_FRAMEBUFFER
+    unless (status == GL_FRAMEBUFFER_COMPLETE) $
+      putStrLn "allocWindowPane: could not complete the framebuffer!"
+    return (fb, tex)
+
+  glBindFramebuffer GL_FRAMEBUFFER 0
+
+  (_,gui) <- allocTexturePicture $ do
+    let wszf@(V2 wf hf) = fromIntegral <$> wsz
+        V2 tw th = wszf / fbsz * 2
+
+    setTextures [tex]
+    setGeometry $ fan $ do
+      to (0, 0)
+      to (V2 wf  0, V2 tw 0)
+      to (V2 wf hf, V2 tw (-th))
+      to (V2 0  hf, V2 0 (-th))
+
+  registerFree $ do
+    with tex $ glDeleteTextures 1
+    with fb  $ glDeleteFramebuffers 1
+
+  allocSlot $ WindowPane fb tex wsz gui
+
+renderWindowPane :: GUI s m
+                 => Slot WindowPane -> [RenderTransform]
+                 -> m a -> m a
+renderWindowPane s rs f = do
+  V2 w h <- (fmap floor) <$> getFramebufferSize
+  WindowPane{..} <- unslot s
+  io $ do
+    glBindFramebuffer GL_FRAMEBUFFER wpFramebuffer
+    glClearColor 1 0 0 1
+    glClear GL_COLOR_BUFFER_BIT
+  -- Run the nested rendering function but offset the mouse position in the ui
+  -- state to account for the window pane's affine transformation
+  let mv = inv44 $ affine2sModelview $ extractSpatial rs
+      tfrm = (floor <$>) . (transformV2 mv) . (fromIntegral <$>)
+  a <- uiLocal (& mousePos %~ tfrm) $ bindTexAround wpTexture f
+  io $ do
+    glBindFramebuffer GL_FRAMEBUFFER 0
+    fromSlotM wpGUI (\(_, gui) -> gui rs)
+  return a
+--------------------------------------------------------------------------------
+-- The MapMaker Task
+--------------------------------------------------------------------------------
 mapMaker :: MonadIO m => UpdateT m ()
 mapMaker = autoReleaseResources $ do
   -- Do a bunch of prep and alloc our initial screen's GUI
@@ -279,6 +361,7 @@ mapMaker = autoReleaseResources $ do
         rectangle 0 sz
 
     tiles <- allocTileSet imgsz initialTileSize imgtex
+    pane  <- allocWindowPane (V2 200 200)
 
     fix $ \continue -> do
       (V2 _ wh) <- renderBGAlias
@@ -287,7 +370,8 @@ mapMaker = autoReleaseResources $ do
         Nothing -> return ()
         Just sz -> reallocTileSet tiles imgsz sz imgtex
       renderPicture tilesetimg [move 100 0]
-      renderTileSet tiles [move 200 0]
+      renderWindowPane pane [move 200 0] $ do
+        renderTileSet tiles []
       renderButton testBtn [move 100 100]
       next continue
 
@@ -306,13 +390,16 @@ runFrame f = do
 main :: IO ()
 main = do
   (rz,win)  <- reacquire 0 $ startupSDL2Backend 800 600 "Entity Sandbox" True
+  [fbw,fbh] <- withArray [0,0] $ \ptr -> do
+    glGetIntegerv GL_MAX_VIEWPORT_DIMS ptr
+    peekArray 2 ptr
   t         <- newTime
   let firstFrame = Frame { _frameTime   = t
-                         , _frameEvents = []
                          , _frameNextK  = 0
                          , _frameWindow = win
                          , _frameRez    = rz
                          , _frameFonts  = mempty
                          , _frameRsrcs  = []
+                         , _frameUi     = emptyUi
                          }
   void $ runStateT (runFrame mapMaker) firstFrame

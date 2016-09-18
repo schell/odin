@@ -167,9 +167,7 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
              to (V2 (tw + inc) (th + inc), lncolor)
              to (V2 0 (th + inc), lncolor)
              to (0, lncolor)
-        when hasLeader $ embed $ do
-          G.move (V2 0 th + V2 0 padding)
-          setGeometry $ fan $
+        when hasLeader $ embed $ setGeometry $ fan $
             mapVertices (,color `withAlpha` 0.5) $
               rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
         pictureBounds

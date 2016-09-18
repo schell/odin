@@ -5,13 +5,10 @@
 {-# LANGUAGE TupleSections #-}
 module Odin.GUI.TextInput.Internal where
 
-import           Gelatin.SDL2
-import           Gelatin.FreeType2
+import           Gelatin
 import           Odin.Core
 import           Odin.GUI.Common
 import           Odin.GUI.Button.Internal
-import           SDL
-import qualified SDL.Raw.Types as Raw
 import           Control.Lens hiding (to)
 import           Control.Arrow (first)
 import           Control.Monad (forM_, msum)
@@ -53,65 +50,29 @@ data TextInput m = TextInput { txtnSize    :: V2 Float
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-symIsDel :: Keysym -> Bool
-symIsDel sym = key == KeycodeBackspace || key == KeycodeDelete
-  where key = keysymKeycode sym
+delPressed :: UIState s m => m Bool
+delPressed = do
+  query <- use (ui . queryKey)
+  let f k = query k Pressed False
+  return $ any f [KeycodeBackspace, KeycodeDelete]
 
-symIsEsc :: Keysym -> Bool
-symIsEsc = (== KeycodeEscape) . keysymKeycode
-
-symIsReturn :: Keysym -> Bool
-symIsReturn sym = key == KeycodeReturn || key == KeycodeReturn2
-    where key = keysymKeycode sym
+escOrEnterPressed :: UIState s m => m Bool
+escOrEnterPressed = do
+  query <- use (ui . queryKey)
+  let f k = query k Pressed False
+  return $ any f [KeycodeEscape, KeycodeReturn, KeycodeReturn2]
 
 deleteString :: String -> String
 deleteString t = if null t then [] else init t
 
-getKeyboardEvent :: Events s m => m (Maybe KeyboardEventData)
-getKeyboardEvent = do
-  evs <- use events
-  return $ foldl f Nothing evs
-  where f :: Maybe KeyboardEventData -> EventPayload -> Maybe KeyboardEventData
-        f Nothing (KeyboardEvent ev) = Just ev
-        f acc _ = acc
-
-getEscEvent :: Events s m => m (Maybe KeyboardEventData)
-getEscEvent = f <$> getKeyboardEvent
-  where f (Just ev@(KeyboardEventData _ _ _ sym)) = if symIsEsc sym
-                                                      then Just ev
-                                                      else Nothing
-        f _ = Nothing
-
-getEnterEvent :: Events s m => m (Maybe KeyboardEventData)
-getEnterEvent = f <$> getKeyboardEvent
-  where f (Just ev@(KeyboardEventData _ _ _ sym)) = if symIsReturn sym
-                                                      then Just ev
-                                                      else Nothing
-        f _ = Nothing
-
-getEscOrEnter :: Events s m => m (Maybe KeyboardEventData)
-getEscOrEnter = do
-  mesc <- getEscEvent
-  ment <- getEnterEvent
-  return $ msum [mesc,ment]
-
-getMyTextEvent :: Events s m => String -> m (Maybe String)
+getMyTextEvent :: UIState s m => String -> m (Maybe String)
 getMyTextEvent str = do
-  evs <- use events
-  let f Nothing (TextInputEvent (TextInputEventData _ t)) = Just t
-      f acc _ = acc
-      txtIn = foldl f Nothing evs
-  return $ case txtIn of
-    Just t -> Just $ str ++ T.unpack t
-    Nothing ->
-      let g :: Maybe Keysym -> EventPayload -> Maybe Keysym
-          g Nothing (KeyboardEvent (KeyboardEventData _ Pressed _ sym)) = Just sym
-          g acc _ = acc
-          d :: Keysym -> String
-          d sym = if symIsDel sym
-                    then deleteString str
-                    else str
-      in d <$> foldl g Nothing evs
+  tstr <- use (ui . textEvent)
+  if not $ null tstr
+    then return $ Just $ str ++ tstr
+    else delPressed >>= \case
+      True  -> return $ Just $ deleteString str
+      False -> return Nothing
 --------------------------------------------------------------------------------
 -- Alloc'ing and releasing TextInputs
 --------------------------------------------------------------------------------
@@ -161,8 +122,9 @@ freeTextInput s = fromSlot s f >>= io
               rs = [txtnRndrsUp,txtnRndrsOver,txtnRndrsDown,txtnRndrsEdit]
           forM_ rs fst
 
-renderTextInput :: (MonadIO m, Rezed s m, Fonts s m, Events s m)
-                => Slot (TextInput m) -> [RenderTransform] -> m (TextInputState, String)
+renderTextInput :: GUI s m
+                => Slot (TextInput m) -> [RenderTransform]
+                -> m (TextInputState, String)
 renderTextInput s rs = do
   txt@TextInput{..} <- readSlot s
   let mv = affine2sModelview $ extractSpatial rs
@@ -173,10 +135,9 @@ renderTextInput s rs = do
       update st = do
         swapSlot s $ txt{txtnState=st}
         return (st, txtnString)
-      downAndOver = (,) <$> (($ ButtonLeft) <$> io getMouseButtons)
+      downAndOver = (,) <$> (queryMouseButton ButtonLeft)
                         <*> (getMouseIsOverBox mv txtnSize)
       continueEditing str = do
-        let ewm = snd $ txtnRndrsEdit txtnRndrs
         (r,sz) <- allocTextRndr txtnPainter TextInputStateEditing str
         let newRndrs = txtnRndrs{txtnRndrsEdit=r}
         io $ do -- dealloc the previous edit renderer
@@ -226,9 +187,9 @@ renderTextInput s rs = do
       (False,False) -> renderUp   >> update TextInputStateUp
       _             -> renderDown >> return (TextInputStateDown, txtnString)
 
-    TextInputStateEditing -> getEscOrEnter >>= \case
-      Just _  -> endEditing
-      Nothing -> getMyTextEvent txtnString >>= \case
+    TextInputStateEditing -> escOrEnterPressed >>= \case
+      True -> endEditing
+      False -> getMyTextEvent txtnString >>= \case
         Nothing  -> downAndOver >>= \case
         --(down,over)
           (True,False) -> endEditing
