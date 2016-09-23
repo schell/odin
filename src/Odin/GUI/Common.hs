@@ -19,6 +19,7 @@ registerFree f = rsrcs %= (f:)
 autoReleaseResources :: (MonadIO m, Resources s m) => m a -> m a
 autoReleaseResources f = do
   srcs <- use rsrcs
+  rsrcs .= []
   x    <- f
   freeResources
   rsrcs .= srcs

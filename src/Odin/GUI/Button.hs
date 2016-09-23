@@ -3,6 +3,7 @@ module Odin.GUI.Button
   , ButtonData(..)
   , Button
   , allocButton
+  , reallocButton
   , renderButton
   , sizeOfButton
   ) where

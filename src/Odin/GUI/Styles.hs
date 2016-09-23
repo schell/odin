@@ -93,30 +93,20 @@ iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
       return mempty
     Just atlas0 -> do
       rz <- use rez
-      ((textc,textr), V2 tw _, atlas) <- freetypeGLRenderer rz atlas0
-                                                    (textColorForButtonState st)
+      ((textfgc,textfgr), V2 w _, atlas1) <- freetypeGLRenderer rz atlas0
+                                                    (bgColorForButtonState st)
                                                     btnDataStr
+      ((textbgc,textbgr), V2 _ _, atlas)  <- freetypeGLRenderer rz atlas1
+                                                     (V4 0 0 0 0.4)
+                                                     btnDataStr
       saveAtlas atlas
 
-      let pad  = V2 4 4
-          sz = V2 tw gh + 2*pad
-          shxy = V2 4 4
-          bgxy = bgOffsetForButtonState st
-          gh = glyphHeight $ atlasGlyphSize atlas
-
-      -- drop shadow and background
-      (bb,dat) <- runPictureT $ do
-        embed $ setGeometry $ fan $
-          mapVertices (,V4 0 0 0 0.4) $ rectangle shxy (shxy + sz)
-        embed $ setGeometry $ fan $
-          mapVertices (,bgColorForButtonState st) $ rectangle bgxy (bgxy + sz)
-        pictureBounds
-      (bgc,bgr) <- io $ compileColorPictureData rz dat
-
-      let t = moveV2 $ (V2 4 gh) + bgxy
-          r rs = do bgr rs
-                    textr $ t:rs
-      return $ Painting (bb, (bgc >> textc, r))
+      let p = bgOffsetForButtonState st
+          v = V2 0 $ fromIntegral px
+          r rs = do textbgr $ rs ++ [move 2 $ fromIntegral px + 2]
+                    textfgr $ rs ++ [moveV2 $ p + v]
+          c = textfgc >> textbgc
+      return $ Painting ((0, V2 (w+2) (fromIntegral px+2)), (c,r))
 --------------------------------------------------------------------------------
 -- TextInput Styling
 --------------------------------------------------------------------------------

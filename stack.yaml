@@ -23,7 +23,7 @@ packages:
     commit: b008faec3971d7088e4570abc42f94b0b510dde3
 - location:
     git: https://github.com/schell/varying.git
-    commit: 5e5ee1be309ae39134e8d2859d87325f78d463e3
+    commit: aca7eeb11869af9345fb5fc3233508a1c29e7783
 - location:
     git: https://github.com/schell/sdl2.git
     commit: aff05d74b6a11969c880ab410193ff44ec0905ee

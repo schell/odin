@@ -68,6 +68,9 @@ library
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
                      , Odin.GUI.Common
+                     , Odin.GUI.Layer
+                     , Odin.GUI.Pane
+                     , Odin.GUI.Panel
                      , Odin.GUI.Picture
                      , Odin.GUI.StatusBar
                      , Odin.GUI.Styles

@@ -17,6 +17,7 @@ module Odin.Core.Common where
 import           Gelatin.SDL2 hiding (E, move, scale, rotate, multiply)
 import           Gelatin.FreeType2
 import           SDL hiding (freeCursor, Cursor, Event, get, time)
+import qualified SDL
 import           SDL.Raw.Event hiding (getModState)
 import           SDL.Raw.Enum hiding (Keycode, Scancode)
 import           SDL.Raw.Types (Cursor)
@@ -74,11 +75,12 @@ newtype FontDescriptor = FontDescriptor (FilePath, GlyphSize)
 type FontMap = Map FontDescriptor Atlas
 
 data UiItem = UiItemNone | UiItemBlocked | UiItemJust Int
+            deriving (Show, Eq)
 
 -- | All the UIState our apps will need to query each frame.
-data Ui = Ui { _uiHotId         :: UiItem
-             , _uiActiveId      :: UiItem
+data Ui = Ui { _uiActiveId      :: UiItem
              , _uiMousePos      :: V2 Int
+             , _uiMousePosRel   :: V2 Int
              , _uiMouseBtn      :: MouseButton -> Bool
              , _uiTextEvent     :: String
              , _uiDroppedFiles  :: [FilePath]
@@ -92,9 +94,9 @@ data Ui = Ui { _uiHotId         :: UiItem
 makeFields ''Ui
 
 emptyUi :: Ui
-emptyUi = Ui { _uiHotId        = UiItemNone
-             , _uiActiveId     = UiItemNone
+emptyUi = Ui { _uiActiveId     = UiItemNone
              , _uiMousePos     = V2 (-1) (-1)
+             , _uiMousePosRel  = 0
              , _uiMouseBtn     = const False
              , _uiTextEvent    = []
              , _uiDroppedFiles = []
@@ -139,7 +141,7 @@ type Resources s m  = (MonadState s m, HasRsrcs  s [IO ()])
 type UIState s m    = (MonadState s m, HasUi     s Ui)
 
 type GUI s m =
-  (MonadIO m, UIState s m, Fresh s m, Fonts s m, Rezed s m, Resources s m)
+  (MonadIO m, UIState s m, Fresh s m, Fonts s m, Rezed s m, Windowed s m, Resources s m)
 --------------------------------------------------------------------------------
 -- Time Savers/Aliases
 --------------------------------------------------------------------------------
@@ -192,13 +194,26 @@ queryMouseButton k = do
   f <- use (ui . mouseBtn)
   return $ f k
 
-uiLocal :: UIState s m => (Ui -> Ui) -> m a -> m a
+uiLocal :: UIState s m => (Ui -> Ui) -> m a -> m (Ui, a)
 uiLocal f m = do
   ui0 <- use ui
-  ui .= f ui0
-  a <- m
-  ui .= ui0
-  return a
+  ui  .= f ui0
+  a   <- m
+  ui1 <- use ui
+  ui  .= ui0
+  return (ui1, a)
+
+getCanBeActive :: UIState s m => m Bool
+getCanBeActive = f <$> (use (ui . activeId))
+  where f UiItemBlocked = False
+        f (UiItemJust _) = False
+        f _ = True
+
+setActive :: UIState s m => Int -> m ()
+setActive = (ui.activeId .=) . UiItemJust
+
+getMousePosition :: UIState s m => m (V2 Int)
+getMousePosition = use (ui . mousePos)
 --------------------------------------------------------------------------------
 -- Generating Unique IDs
 --------------------------------------------------------------------------------
@@ -349,6 +364,25 @@ paintingOrigin = fst . fst . unPainting
 paintingCenter :: Painting -> V2 Float
 paintingCenter p = let (tl,br) = paintingBounds p in tl + (br - tl)/2
 --------------------------------------------------------------------------------
+-- Window and Buffer stuff
+--------------------------------------------------------------------------------
+getWindowSize :: (Windowed s m, MonadIO m) => m (V2 Float)
+getWindowSize = do
+  win <- use window
+  (fmap fromIntegral) <$> io (SDL.get $ windowSize win)
+
+getFramebufferSize :: (MonadIO m, Rezed s m) => m (V2 Float)
+getFramebufferSize = do
+  Rez{..} <- use rez
+  (w,h) <- io $ ctxFramebufferSize rezContext
+  return $ fromIntegral <$> V2 w h
+
+getResolutionScale :: (MonadIO m, Windowed s m, Rezed s m) => m (V2 Float)
+getResolutionScale = do
+  wsz  <- getWindowSize
+  fbsz <- getFramebufferSize
+  return $ fbsz/wsz
+--------------------------------------------------------------------------------
 -- Sytem Control Stuff
 --------------------------------------------------------------------------------
 isQuit :: Keysym -> Bool
@@ -377,6 +411,7 @@ tickUIPrepare = do
     else do
       modstate   <- io getModState
       P mousepos <- io getAbsoluteMouseLocation
+      P mouserel <- io getRelativeMouseLocation
       mousebtnf  <- io getMouseButtons
       let keycodes :: Map Keycode (InputMotion, Bool)
           keycodes  = M.fromList $ concatMap keycode evs
@@ -387,8 +422,9 @@ tickUIPrepare = do
           textevs  = concatMap textev evs
           drpfiles = concatMap drpfile evs
       files <- mapM (io . peekCString) drpfiles
-      ui .= lastUi { _uiHotId         = UiItemNone
+      ui .= lastUi { _uiActiveId      = UiItemNone
                    , _uiMousePos      = fromIntegral <$> mousepos
+                   , _uiMousePosRel   = fromIntegral <$> mouserel
                    , _uiMouseBtn      = mousebtnf
                    , _uiTextEvent     = textevs
                    , _uiDroppedFiles  = files
@@ -426,6 +462,7 @@ tickUIPrepare = do
 -- | Finishes up some book keeping about the Ui state.
 tickUIFinish :: (UIState s m, MonadIO m) => m ()
 tickUIFinish = do
+  -- Update the cursor
   msaved <- use (ui . savedCursor)
   cursor <- use (ui . systemCursor)
   let mkNewCursor new = do

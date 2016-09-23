@@ -60,9 +60,25 @@ allocButton painter str = do
   Painting (     _, ovr ) <- unPainter painter (dat, ButtonStateOver)
   Painting (     _, down) <- unPainter painter (dat, ButtonStateDown)
   let rs = ButtonRndrs up ovr down
-  s <- allocSlot $ Button (uncurry (flip (-)) bounds) rs ButtonStateUp
+      size = uncurry (flip (-)) bounds
+  s <- allocSlot $ Button size rs ButtonStateUp
   registerFree $ freeButton s
   return s
+
+reallocButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
+              => Slot Button -> Painter (ButtonData, ButtonState) m -> String
+              -> m ()
+reallocButton s painter str = do
+  freeButton s
+  let dat = ButtonData str
+  Painting (bounds, up  ) <- unPainter painter (dat, ButtonStateUp)
+  Painting (     _, ovr ) <- unPainter painter (dat, ButtonStateOver)
+  Painting (     _, down) <- unPainter painter (dat, ButtonStateDown)
+  let rs = ButtonRndrs up ovr down
+      size = uncurry (flip (-)) bounds
+  modifySlot s $ \b -> b{btnRndrs=rs
+                        ,btnSize=size
+                        }
 
 freeButton :: MonadIO m => Slot Button -> m ()
 freeButton s = do
@@ -70,13 +86,6 @@ freeButton s = do
   io $ fst $ btnRndrsUp   btnRndrs
   io $ fst $ btnRndrsOver btnRndrs
   io $ fst $ btnRndrsDown btnRndrs
-
-switchCursor :: MonadIO m => Raw.SystemCursor -> m ()
-switchCursor k = do
-  acursor <- Raw.getCursor
-  ncursor <- Raw.createSystemCursor k
-  Raw.setCursor ncursor
-  Raw.freeCursor acursor
 
 renderButton :: (MonadIO m, UIState s m)
              => Slot Button -> [RenderTransform] -> m ButtonState
