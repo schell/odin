@@ -41,7 +41,7 @@ renderBG texsz tex lastWindowSize bg = do
   winsz1 <- unslot lastWindowSize
   winsz2 <- getWindowSize
   when (winsz1 /= winsz2) $ do
-    void $ reallocTexturePicture bg $ bgPicture winsz2 texsz tex
+    void $ reslotTexturePicture bg $ bgPicture winsz2 texsz tex
     lastWindowSize `is` winsz2
   renderPicture bg []
   return winsz2
@@ -78,10 +78,10 @@ tilesetTextureSize TileSet{..} =
 
 renderTileSet :: GUI s m => Slot TileSet -> [RenderTransform] -> m ()
 renderTileSet s rs = do
-  tset@TileSet{..} <- readSlot s
-  (_,ts)          <- readSlot tilesetAll
-  (_,hov)         <- readSlot tilesetSelector
-  (_,out)         <- readSlot tilesetOutline
+  tset@TileSet{..} <- unslot s
+  (_,ts)          <- unslot tilesetAll
+  (_,hov)         <- unslot tilesetSelector
+  (_,out)         <- unslot tilesetOutline
   vi  <- getMousePosition
   let mxy = fromIntegral <$> vi
       mv  = affine2sModelview $ extractSpatial rs
@@ -89,7 +89,6 @@ renderTileSet s rs = do
       bb = over both (transformV2 mv) (0, textureSize)
 
   canBeActive <- getCanBeActive
-
   -- determine the hovered tile's x and y
   let rmv  = mxy - fst bb
       ndxsz = fromIntegral <$> (V2 tilesetWidth tilesetHeight)
@@ -111,18 +110,18 @@ renderTileSet s rs = do
   io $ hov $ moveV2 hovxy:rs
   io $ ts rs
   io $ out $ moveV2 outxy:rs
-  swapSlot s tset{tilesetActive = floor <$> activendx
-                 ,tilesetSelected = floor <$> selndx
-                 }
+  reslot s tset{tilesetActive = floor <$> activendx
+               ,tilesetSelected = floor <$> selndx
+               }
 
 freeTileSet :: MonadIO m => Slot TileSet -> m ()
 freeTileSet s = do
-  TileSet{..} <- readSlot s
+  TileSet{..} <- unslot s
   fromSlotM tilesetAll $ io . fst
   fromSlotM tilesetSelector $ io . fst
 
 tilesetAllPic :: Monad m
-            => V2 Float -> V2 Float -> GLuint -> TexturePictureT m (V2 Int)
+              => V2 Float -> V2 Float -> GLuint -> TexturePictureT m (V2 Int)
 tilesetAllPic (V2 imgw imgh) (V2 tilew tileh) tex = do
   let cols :: Int
       cols = floor $ imgw / tilew
@@ -178,24 +177,24 @@ tilesetOutlinePic (V2 x y) = do
               to (bl, orange)
               to (tl, V4 1 1 0 1)
 
-allocTileSet :: (MonadIO m, Resources s m, Rezed s m)
+slotTileSet :: (MonadIO m, Resources s m, Rezed s m)
            => V2 Float -> V2 Float -> GLuint -> m (Slot TileSet)
-allocTileSet imgsz tsz tex = do
-  (V2 w h, allgui) <- allocTexturePicture $ tilesetAllPic imgsz tsz tex
-  (_, sel)         <- allocColorPicture $ tilesetSelectorPic tsz
-  (_, out)         <- allocColorPicture $ tilesetOutlinePic tsz
+slotTileSet imgsz tsz tex = do
+  (V2 w h, allgui) <- slotTexturePicture $ tilesetAllPic imgsz tsz tex
+  (_, sel)         <- slotColorPicture $ tilesetSelectorPic tsz
+  (_, out)         <- slotColorPicture $ tilesetOutlinePic tsz
   s <- slot $ TileSet allgui sel out 0 0 tsz w h
   registerFree $ freeTileSet s
   return s
 
-reallocTileSet :: (MonadIO m, Rezed s m)
+reslotTileSet :: (MonadIO m, Rezed s m)
              => Slot TileSet -> V2 Float -> V2 Float -> GLuint -> m ()
-reallocTileSet s imgsz tsz tex = do
-  t@TileSet{..} <- readSlot s
-  V2 w h <- reallocTexturePicture tilesetAll $ tilesetAllPic imgsz tsz tex
-  _      <- reallocColorPicture tilesetSelector $ tilesetSelectorPic tsz
-  _      <- reallocColorPicture tilesetOutline $ tilesetOutlinePic tsz
-  swapSlot s t{ tilesetTileSize = tsz
+reslotTileSet s imgsz tsz tex = do
+  t@TileSet{..} <- unslot s
+  V2 w h <- reslotTexturePicture tilesetAll $ tilesetAllPic imgsz tsz tex
+  _      <- reslotColorPicture tilesetSelector $ tilesetSelectorPic tsz
+  _      <- reslotColorPicture tilesetOutline $ tilesetOutlinePic tsz
+  reslot s t{ tilesetTileSize = tsz
               , tilesetWidth    = w
               , tilesetHeight   = h
               }
@@ -210,7 +209,7 @@ getDroppedImageFromUser title font color = do
   getDroppedFile >>= \case
     file:_ -> (io $ loadImage file) >>= \case
       Nothing -> do
-        reallocText title font black $ unwords [show file
+        reslotText title font black $ unwords [show file
                                                ,"could not be loaded."
                                                ,"Try another file."
                                                ]
@@ -220,10 +219,15 @@ getDroppedImageFromUser title font color = do
 
 mapMaker :: MonadIO m => UpdateT m ()
 mapMaker = autoReleaseResources $ do
-  -- Do a bunch of prep and alloc our initial screen's GUI
+  -- Do a bunch of prep and slot our initial screen's GUI
   font <- getDefaultFontDescriptor
-  title  <- allocText font black
+  title  <- slotText font black
     "Please drag and drop an image to use for the UI demo"
+
+  status <- slotStatusBar font black
+  let renderStatus = do
+        V2 w h <- getWindowSize
+        renderStatusBar status [move (w-180) (h-4)]
 
   -- Get a UI test image from the user
   (file, imgsz, imgtex) <- checkpoint "uitestimage" $
@@ -243,18 +247,19 @@ mapMaker = autoReleaseResources $ do
         withTween_ easeOutExpo 300 400 1 $ \t -> Left  $ V2 700 t
         nxt
 
-  nextBtn   <- allocButton buttonPainter "Next"
-  (_, img)  <- allocTexturePicture $ do
+  nextBtn   <- slotButton buttonPainter "Next"
+  (_, img)  <- slotTexturePicture $ do
     setTextures [imgtex]
     setGeometry $ fan $ mapVertices (\v -> (v, v/imgsz)) $ rectangle 0 imgsz
   ----------------------------------------------------------------------------
   -- Test out the Pane UI component
   ----------------------------------------------------------------------------
   autoReleaseResources_ $ do
-    sizeTween <- allocAnime stream
-    pane      <- allocPane (V2 800 400) (floor <$> imgsz) red
+    sizeTween <- slotAnime stream
+    pane      <- slotPane (V2 800 400) (floor <$> imgsz) red
 
     fix $ \testPane -> do
+      renderStatus
       stepAnime sizeTween >>= \case
         Left sizef    -> resizePane pane $ floor <$> sizef
         Right offsetf -> offsetPane pane $ floor <$> offsetf
@@ -266,28 +271,29 @@ mapMaker = autoReleaseResources $ do
         ButtonStateClicked -> return ()
         _ -> next testPane
 
-    testBtn <- allocButton buttonPainter "Test"
+    testBtn <- slotButton buttonPainter "Test"
     clicks  <- slot 0
     fix $ \testPane -> do
+      renderStatus
       st <- renderPane pane [move 10 50] $ \offset -> do
         let moveOffset = moveV2 $ fromIntegral <$> offset
         renderPicture img [moveOffset]
         st <- renderButton testBtn [moveOffset, move 400 400]
         when (st == ButtonStateClicked) $ do
           n <- unslot clicks
-          reallocButton testBtn buttonPainter $ "Clicked " ++ (show $ n + 1)
+          reslotButton testBtn buttonPainter $ "Clicked " ++ (show $ n + 1)
           clicks `is` (n + 1)
       renderButton nextBtn [move 10 10] >>= \case
         ButtonStateClicked -> return ()
         _ -> next testPane
-
   -----------------------------------------------------------------------------
   -- Test out the Panel UI compenent
   -----------------------------------------------------------------------------
   autoReleaseResources_ $ do
-    panel <- allocPanel "A Panel!" 400 (floor <$> imgsz)
+    panel <- slotPanel "A Panel!" 400 (floor <$> imgsz)
 
     fix $ \testPanel -> do
+      renderStatus
       mpos <- renderPanel panel [move 10 50] $ \offset -> do
         let moveOffset = moveV2 $ fromIntegral <$> offset
         renderPicture img [moveOffset]
@@ -295,11 +301,10 @@ mapMaker = autoReleaseResources $ do
       renderButton nextBtn [move 10 10] >>= \case
         ButtonStateClicked -> return ()
         _ -> next testPanel
-
   -----------------------------------------------------------------------------
   -- Do the actual map maker!
   -----------------------------------------------------------------------------
-  reallocText title font black
+  reslotText title font black
     "Please drag and drop an image to use as a tileset."
   (_,tsimgszf,tsimgtex) <- checkpoint "tilesetimage" $
     getDroppedImageFromUser title font black
@@ -309,11 +314,11 @@ mapMaker = autoReleaseResources $ do
     let initialTW = 48
         initialTileSize = V2 initialTW initialTW
     autoReleaseResources_ $ do
-      resetBtn    <- allocButton buttonPainter "Reset To Image Load"
-      widthLabel  <- allocText font black "Tile Width:"
-      widthInput  <- allocTextInput textInputPainter $ show initialTW
-      heightLabel <- allocText font black "Tile Height:"
-      heightInput <- allocTextInput textInputPainter $ show initialTW
+      resetBtn    <- slotButton buttonPainter "Reset To Image Load"
+      widthLabel  <- slotText font black "Tile Width:"
+      widthInput  <- slotTextInput textInputPainter $ show initialTW
+      heightLabel <- slotText font black "Tile Height:"
+      heightInput <- slotTextInput textInputPainter $ show initialTW
       tileDimensions <- slot initialTileSize
       let renderTileDimensionInput rs = do
             renderText widthLabel       $ [move 0 16] ++ rs
@@ -332,9 +337,9 @@ mapMaker = autoReleaseResources $ do
               _ -> return False
             if delW || delH then Just <$> unslot tileDimensions
                            else return Nothing
-      reallocText title font black $ unwords ["Using", show file]
+      reslotText title font black $ unwords ["Using", show file]
 
-      (_,tilesettsimg) <- allocTexturePicture $ do
+      (_,tilesettsimg) <- slotTexturePicture $ do
         let V2 tsimgw tsimgh = tsimgszf
             sz :: V2 Float
             sz@(V2 szw szh) = if tsimgw >= tsimgh
@@ -344,15 +349,16 @@ mapMaker = autoReleaseResources $ do
         setGeometry $ fan $ mapVertices (\v@(V2 x y) -> (v, V2 (x/szw) (y/szh))) $
           rectangle 0 sz
 
-      tiles <- allocTileSet tsimgszf initialTileSize tsimgtex
-      panel <- allocPanel "Tileset" (V2 200 200) $ floor <$> tsimgszf
+      tiles <- slotTileSet tsimgszf initialTileSize tsimgtex
+      panel <- slotPanel "Tileset" (V2 200 200) $ floor <$> tsimgszf
 
       fix $ \continue -> do
+        renderStatus
         V2 _ h <- getWindowSize
         renderText title [move 0 $ h - 4]
         renderTileDimensionInput [] >>= \case
           Nothing -> return ()
-          Just sz -> reallocTileSet tiles tsimgszf sz tsimgtex
+          Just sz -> reslotTileSet tiles tsimgszf sz tsimgtex
         renderPicture tilesettsimg [move 100 0]
         (_,panelState) <- renderPanel panel [move 200 0] $ \offset -> do
           let offsetf = fromIntegral <$> offset
@@ -374,8 +380,8 @@ runFrame f = do
   tickUIFinish
   use window >>= io . updateWindowSDL2
   case e of
-    Left g   -> runFrame g
-    Right a  -> return a
+    Left  a -> return a
+    Right g -> runFrame g
 
 main :: IO ()
 main = do

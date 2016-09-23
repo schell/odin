@@ -5,7 +5,7 @@
 module Odin.GUI.Panel
   ( PanelState(..)
   , Panel(..)
-  , allocPanel
+  , slotPanel
   , renderPanel
   ) where
 
@@ -51,16 +51,16 @@ panelTrimPic size = do
     fan $ mapVertices (\v -> (v, V4 0.6 0.6 0.6 1)) $
       rectangle 0 $ V2 w 20
     line $ mapVertices (\v -> (v, V4 0.7 0.7 0.7 1)) $ do
-      rectangle 0 sz
+      rectangle 0 $ sz + 1
       to 0
 
-allocPanel :: GUI s m => String -> V2 Int -> V2 Int -> m (Slot Panel)
-allocPanel str size contentSize = do
-  pane   <- allocPane (size - V2 0 20) contentSize 0
+slotPanel :: GUI s m => String -> V2 Int -> V2 Int -> m (Slot Panel)
+slotPanel str size contentSize = do
+  pane   <- slotPane (size - V2 0 20) contentSize 0
   font   <- getDefaultFontDescriptor
-  title  <- allocText font black str
-  close  <- allocButton (iconButtonPainter 16) [faTimes]
-  (_,bg) <- allocColorPicture $ panelTrimPic size
+  title  <- slotText font black str
+  close  <- slotButton (iconButtonPainter 16) [faTimes]
+  (_,bg) <- slotColorPicture $ panelTrimPic size
   k      <- fresh
 -- registerFree -- Nothing to register
   slot $ Panel pane bg title close size 0 PanelStatePassive k
@@ -87,12 +87,12 @@ renderPanel s rs f = do
     when (childUI^.activeId /= UiItemBlocked) $ do
       ui.activeId .= childUI^.activeId
       ui.systemCursor .= childUI^.systemCursor
-    swapSlot s p{pState=finalState}
+    reslot s p{pState=finalState}
     return a
 
   -- if the system can allow ui to happen, update the panel state
+  canBeActive <- getCanBeActive
   finalState  <- do
-    canBeActive <- getCanBeActive
     p@Panel{..} <- unslot s
     if canBeActive
       then do
@@ -104,7 +104,7 @@ renderPanel s rs f = do
             setActive pId
             if isDown
               then do
-                swapSlot s p{pOffset=pOffset + rel}
+                reslot s p{pOffset=pOffset + rel}
                 return PanelStateDragging
 
               else return PanelStateDropped
@@ -115,17 +115,17 @@ renderPanel s rs f = do
               then do
                 let V2 sw sh = rel + pSize
                     sz = V2 (max 100 sw) (max 25 sh)
-                reallocColorPicture pTrim $ panelTrimPic sz
+                reslotColorPicture pTrim $ panelTrimPic sz
                 resizePane pPane (sz - V2 0 20)
                 Pane{..} <- unslot pPane
                 offsetPane pPane paneContentOffset
-                swapSlot s p{pSize=sz}
+                reslot s p{pSize=sz}
                 return PanelStateResizing
               else return PanelStateResized
           _ -> do
             mpos        <- getMousePosition
             let pmv = affine2sModelview $ extractSpatial rs
-                sz@(V2 w h) = fromIntegral <$> pSize
+                sz@(V2 w _) = fromIntegral <$> pSize
                 dxy = fromIntegral <$> pOffset
                 barbb  = over both
                               (transformV2 pmv)

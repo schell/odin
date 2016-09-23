@@ -293,35 +293,29 @@ getFontPath fontname =
 --------------------------------------------------------------------------------
 newtype Slot a = Slot { unSlot :: TVar a }
 
-allocSlot :: MonadIO m => a -> m (Slot a)
-allocSlot = (Slot <$>) . io . newTVarIO
-
 slot :: MonadIO m => a -> m (Slot a)
-slot = allocSlot
-
-readSlot :: MonadIO m => Slot a -> m a
-readSlot = io . readTVarIO . unSlot
+slot = (Slot <$>) . io . newTVarIO
 
 unslot :: MonadIO m => Slot a -> m a
-unslot = readSlot
+unslot = io . readTVarIO . unSlot
+
+reslot :: MonadIO m => Slot a -> a -> m ()
+reslot s a = void $ io $ atomically $ swapTVar (unSlot s) a
+
+is :: MonadIO m => Slot a -> a -> m ()
+is = reslot
 
 fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
 fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s
 
 fromSlotM :: MonadIO m => Slot a -> (a -> m b) -> m b
-fromSlotM s f = readSlot s >>= f
-
-swapSlot :: MonadIO m => Slot a -> a -> m ()
-swapSlot s a = void $ io $ atomically $ swapTVar (unSlot s) a
-
-is :: MonadIO m => Slot a -> a -> m ()
-is = swapSlot
+fromSlotM s f = unslot s >>= f
 
 modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
 modifySlot s = io . atomically . modifyTVar' (unSlot s)
 
 modifySlotM :: MonadIO m => Slot a -> (a -> m a) -> m ()
-modifySlotM s f = readSlot s >>= f >>= swapSlot s
+modifySlotM s f = unslot s >>= f >>= reslot s
 --------------------------------------------------------------------------------
 -- Look/Feel
 --------------------------------------------------------------------------------

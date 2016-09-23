@@ -19,7 +19,7 @@ data StatusBar = StatusBar { statusText :: Slot Text
 renderStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Time s m, Resources s m)
                 => Slot StatusBar -> [RenderTransform] -> m ()
 renderStatusBar s rs = do
-  sb@StatusBar{..} <- readSlot s
+  sb@StatusBar{..} <- unslot s
   dt         <- use (time.timeDelta)
   let deltas = take 100 $ dt:statusFrames
       avg    = (realToFrac $ sum deltas :: Double) / 100
@@ -30,23 +30,19 @@ renderStatusBar s rs = do
 
   if (statusCurrent >= elapsed)
     then do
-      reallocText statusText statusFont statusColor str
+      reslotText statusText statusFont statusColor str
       renderText statusText rs
-      swapSlot s sb{ statusFrames = deltas
+      reslot s sb{ statusFrames = deltas
                    , statusCurrent = statusCurrent - elapsed
                    }
   else do renderText statusText rs
-          swapSlot s sb{ statusCurrent = statusCurrent + dt
+          reslot s sb{ statusCurrent = statusCurrent + dt
                        , statusFrames = deltas
                        }
 
-allocStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
+slotStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
                => FontDescriptor -> V4 Float -> m (Slot StatusBar)
-allocStatusBar desc color = do
-  txt <- allocText desc color "Status..."
-  s   <- allocSlot $ StatusBar txt desc color [] 0
-  registerFree $ freeStatusBar s
+slotStatusBar desc color = do
+  txt <- slotText desc color "Status..."
+  s   <- slot $ StatusBar txt desc color [] 0
   return s
-
-freeStatusBar :: MonadIO m => Slot StatusBar -> m ()
-freeStatusBar s = fromSlot s statusText >>= freeText

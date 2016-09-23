@@ -7,7 +7,7 @@ module Odin.GUI.Styles
   , buttonPainter
   , iconButtonPainter
   , textInputPainter
-  , allocDefaultText
+  , slotDefaultText
   ) where
 
 import           Gelatin hiding (move)
@@ -171,11 +171,8 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
 --------------------------------------------------------------------------------
 -- Text
 --------------------------------------------------------------------------------
-allocDefaultText :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
+slotDefaultText :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
                  => V4 Float -> String -> m (Slot Text)
-allocDefaultText color str = do
+slotDefaultText color str = do
   comicFont <- getFontPath "KMKDSP__.ttf"
-  allocText (fontDescriptor comicFont 16) color str
---------------------------------------------------------------------------------
--- StatusBar
---------------------------------------------------------------------------------
+  slotText (fontDescriptor comicFont 16) color str

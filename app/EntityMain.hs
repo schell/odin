@@ -31,7 +31,7 @@ demoSelectTask = withDefaultStatusBar white $ \status ->
   withDefaultButton "Physics" $ \physBtn -> do
     V2 physw physh <- sizeOfButton physBtn
     withDefaultButton "Animation" $ \aniBtn -> do
-      selection <- allocSlot DemoAnimation
+      selection <- slot DemoAnimation
       physDemo  <- Physics.allocDemo
       aniDemo   <- Animation.allocDemo
       fix $ \continue -> do
@@ -40,16 +40,16 @@ demoSelectTask = withDefaultStatusBar white $ \status ->
         renderStatusBar status [move 0 $ wh - 2]
         renderButton physBtn [] >>= \case
           ButtonStateClicked -> do
-            swapSlot selection DemoPhysics
+            reslot selection DemoPhysics
             Physics.resumeDemo physDemo
           _ -> return ()
         renderButton aniBtn [move (physw + 4) 0] >>= \case
           ButtonStateClicked -> do
-            swapSlot selection DemoAnimation
+            reslot selection DemoAnimation
             Physics.pauseDemo physDemo
           _ -> return ()
         let rs = [move 0 $ physh + 4]
-        readSlot selection >>= \case
+        unslot selection >>= \case
           DemoPhysics   -> Physics.renderDemo physDemo rs
           DemoAnimation -> Animation.renderDemo aniDemo rs
         next continue

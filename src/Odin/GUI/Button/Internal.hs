@@ -49,11 +49,11 @@ getMouseIsOverBox mv sz = do
 --------------------------------------------------------------------------------
 -- A Button's life cycle
 --------------------------------------------------------------------------------
--- Allocs a new button.
-allocButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
+-- | Slots a new button.
+slotButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
             => Painter (ButtonData, ButtonState) m -> String
             -> m (Slot Button)
-allocButton painter str = do
+slotButton painter str = do
   -- Alloc all our renderers up front
   let dat = ButtonData str
   Painting (bounds, up  ) <- unPainter painter (dat, ButtonStateUp)
@@ -61,14 +61,15 @@ allocButton painter str = do
   Painting (     _, down) <- unPainter painter (dat, ButtonStateDown)
   let rs = ButtonRndrs up ovr down
       size = uncurry (flip (-)) bounds
-  s <- allocSlot $ Button size rs ButtonStateUp
+  s <- slot $ Button size rs ButtonStateUp
   registerFree $ freeButton s
   return s
 
-reallocButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
+-- | Reslots a button, allowing you to change its appearance.
+reslotButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
               => Slot Button -> Painter (ButtonData, ButtonState) m -> String
               -> m ()
-reallocButton s painter str = do
+reslotButton s painter str = do
   freeButton s
   let dat = ButtonData str
   Painting (bounds, up  ) <- unPainter painter (dat, ButtonStateUp)
@@ -87,16 +88,17 @@ freeButton s = do
   io $ fst $ btnRndrsOver btnRndrs
   io $ fst $ btnRndrsDown btnRndrs
 
+-- | Renders a slotted button.
 renderButton :: (MonadIO m, UIState s m)
              => Slot Button -> [RenderTransform] -> m ButtonState
 renderButton s rs = do
-  btn@Button{..} <- readSlot s
+  btn@Button{..} <- unslot s
   let mv            = affine2sModelview $ extractSpatial rs
       renderBtnUp   = io $ snd (btnRndrsUp btnRndrs) rs
       renderBtnOver = io $ snd (btnRndrsOver btnRndrs) rs
       renderBtnDown = io $ snd (btnRndrsDown btnRndrs) rs
       updateBtn st  = do
-        swapSlot s btn{btnState = st}
+        reslot s btn{btnState = st}
         return st
   case btnState of
     ButtonStateOver -> do
@@ -136,5 +138,6 @@ renderButton s rs = do
 --------------------------------------------------------------------------------
 -- Button properties
 --------------------------------------------------------------------------------
+-- | Retrieves the size of the slotted button.
 sizeOfButton :: MonadIO m => Slot Button -> m (V2 Float)
 sizeOfButton = flip fromSlot btnSize

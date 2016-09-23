@@ -8,14 +8,14 @@ import Gelatin.SDL2
 import Control.Lens
 import Odin.Core
 import Odin.GUI.Common
-
+--------------------------------------------------------------------------------
+-- Grapical Text
+--------------------------------------------------------------------------------
 data Text = Text
   { txtSize :: V2 Float
   , txtRndr :: GLRenderer
   }
---------------------------------------------------------------------------------
---
---------------------------------------------------------------------------------
+
 compileText :: (MonadIO m, Rezed s m, Fonts s m)
             => FontDescriptor -> V4 Float -> String -> m Text
 compileText desc color str = loadAtlas desc asciiChars >>= \case
@@ -28,25 +28,30 @@ compileText desc color str = loadAtlas desc asciiChars >>= \case
     saveAtlas atlas
     return $ Text sz r
 
-allocText :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
+-- | Slots a graphical text renderer.
+slotText :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
           => FontDescriptor -> V4 Float -> String -> m (Slot Text)
-allocText desc color str = do
+slotText desc color str = do
   txt <- compileText desc color str
-  s   <- allocSlot txt
+  s   <- slot txt
   registerFree $ freeText s
   return s
 
-reallocText :: (MonadIO m, Rezed s m, Fonts s m)
+-- | Reslots a graphical text renderer, allowing you to change the text, font
+-- or color.
+reslotText :: (MonadIO m, Rezed s m, Fonts s m)
             => Slot Text -> FontDescriptor -> V4 Float -> String -> m ()
-reallocText s desc color str = compileText desc color str >>= swapSlot s
+reslotText s desc color str = compileText desc color str >>= reslot s
 
 freeText :: (MonadIO m) => Slot Text -> m ()
 freeText s = fromSlot s (fst . txtRndr) >>= io
 
+-- | Renders a slotted text renderer.
 renderText :: MonadIO m => Slot Text -> [RenderTransform] -> m ()
 renderText s rs = do
-  Text{..} <- readSlot s
+  Text{..} <- unslot s
   io $ snd txtRndr rs
 
+--- | Retrieves the size of the slotted text.
 sizeOfText :: MonadIO m => Slot Text -> m (V2 Float)
 sizeOfText = flip fromSlot txtSize

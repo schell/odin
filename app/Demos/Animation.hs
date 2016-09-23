@@ -131,7 +131,7 @@ allocDemo = do
             ButtonStateClicked -> return True
             _ -> return isPaused
         unless stillPaused $
-          stepAnime anime >>= swapSlot lastRs
+          stepAnime anime >>= reslot lastRs
         rrs   <- unslot lastRs
         (_,rnd) <- unslot square
         io $ rnd $ rrs ++ rs

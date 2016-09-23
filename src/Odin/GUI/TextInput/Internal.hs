@@ -100,13 +100,13 @@ allocTextRndrs painter str = do
   return (rs, sz)
 
 -- Allocs a new text input view.
-allocTextInput :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
+slotTextInput :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
                => Painter (TextInputData, TextInputState) m
                -> String
                -> m (Slot (TextInput m))
-allocTextInput painter str = do
+slotTextInput painter str = do
   (rs,sz) <- allocTextRndrs painter str
-  s  <- allocSlot TextInput{ txtnSize    = sz
+  s  <- slot TextInput{ txtnSize    = sz
                            , txtnRndrs   = rs
                            , txtnState   = TextInputStateUp
                            , txtnString  = str
@@ -126,14 +126,14 @@ renderTextInput :: GUI s m
                 => Slot (TextInput m) -> [RenderTransform]
                 -> m (TextInputState, String)
 renderTextInput s rs = do
-  txt@TextInput{..} <- readSlot s
+  txt@TextInput{..} <- unslot s
   let mv = affine2sModelview $ extractSpatial rs
       renderUp   = io $ (snd $ txtnRndrsUp   txtnRndrs) rs
       renderOver = io $ (snd $ txtnRndrsOver txtnRndrs) rs
       renderDown = io $ (snd $ txtnRndrsDown txtnRndrs) rs
       renderEdit = io $ (snd $ txtnRndrsEdit txtnRndrs) rs
       update st = do
-        swapSlot s $ txt{txtnState=st}
+        reslot s $ txt{txtnState=st}
         return (st, txtnString)
       downAndOver = (,) <$> (queryMouseButton ButtonLeft)
                         <*> (getMouseIsOverBox mv txtnSize)
@@ -144,7 +144,7 @@ renderTextInput s rs = do
                 fst $ txtnRndrsEdit txtnRndrs
                 -- render the new edit
                 snd r rs
-        swapSlot s txt{txtnSize     = sz
+        reslot s txt{txtnSize     = sz
                       ,txtnRndrs    = newRndrs
                       ,txtnString   = str
                       ,txtnState    = TextInputStateEditing
@@ -166,7 +166,7 @@ renderTextInput s rs = do
                 fst $ txtnRndrsDown txtnRndrs
                 -- render the new up
                 snd up rs
-        swapSlot s txt{txtnSize    = sz
+        reslot s txt{txtnSize    = sz
                       ,txtnRndrs   = newRndrs
                       ,txtnState   = TextInputStateUp
                       }

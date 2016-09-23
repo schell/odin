@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards  #-}
 module Odin.GUI.Pane
   ( Pane(..)
-  , allocPane
+  , slotPane
   , renderPane
   , resizePane
   , offsetPane
@@ -96,23 +96,23 @@ clampContentOffset layerSize paneContentSize (V2 x y) = newoffset
   where V2 mxx mxy = floor <$> paneMaxContentOffset layerSize paneContentSize
         newoffset = V2 (max 0 $ min mxx x) (max 0 $ min mxy y)
 
-allocPane :: (GUI s m, Windowed s m) => V2 Int -> V2 Int -> V4 Float -> m (Slot Pane)
-allocPane wsz csz color = do
+slotPane :: (GUI s m, Windowed s m) => V2 Int -> V2 Int -> V4 Float -> m (Slot Pane)
+slotPane wsz csz color = do
   let V2 sw sh = paneScrollSize wsz csz
-  (_,hscrl) <- allocColorPicture $ paneHorizontalScrollPic sw
-  (_,vscrl) <- allocColorPicture $ paneVerticalScrollPic sh
-  layer     <- allocLayer wsz color
+  (_,hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
+  (_,vscrl) <- slotColorPicture $ paneVerticalScrollPic sh
+  layer     <- slotLayer wsz color
   k         <- fresh
   slot $ Pane 0 csz hscrl vscrl layer PaneStatePassive k
 
 resizePane :: GUI s m => Slot Pane -> V2 Int -> m ()
 resizePane s size = do
   p@Pane{..} <- unslot s
-  reallocLayer paneLayer size
+  reslotLayer paneLayer size
   let V2 sw sh = paneScrollSize size paneContentSize
-  (_,hscrl) <- allocColorPicture $ paneHorizontalScrollPic sw
-  (_,vscrl) <- allocColorPicture $ paneVerticalScrollPic sh
-  swapSlot s p{paneHorizontalScroll=hscrl
+  (_,hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
+  (_,vscrl) <- slotColorPicture $ paneVerticalScrollPic sh
+  reslot s p{paneHorizontalScroll=hscrl
               ,paneVerticalScroll=vscrl
               }
 
@@ -121,7 +121,7 @@ offsetPane s offset0 = do
   p@Pane{..}  <- unslot s
   Layer{..} <- unslot paneLayer
   let offset = clampContentOffset layerSize paneContentSize offset0
-  swapSlot s p{paneContentOffset=offset}
+  reslot s p{paneContentOffset=offset}
 
 -- | Renders the pane giving the subrendering the content offset.
 renderPane :: GUI s m
@@ -147,10 +147,11 @@ renderPane s rs f = do
       mouseIsOverScroll = canActivate &&
         (pointInBounds mposf vsbb || pointInBounds mposf hsbb)
       -- determine the local ui state to use for the layer
+      uiblocked = paneState == PaneStateScrolling || mouseIsOverScroll
+                                                 || not mouseIsOver
       localState = do
         mousePos .= (floor <$> mposf)
-        unless (mouseIsOver && not mouseIsOverScroll) $
-          activeId .= UiItemBlocked
+        when uiblocked $ activeId .= UiItemBlocked
       -- a function to render the scrollbars
       renderScrollBars x y = do
         renderPicture paneHorizontalScroll $ move x 0:rs
@@ -178,7 +179,7 @@ renderPane s rs f = do
                 offsetPane s $ paneContentOffset + inc
                 -- show the "clutching" hand
                 ui.systemCursor .= SDL_SYSTEM_CURSOR_SIZEALL
-        else swapSlot s p{paneState=PaneStateScrolled}
+        else reslot s p{paneState=PaneStateScrolled}
     _ -> do
       -- if the mouse is over the scrollbars (and can activate),
       -- set the cursor to a hand if the user is over the scrollbars
@@ -188,7 +189,7 @@ renderPane s rs f = do
         -- if the user is also holding down the left mouse, start scrolling
         -- next render
         when isDown $
-          swapSlot s p{paneState=PaneStateScrolling}
+          reslot s p{paneState=PaneStateScrolling}
 
   -- render the scrollbars
   renderScrollBars dx dy

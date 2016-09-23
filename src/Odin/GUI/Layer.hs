@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Odin.GUI.Layer
   ( Layer(..)
-  , allocLayer
-  , reallocLayer
+  , slotLayer
+  , reslotLayer
   , renderLayer
   ) where
 
@@ -37,7 +37,7 @@ allocLayerFBTex (V2 w h) = do
   io $ withArray [GL_COLOR_ATTACHMENT0] $ glDrawBuffers 1
   status <- glCheckFramebufferStatus GL_FRAMEBUFFER
   unless (status == GL_FRAMEBUFFER_COMPLETE) $
-    io $ putStrLn "allocLayer: could not complete the framebuffer!"
+    io $ putStrLn "slotLayer: could not complete the framebuffer!"
   glBindFramebuffer GL_FRAMEBUFFER 0
   return (fb, tex)
 
@@ -51,16 +51,16 @@ layerPic size tex = do
     to (V2 wf hf, V2 1  (-1))
     to (V2 0  hf, V2 0  (-1))
 
--- | Allocs an offscreen buffer of `size`. This is like creating an
+-- | Slots an offscreen buffer of `size`. This is like creating an
 -- entirely new window within the current context.
-allocLayer :: GUI s m => V2 Int -> V4 Float -> m (Slot Layer)
-allocLayer size color = do
+slotLayer :: GUI s m => V2 Int -> V4 Float -> m (Slot Layer)
+slotLayer size color = do
   -- alloc our framebuffer and texture to fit the given size
   (fb, tex) <- allocLayerFBTex size
-  -- alloc our quad-painting picture
-  (_, img)  <- allocTexturePicture $ layerPic size tex
-  -- register some automatic dealloc'ing
+  -- slot our quad-painting picture
+  (_, img)  <- slotTexturePicture $ layerPic size tex
   s <- slot $ Layer fb tex size color img
+  -- register some automatic dealloc'ing
   registerFree $ freeLayer s
   return s
 
@@ -72,9 +72,9 @@ freeLayer s = do
     with layerTexture $ glDeleteTextures 1
     with layerFramebuffer  $ glDeleteFramebuffers 1
 
--- | Reallocs a layer.
-reallocLayer :: GUI s m => Slot Layer -> V2 Int -> m ()
-reallocLayer s size = do
+-- | Reslots a layer.
+reslotLayer :: GUI s m => Slot Layer -> V2 Int -> m ()
+reslotLayer s size = do
   l@Layer{..} <- unslot s
 
   io $ do
@@ -82,11 +82,11 @@ reallocLayer s size = do
     with layerFramebuffer  $ glDeleteFramebuffers 1
   (fb,tex) <- allocLayerFBTex size
 
-  reallocTexturePicture layerPicture $ layerPic size tex
-  swapSlot s l{layerTexture=tex
-              ,layerFramebuffer=fb
-              ,layerSize=size
-              }
+  reslotTexturePicture layerPicture $ layerPic size tex
+  reslot s l{layerTexture=tex
+            ,layerFramebuffer=fb
+            ,layerSize=size
+            }
 
 -- | Render something into the offscreen frame and then display that frame at
 -- the given transform.

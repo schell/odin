@@ -3,7 +3,8 @@
 {-# LANGUAGE LambdaCase #-}
 module Odin.GUI.Text
   ( Text
-  , allocText
+  , slotText
+  , reslotText
   , renderText
   , sizeOfText
   ) where

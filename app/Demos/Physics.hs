@@ -172,7 +172,7 @@ renderPhysDemo s rs = modifySlotM s $ execStateT $ do
 
 freeDemoData :: MonadIO m => Slot DemoData -> m ()
 freeDemoData s = do
-  DemoData{..} <- readSlot s
+  DemoData{..} <- unslot s
   freeText    _demoTitle
   freeButton  _demoResetBtn
   fromSlotM _demoRndSquare     (io . fst)
@@ -212,16 +212,16 @@ allocDemo = do
   title <- allocText desc white "Physics Demo"
   reset <- allocButton buttonPainter "Reset"
   let emptyGUI = (return (), const $ return ())
-  sq    <- allocSlot emptyGUI
-  big   <- allocSlot emptyGUI
-  rw    <- allocSlot emptyGUI
-  bw    <- allocSlot emptyGUI
+  sq    <- slot emptyGUI
+  big   <- slot emptyGUI
+  rw    <- slot emptyGUI
+  bw    <- slot emptyGUI
   flip evalStateT (emptyDemoData title reset sq big rw bw) $ do
     t <- io newTime
     demoTime .= t
     addRenderers
     resetPhysics
-    s <- allocSlot =<< get
+    s <- slot =<< get
     return
       PhysicsDemo { demoRenderer = (freeDemoData s, renderPhysDemo s)
                   , pauseDemo = pauseDemoData s
