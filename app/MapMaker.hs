@@ -13,6 +13,8 @@ import           Odin.GUI.Text.Internal
 import           Control.Varying hiding (use)
 import           Control.Lens (over, both, (&), (%~), (.=), (%=), (^.))
 import           Control.Monad.Trans.State.Strict
+import           Control.Concurrent.Async
+import           Control.Concurrent (threadDelay)
 import           Data.Maybe (listToMaybe)
 import           Data.Hashable
 import           Data.Char.FontAwesome
@@ -222,14 +224,54 @@ mapMaker = autoReleaseResources $ do
   -- Do a bunch of prep and slot our initial screen's GUI
   font <- getDefaultFontDescriptor
   title  <- slotText font black
-    "Please drag and drop an image to use for the UI demo"
+    "Enter an amount of time (seconds) to demo waiting for forked processes"
 
   status <- slotStatusBar font black
   let renderStatus = do
         V2 w h <- getWindowSize
         renderStatusBar status [move (w-180) (h-4)]
 
+  -----------------------------------------------------------------------------
+  -- Demo concurrency with EventT
+  -----------------------------------------------------------------------------
+  -- First get the amount of time to delay our thread by
+  nseconds <- autoReleaseResources $ do
+    input <- slotTextInput textInputPainter "time in seconds"
+    fix $ \getSeconds -> do
+      renderStatus
+      renderText title [move 0 16]
+      renderTextInput input [move 4 20] >>= \case
+        (TextInputStateEdited, str) -> case maybeRead str of
+          Just n  -> return n
+          Nothing -> next getSeconds
+        _ -> next getSeconds
+
+  -- show the time passing using an animation while we wait for the delayed
+  -- thread to finish
+  autoReleaseResources_ $ do
+    -- slot a little progress bar
+    (_,progress) <- slotColorPicture $ setGeometry $ fan $
+      mapVertices (\v -> (v, yellow)) $ rectangle 0 $ V2 200 30
+    -- slot an animation to keep track of our time progress
+    anime <- slotAnime $ flip tweenStream 0 $ tween_ linear 0 nseconds nseconds
+    let showProgress = do
+          renderStatus
+          tseconds <- stepAnime anime
+          let percent = tseconds / nseconds
+          renderPicture progress [scale percent 1]
+          next showProgress
+        delayedThread = do
+          a <- io $ async $ threadDelay $ floor nseconds * 1000000
+          fix $ \pollThread -> (io $ poll a) >>= \case
+            Just (Right ()) -> return ()
+            _ -> next pollThread
+    withEither delayedThread showProgress >>= \case
+      Left () -> io $ putStrLn "done waiting!"
+      Right _ -> io $ putStrLn "this won't happen."
+
   -- Get a UI test image from the user
+  reslotText title font black
+    "Please drag and drop an image to use for the UI demo"
   (file, imgsz, imgtex) <- checkpoint "uitestimage" $
     getDroppedImageFromUser title font black
 
