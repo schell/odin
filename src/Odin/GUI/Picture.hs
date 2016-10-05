@@ -6,46 +6,42 @@ import Odin.Core
 import Odin.GUI.Common
 import Gelatin.GL
 
-slotPicture :: (Monoid (PictureData t s r v), MonadIO m, Rezed st m, Resources st m)
-             => (Rez -> PictureData t s r v -> IO GLRenderer)
-             -> PictureT t s r v m a -> m (a, Slot GUIRenderer)
-slotPicture compile pic = do
-  (a, dat) <- runPictureT pic
-  rz       <- use rez
-  glr      <- io $ compile rz dat
+slotPicture :: (MonadIO m, Resources st m)
+            => OdinBackend2 v
+            -> PictureT GLuint v m a -> m (a, Slot GUIRenderer)
+slotPicture b pic = do
+  (a,glr)  <- compilePictureT b pic
   s        <- slot glr
   registerFree (fromSlotM s fst)
   return (a, s)
 
-slotColorPicture :: (MonadIO m, Rezed s m, Resources s m)
+slotColorPicture :: (MonadIO m, CompileGraphics s m, Resources s m)
                   => ColorPictureT m a -> m (a, Slot GUIRenderer)
-slotColorPicture = slotPicture compileColorPictureData
+slotColorPicture = (v2v4Backend >>=) . flip slotPicture
 
-slotTexturePicture :: (MonadIO m, Rezed s m, Resources s m)
-                  => TexturePictureT m a -> m (a, Slot GUIRenderer)
-slotTexturePicture = slotPicture compileTexturePictureData
+slotTexturePicture :: (MonadIO m, CompileGraphics s m, Resources s m)
+                   => TexturePictureT m a -> m (a, Slot GUIRenderer)
+slotTexturePicture = (v2v2Backend >>=) . flip slotPicture
 
-reslotPicture :: (Monoid (PictureData t s r v), MonadIO m, Rezed st m)
-               => (Rez -> PictureData t s r v -> IO GLRenderer)
-               -> Slot GUIRenderer -> PictureT t s r v m a -> m a
-reslotPicture compile s pic = do
-  (a, dat) <- runPictureT pic
-  rz       <- use rez
-  glr      <- io $ compile rz dat
+reslotPicture :: ( MonadIO m, CompileGraphics st m)
+              => Slot GUIRenderer
+              -> OdinBackend2 v -> PictureT GLuint v m a -> m a
+reslotPicture s b pic = do
+  (a, glr) <- compilePictureT b pic
   old      <- unslot s
   s `is` glr
   io $ fst old
   return a
 
-reslotTexturePicture :: (MonadIO m, Rezed s m)
+reslotTexturePicture :: (MonadIO m, CompileGraphics s m)
                       => Slot GUIRenderer -> TexturePictureT m a -> m a
-reslotTexturePicture = reslotPicture compileTexturePictureData
+reslotTexturePicture s = (v2v2Backend >>=) . flip (reslotPicture s)
 
-reslotColorPicture :: (MonadIO m, Rezed s m)
-                      => Slot GUIRenderer -> ColorPictureT m a -> m a
-reslotColorPicture = reslotPicture compileColorPictureData
+reslotColorPicture :: (MonadIO m, CompileGraphics s m)
+                   => Slot GUIRenderer -> ColorPictureT m a -> m a
+reslotColorPicture s = (v2v4Backend >>=) . flip (reslotPicture s)
 
-renderPicture :: MonadIO m => Slot GUIRenderer -> [RenderTransform] -> m ()
+renderPicture :: MonadIO m => Slot GUIRenderer -> [RenderTransform2] -> m ()
 renderPicture s rs = fromSlotM s $ \(_,r) -> io $ r rs
 
 freePicture :: MonadIO m => Slot GUIRenderer -> m ()

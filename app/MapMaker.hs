@@ -6,23 +6,16 @@ module Main where
 
 import           Gelatin.SDL2 hiding (move, scale, rotate)
 import           SDL
-import           Gelatin.FreeType2
 import           Odin.Core
 import           Odin.GUI
-import           Odin.GUI.Text.Internal
 import           Control.Varying hiding (use)
-import           Control.Lens (over, both, (&), (%~), (.=), (%=), (^.))
+import           Control.Lens (over, both)
+import           Control.Monad (unless)
 import           Control.Monad.Trans.State.Strict
 import           Control.Concurrent.Async
 import           Control.Concurrent (threadDelay)
 import           Data.Maybe (listToMaybe)
 import           Data.Hashable
-import           Data.Char.FontAwesome
-import           System.FilePath
-import           System.Exit (exitFailure)
-import           Paths_odin
-import           Foreign.Marshal hiding (void)
-import           Linear.Affine (Point(..))
 
 import           Halive.Utils
 
@@ -36,7 +29,7 @@ bgPicture (V2 ww wh) (V2 tw th) tex = do
     mapVertices (\v@(V2 x y) -> (v, V2 (x/tw) (y/th))) $
       rectangle 0 $ V2 ww wh
 
-renderBG :: (MonadIO m, Windowed s m, Rezed s m) => V2 Float -> GLuint
+renderBG :: (MonadIO m, CompileGraphics s m) => V2 Float -> GLuint
          -> Slot (V2 Float) -> Slot GUIRenderer
          -> m (V2 Float)
 renderBG texsz tex lastWindowSize bg = do
@@ -78,7 +71,7 @@ tilesetTextureSize :: TileSet -> V2 Float
 tilesetTextureSize TileSet{..} =
   tilesetTileSize * (fromIntegral <$> V2 tilesetWidth tilesetHeight)
 
-renderTileSet :: GUI s m => Slot TileSet -> [RenderTransform] -> m ()
+renderTileSet :: GUI s m => Slot TileSet -> [RenderTransform2] -> m ()
 renderTileSet s rs = do
   tset@TileSet{..} <- unslot s
   (_,ts)          <- unslot tilesetAll
@@ -93,7 +86,7 @@ renderTileSet s rs = do
   canBeActive <- getCanBeActive
   -- determine the hovered tile's x and y
   let rmv  = mxy - fst bb
-      ndxsz = fromIntegral <$> (V2 tilesetWidth tilesetHeight)
+      ndxsz = fromIntegral <$> V2 tilesetWidth tilesetHeight
       ndxs = (max 0 . fromIntegral . floor) <$> (ndxsz * rmv / (textureSize + ndxsz * 2))
       isOverTileset = pointInBounds mxy bb
       activendx = if canBeActive && isOverTileset
@@ -156,7 +149,7 @@ tilesetAllPic (V2 imgw imgh) (V2 tilew tileh) tex = do
   return $ V2 cols rows
 
 tilesetSelectorPic :: Monad m => V2 Float -> ColorPictureT m ()
-tilesetSelectorPic tsz = do
+tilesetSelectorPic tsz =
   setGeometry $ fan $ mapVertices (,black) $ rectangle 0 (tsz+4)
 
 tilesetOutlinePic :: Monad m => V2 Float -> ColorPictureT m ()
@@ -179,7 +172,7 @@ tilesetOutlinePic (V2 x y) = do
               to (bl, orange)
               to (tl, V4 1 1 0 1)
 
-slotTileSet :: (MonadIO m, Resources s m, Rezed s m)
+slotTileSet :: (MonadIO m, Resources s m, CompileGraphics s m)
            => V2 Float -> V2 Float -> GLuint -> m (Slot TileSet)
 slotTileSet imgsz tsz tex = do
   (V2 w h, allgui) <- slotTexturePicture $ tilesetAllPic imgsz tsz tex
@@ -189,7 +182,7 @@ slotTileSet imgsz tsz tex = do
   registerFree $ freeTileSet s
   return s
 
-reslotTileSet :: (MonadIO m, Rezed s m)
+reslotTileSet :: (MonadIO m, CompileGraphics s m)
              => Slot TileSet -> V2 Float -> V2 Float -> GLuint -> m ()
 reslotTileSet s imgsz tsz tex = do
   t@TileSet{..} <- unslot s
@@ -209,7 +202,7 @@ getDroppedImageFromUser :: MonadIO m
 getDroppedImageFromUser title font color = do
   renderText title [move 0 16]
   getDroppedFile >>= \case
-    file:_ -> (io $ loadImage file) >>= \case
+    file:_ -> io (loadImage file) >>= \case
       Nothing -> do
         reslotText title font black $ unwords [show file
                                                ,"could not be loaded."
@@ -236,7 +229,7 @@ mapMaker = autoReleaseResources $ do
   -----------------------------------------------------------------------------
   -- First get the amount of time to delay our thread by
   nseconds <- autoReleaseResources $ do
-    input <- slotTextInput textInputPainter "time in seconds"
+    input <- slotTextInput textInputPainter "time"
     fix $ \getSeconds -> do
       renderStatus
       renderText title [move 0 16]
@@ -262,7 +255,7 @@ mapMaker = autoReleaseResources $ do
           next showProgress
         delayedThread = do
           a <- io $ async $ threadDelay $ floor nseconds * 1000000
-          fix $ \pollThread -> (io $ poll a) >>= \case
+          fix $ \pollThread -> io (poll a) >>= \case
             Just (Right ()) -> return ()
             _ -> next pollThread
     withEither delayedThread showProgress >>= \case
@@ -323,7 +316,7 @@ mapMaker = autoReleaseResources $ do
         st <- renderButton testBtn [moveOffset, move 400 400]
         when (st == ButtonStateClicked) $ do
           n <- unslot clicks
-          reslotButton testBtn buttonPainter $ "Clicked " ++ (show $ n + 1)
+          reslotButton testBtn buttonPainter $ "Clicked " ++ show (n + 1)
           clicks `is` (n + 1)
       renderButton nextBtn [move 10 10] >>= \case
         ButtonStateClicked -> return ()
@@ -363,15 +356,15 @@ mapMaker = autoReleaseResources $ do
       heightInput <- slotTextInput textInputPainter $ show initialTW
       tileDimensions <- slot initialTileSize
       let renderTileDimensionInput rs = do
-            renderText widthLabel       $ [move 0 16] ++ rs
-            delW <- renderTextInput widthInput  ([move 0 18] ++ rs) >>= \case
+            renderText widthLabel       $ move 0 16 : rs
+            delW <- renderTextInput widthInput  (move 0 18 : rs) >>= \case
               (TextInputStateEdited, str) -> case maybeRead str of
                 Nothing -> return False
                 Just w  -> do modifySlot tileDimensions $ \(V2 _ h) -> V2 w h
                               return True
               _ -> return False
-            renderText heightLabel      $ [move 0 56] ++ rs
-            delH <- renderTextInput heightInput ([move 0 58] ++ rs) >>= \case
+            renderText heightLabel      $ move 0 56 : rs
+            delH <- renderTextInput heightInput (move 0 58 : rs) >>= \case
               (TextInputStateEdited, str) -> case maybeRead str of
                 Nothing -> return False
                 Just h -> do modifySlot tileDimensions $ \(V2 w _) -> V2 w h
@@ -407,37 +400,34 @@ mapMaker = autoReleaseResources $ do
           renderTileSet tiles [moveV2 offsetf, move 2 2]
         renderButton resetBtn [move 0 100] >>= \case
           ButtonStateClicked -> return ()
-          _ -> if panelState == PanelStateShouldClose
-                 then return ()
-                 else next continue
+          _ -> Control.Monad.unless (panelState == PanelStateShouldClose) $ next continue
     next toMappingScreen
 
 runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
 runFrame f = do
   io $ glClearColor 0.5 0.5 0.5 1
-  use rez >>= io . clearFrame
+  use backOps >>= io . backendOpClearWindow
   tickTime
   tickUIPrepare
   e <- runEventT f
   tickUIFinish
-  use window >>= io . updateWindowSDL2
+  use backOps >>= io . backendOpUpdateWindow
   case e of
     Left  a -> return a
     Right g -> runFrame g
 
 main :: IO ()
 main = do
-  (rz,win)  <- reacquire 0 $ startupSDL2Backend 800 600 "Entity Sandbox" True
-  [fbw,fbh] <- withArray [0,0] $ \ptr -> do
-    glGetIntegerv GL_MAX_VIEWPORT_DIMS ptr
-    peekArray 2 ptr
-  t         <- newTime
-  let firstFrame = Frame { _frameTime   = t
-                         , _frameNextK  = 0
-                         , _frameWindow = win
-                         , _frameRez    = rz
-                         , _frameFonts  = mempty
-                         , _frameRsrcs  = []
-                         , _frameUi     = emptyUi
+  SDL2Backends v2v4 v2v2 <-
+    reacquire 0 $ startupSDL2Backends 800 600 "Entity Sandbox" True
+  t <- newTime
+  let firstFrame = Frame { _frameTime    = t
+                         , _frameNextK   = 0
+                         , _frameV2v4c   = backendCompiler v2v4
+                         , _frameV2v2c   = backendCompiler v2v2
+                         , _frameBackOps = backendOps v2v4
+                         , _frameFonts   = mempty
+                         , _frameRsrcs   = []
+                         , _frameUi      = emptyUi
                          }
   void $ runStateT (runFrame mapMaker) firstFrame

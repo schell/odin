@@ -39,11 +39,8 @@ import           Physics.Linear.Convert         as PE
 
 import           Gelatin.SDL2
 import qualified Data.Array as A
-import           Data.Monoid ((<>))
 import           Data.IntMap.Strict
 import qualified Data.IntMap.Strict as IM
-import           Control.Lens
-import           Control.Monad.State.Strict
 import           Linear.Affine (Point(..))
 import           GHC.Exts (Double(..))
 
@@ -51,16 +48,16 @@ type OdinWorld = World WorldObj
 type OdinScene = Scene Engine
 
 physicalObj :: (Double, Double)
-           -- ^ The velocity of the object.
-        -> Double
-           -- ^ The rotational velocity of the object.
-        -> (Double, Double)
-           -- ^ The position of the object.
-        -> Double
-           -- ^ The rotation of the object.
-        -> (Double, Double)
-           -- ^ Mass
-        -> PhysicalObj
+               -- ^ The velocity of the object.
+            -> Double
+               -- ^ The rotational velocity of the object.
+            -> (Double, Double)
+               -- ^ The position of the object.
+            -> Double
+               -- ^ The rotation of the object.
+            -> (Double, Double)
+               -- ^ Mass
+            -> PhysicalObj
 physicalObj vel rotvel pos rotpos =
   PhysicalObj (pairToV2 vel) rotvel (pairToV2 pos) rotpos . toInvMass2
 
@@ -114,17 +111,17 @@ emptyScene = Scene world externals contactBehavior
         externals = []
         contactBehavior = ContactBehavior 0.01 0.02
 
-physicalObj2RndTfrms :: PhysicalObj -> [RenderTransform]
+physicalObj2RndTfrms :: PhysicalObj -> [RenderTransform2]
 physicalObj2RndTfrms PhysicalObj{..} = [v,r]
   where vd = toLV2 _physObjPos
         v  = Spatial $ Translate $ realToFrac <$> vd
         r  = Spatial $ Rotate $ realToFrac _physObjRotPos
 
-worldObj2RndTfrms :: WorldObj -> [RenderTransform]
+worldObj2RndTfrms :: WorldObj -> [RenderTransform2]
 worldObj2RndTfrms = physicalObj2RndTfrms . _worldPhysObj
 
-applyPhysics :: IntMap WorldObj -> IntMap [RenderTransform]
-             -> IntMap [RenderTransform]
+applyPhysics :: IntMap WorldObj -> IntMap [RenderTransform2]
+             -> IntMap [RenderTransform2]
 applyPhysics objs = IM.intersectionWith (++) objTfrms
   where objTfrms = worldObj2RndTfrms <$> objs
 --------------------------------------------------------------------------------

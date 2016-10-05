@@ -50,9 +50,9 @@ getMouseIsOverBox mv sz = do
 -- A Button's life cycle
 --------------------------------------------------------------------------------
 -- | Slots a new button.
-slotButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
-            => Painter (ButtonData, ButtonState) m -> String
-            -> m (Slot Button)
+slotButton :: (MonadIO m, Resources s m, CompileGraphics s m, Fonts s m)
+           => Painter (ButtonData, ButtonState) m -> String
+           -> m (Slot Button)
 slotButton painter str = do
   -- Alloc all our renderers up front
   let dat = ButtonData str
@@ -66,7 +66,7 @@ slotButton painter str = do
   return s
 
 -- | Reslots a button, allowing you to change its appearance.
-reslotButton :: (MonadIO m, Resources s m, Rezed s m, Fonts s m)
+reslotButton :: (MonadIO m, Resources s m, CompileGraphics s m, Fonts s m)
               => Slot Button -> Painter (ButtonData, ButtonState) m -> String
               -> m ()
 reslotButton s painter str = do
@@ -90,7 +90,7 @@ freeButton s = do
 
 -- | Renders a slotted button.
 renderButton :: (MonadIO m, UIState s m)
-             => Slot Button -> [RenderTransform] -> m ButtonState
+             => Slot Button -> [RenderTransform2] -> m ButtonState
 renderButton s rs = do
   btn@Button{..} <- unslot s
   let mv            = affine2sModelview $ extractSpatial rs

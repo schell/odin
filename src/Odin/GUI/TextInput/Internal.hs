@@ -39,7 +39,7 @@ data TextInputRndrs = TextInputRndrs { txtnRndrsUp       :: GUIRenderer
                                      , txtnRndrsEdit     :: GUIRenderer
                                      }
 
-type WordMap = Map String (V2 Float, GLRenderer)
+type WordMap = Map String (V2 Float, Renderer2)
 
 data TextInput m = TextInput { txtnSize    :: V2 Float
                              , txtnRndrs   :: TextInputRndrs
@@ -77,7 +77,7 @@ getMyTextEvent str = do
 -- Alloc'ing and releasing TextInputs
 --------------------------------------------------------------------------------
 -- | Allocs a TextInput renderer for ONE TextInputState.
-allocTextRndr :: (MonadIO m, Rezed s m, Fonts s m)
+allocTextRndr :: (MonadIO m, CompileGraphics s m, Fonts s m)
               => Painter (TextInputData, TextInputState) m
               -> TextInputState
               -> String
@@ -87,7 +87,7 @@ allocTextRndr painter st str = do
   Painting ((tl,br), r) <- unPainter painter (dat, st)
   return (r, br - tl)
 
-allocTextRndrs :: (MonadIO m, Rezed s m, Fonts s m)
+allocTextRndrs :: (MonadIO m, CompileGraphics s m, Fonts s m)
                => Painter (TextInputData, TextInputState) m
                -> String
                -> m (TextInputRndrs, V2 Float)
@@ -100,7 +100,7 @@ allocTextRndrs painter str = do
   return (rs, sz)
 
 -- Allocs a new text input view.
-slotTextInput :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
+slotTextInput :: (MonadIO m, CompileGraphics s m, Resources s m, Fonts s m)
                => Painter (TextInputData, TextInputState) m
                -> String
                -> m (Slot (TextInput m))
@@ -123,7 +123,7 @@ freeTextInput s = fromSlot s f >>= io
           forM_ rs fst
 
 renderTextInput :: GUI s m
-                => Slot (TextInput m) -> [RenderTransform]
+                => Slot (TextInput m) -> [RenderTransform2]
                 -> m (TextInputState, String)
 renderTextInput s rs = do
   txt@TextInput{..} <- unslot s

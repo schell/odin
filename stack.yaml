@@ -1,15 +1,9 @@
 flags: {}
 packages:
-- .
-#- ../varying
-#- ../gelatin/gelatin
-#- ../gelatin/gelatin-gl
-#- ../gelatin/gelatin-sdl2
-#- ../gelatin/gelatin-freetype2
 
 - location:
     git: https://github.com/schell/gelatin.git
-    commit: 909df3f3a5286ca96be00d82f4f279b2c7632ca4
+    commit: 51b30f20c545e77aa13c0450cdccb668f55dc902
   subdirs:
   - gelatin
   - gelatin-gl
@@ -43,6 +37,6 @@ extra-deps:
 - FontyFruity-0.5.3.2
 - freetype2-0.1.1
 
-resolver: lts-6.7
+resolver: lts-7.1
 #resolver: nightly-2016-07-14
 #resolver: nightly-2016-08-17

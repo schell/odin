@@ -96,7 +96,8 @@ clampContentOffset layerSize paneContentSize (V2 x y) = newoffset
   where V2 mxx mxy = floor <$> paneMaxContentOffset layerSize paneContentSize
         newoffset = V2 (max 0 $ min mxx x) (max 0 $ min mxy y)
 
-slotPane :: (GUI s m, Windowed s m) => V2 Int -> V2 Int -> V4 Float -> m (Slot Pane)
+slotPane :: GUI s m
+         => V2 Int -> V2 Int -> V4 Float -> m (Slot Pane)
 slotPane wsz csz color = do
   let V2 sw sh = paneScrollSize wsz csz
   (_,hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
@@ -125,7 +126,7 @@ offsetPane s offset0 = do
 
 -- | Renders the pane giving the subrendering the content offset.
 renderPane :: GUI s m
-           => Slot Pane -> [RenderTransform] -> (V2 Int -> m a) -> m a
+           => Slot Pane -> [RenderTransform2] -> (V2 Int -> m a) -> m a
 renderPane s rs f = do
   p@Pane{..}  <- unslot s
   Layer{..} <- unslot paneLayer

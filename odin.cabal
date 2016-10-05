@@ -147,6 +147,7 @@ executable mapmaker
                      , gelatin-gl
                      , gelatin-freetype2
                      , varying
+                     , async
                      , vector
                      , htiled >= 0.1.3
                      , pretty-show >= 1.6

@@ -27,5 +27,4 @@
 - patterns:
   - .*MapMaker\.hs$
   commands:
-  - stack build --fast
-  - stack exec mapmaker -- +RTS -H512m -A4m
+  - stack exec mapmaker

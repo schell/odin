@@ -10,11 +10,10 @@ import qualified Data.Map as M
 import           Data.Map (Map)
 import           Data.List (find)
 import           Data.Maybe (catMaybes)
-import           Data.Monoid ((<>))
 import           Gelatin.GL
 
 type ImageTextureMap = Map Image GLuint
-type TileGLRendererMap = Map Tile GLRenderer
+type TileGLRendererMap = Map Tile Renderer2
 
 deriving instance Ord Image
 
@@ -61,9 +60,9 @@ assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
   where tilesets = map (tilesetOfTile t) tiles
         tiles = allTiles t
 
-
-allocTileRenderer :: Rez -> Tile -> Tileset -> GLuint -> IO GLRenderer
-allocTileRenderer rez tile Tileset{..} tex = do
+allocTileRenderer :: Backend GLuint e V2V2 (V2 Float) Float Raster
+                  -> Tile -> Tileset -> GLuint -> IO Renderer2
+allocTileRenderer b tile Tileset{..} tex = do
   let img = head tsImages
       -- the image's width and height in pixels
       w   = fromIntegral $ iWidth img
@@ -85,15 +84,16 @@ allocTileRenderer rez tile Tileset{..} tex = do
       V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
       -- the tile's uv bottom left
       V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
-  (_,glr) <- compileTexturePicture rez $ do
+  (_,glr) <- compilePicture b $ do
     setTextures [tex]
     setGeometry $ triangles $ do
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
   return glr
 
-mapOfTiles :: Rez -> TiledMap -> IO TileGLRendererMap
-mapOfTiles rez t@TiledMap{..} = do
+mapOfTiles :: Backend GLuint e V2V2 (V2 Float) Float Raster
+           -> TiledMap -> IO TileGLRendererMap
+mapOfTiles be t@TiledMap{..} = do
   img2TexMap <- allocImageTextureMap t
   let tile2SetMap = assocTileWithTileset t
       tile2ESetTexMap  = findTexBySet <$> tile2SetMap
@@ -105,13 +105,13 @@ mapOfTiles rez t@TiledMap{..} = do
       checkErrorsAndClean k (Right tstx) = return $ Just (k, tstx)
   mtile2SetTexList <- mapM (uncurry checkErrorsAndClean) $ M.toList tile2ESetTexMap
   let tile2SetTexMap = M.fromList $ catMaybes mtile2SetTexList
-  sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer rez a b c) tile2SetTexMap
+  sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer be a b c) tile2SetTexMap
 
-allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe GLRenderer)
+allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe Renderer2)
 allocLayerRenderer tmap rmap name = case layerWithName tmap name of
   Nothing -> return Nothing
   Just layer -> do
-    let  renderLayer :: [RenderTransform] -> IO ()
+    let  renderLayer :: [RenderTransform2] -> IO ()
          renderLayer tfrm = mapM_ (tileRenderer tfrm) $ M.toList $ layerData layer
          tileRenderer tfrm ((x,y), tile) = case M.lookup tile rmap of
            Nothing -> putStrLn $ "Could not find renderer for tile:" ++ show tile

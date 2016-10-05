@@ -10,16 +10,14 @@ module Odin.GUI.Styles
   , slotDefaultText
   ) where
 
-import           Gelatin hiding (move)
-import qualified Gelatin as G
+import           Gelatin
 import           Gelatin.FreeType2
-import           Gelatin.GL (transformRenderer, compileColorPictureData)
+import           Gelatin.GL (compilePicture)
 
 import Odin.Core
 import Odin.GUI.Button
 import Odin.GUI.TextInput
 import Odin.GUI.Text.Internal
-import Odin.GUI.StatusBar
 import Control.Monad (when)
 import Data.Char.FontAwesome
 
@@ -48,7 +46,7 @@ bgOffsetForButtonState ButtonStateOver = V2 0 0
 bgOffsetForButtonState ButtonStateDown = V2 2 2
 bgOffsetForButtonState _ = bgOffsetForButtonState ButtonStateUp
 
-buttonPainter :: (MonadIO m, Rezed s m, Fonts s m)
+buttonPainter :: (MonadIO m, CompileGraphics s m, Fonts s m)
               => Painter (ButtonData, ButtonState) m
 buttonPainter = Painter $ \(ButtonData{..}, st) -> do
   comicFont <- getFontPath "KMKDSP__.ttf"
@@ -57,10 +55,10 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       io $ putStrLn "ERROR PAINTING BUTTON!"
       return mempty
     Just atlas0 -> do
-      rz <- use rez
-      ((textc,textr), V2 tw th, atlas) <- freetypeGLRenderer rz atlas0
-                                                    (textColorForButtonState st)
-                                                    btnDataStr
+      v2v2 <- v2v2Backend
+      ((textc,textr), V2 tw th, atlas) <- freetypeRenderer2 v2v2 atlas0
+                                            (textColorForButtonState st)
+                                            btnDataStr
       saveAtlas atlas
 
       let pad  = V2 4 4
@@ -68,22 +66,22 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
           shxy = V2 4 4
           bgxy = bgOffsetForButtonState st
           gh = glyphHeight $ atlasGlyphSize atlas
+          bb = pointsBounds [shxy, shxy+sz, bgxy, bgxy+sz]
 
       -- drop shadow and background
-      (bb,dat) <- runPictureT $ do
-        embed $ setGeometry $ fan $
-          mapVertices (,V4 0 0 0 0.4) $ rectangle shxy (shxy + sz)
-        embed $ setGeometry $ fan $
-          mapVertices (,bgColorForButtonState st) $ rectangle bgxy (bgxy + sz)
-        pictureBounds
-      (bgc,bgr) <- io $ compileColorPictureData rz dat
+      v2v4 <- v2v4Backend
+      (_,(bgc,bgr)) <- compilePicture v2v4 $ setGeometry $ do
+        fan $ mapVertices (,V4 0 0 0 0.4) $
+          rectangle shxy (shxy + sz)
+        fan $ mapVertices (,bgColorForButtonState st) $
+          rectangle bgxy (bgxy + sz)
 
       let t = moveV2 $ (V2 4 gh) + bgxy
           r rs = do bgr rs
                     textr $ t:rs
       return $ Painting (bb, (bgc >> textc, r))
 
-iconButtonPainter :: (MonadIO m, Rezed s m, Fonts s m)
+iconButtonPainter :: (MonadIO m, CompileGraphics s m, Fonts s m)
                   => Int -> Painter (ButtonData, ButtonState) m
 iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
   iconFont <- getFontPath "FontAwesome.otf"
@@ -92,13 +90,13 @@ iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
       io $ putStrLn "ERROR PAINTING BUTTON!"
       return mempty
     Just atlas0 -> do
-      rz <- use rez
-      ((textfgc,textfgr), V2 w _, atlas1) <- freetypeGLRenderer rz atlas0
-                                                    (bgColorForButtonState st)
-                                                    btnDataStr
-      ((textbgc,textbgr), V2 _ _, atlas)  <- freetypeGLRenderer rz atlas1
-                                                     (V4 0 0 0 0.4)
-                                                     btnDataStr
+      v2v2 <- v2v2Backend
+      ((textfgc,textfgr), V2 w _, atlas1) <- freetypeRenderer2 v2v2 atlas0
+                                               (bgColorForButtonState st)
+                                               btnDataStr
+      ((textbgc,textbgr), V2 _ _, atlas)  <- freetypeRenderer2 v2v2 atlas1
+                                               (V4 0 0 0 0.4)
+                                               btnDataStr
       saveAtlas atlas
 
       let p = bgOffsetForButtonState st
@@ -124,7 +122,7 @@ lnColorForTextInputState TextInputStateOver = white `withAlpha` 0.8
 lnColorForTextInputState TextInputStateDown = white
 lnColorForTextInputState _ = white `withAlpha` 0.8
 
-textInputPainter :: (MonadIO m, Rezed s m, Fonts s m)
+textInputPainter :: (MonadIO m, CompileGraphics s m, Fonts s m)
                  =>  Painter (TextInputData, TextInputState) m
 textInputPainter = Painter $ \(TextInputData{..}, st) -> do
   comicFont <- getFontPath "KMKDSP__.ttf"
@@ -134,10 +132,10 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
       return mempty
     Just atlas0 -> do
       let color = textColorForTextInputState st
-      rz <- use rez
-      ((textc,textr), size@(V2 tw th), atlas) <- freetypeGLRenderer rz atlas0
-                                                                    color
-                                                                    txtnDataStr
+      v2v2 <- v2v2Backend
+      ((textc,textr), size@(V2 tw th), atlas) <- freetypeRenderer2 v2v2 atlas0
+                                                                   color
+                                                                   txtnDataStr
       saveAtlas atlas
 
       let hasLeader = st == TextInputStateEditing
@@ -146,23 +144,20 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
           bgcolor = bgColorForTextInputState st
           lncolor = lnColorForTextInputState st
 
-      (bb,dat) <- runPictureT $ do
-        embed $ do
-          setStroke [StrokeWidth 3, StrokeFeather 1]
-          setGeometry $ do
-            fan $ mapVertices (,bgcolor) $ rectangle 0 (size + V2 inc inc)
-            line $ do
-             to (0, lncolor)
-             to (V2 (tw + inc) 0, lncolor)
-             to (V2 (tw + inc) (th + inc), lncolor)
-             to (V2 0 (th + inc), lncolor)
-             to (0, lncolor)
-        when hasLeader $ embed $ setGeometry $ fan $
-            mapVertices (,color `withAlpha` 0.5) $
-              rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
-        pictureBounds
-
-      (bgc,bgr) <- io $ compileColorPictureData rz dat
+      v2v4     <- v2v4Backend
+      (bb,(bgc,bgr)) <- compilePicture v2v4 $ do
+        setStroke [StrokeWidth 3, StrokeFeather 1]
+        setGeometry $ do
+          fan $ mapVertices (,bgcolor) $ rectangle 0 (size + V2 inc inc)
+          line $ do
+            to (0, lncolor)
+            to (V2 (tw + inc) 0, lncolor)
+            to (V2 (tw + inc) (th + inc), lncolor)
+            to (V2 0 (th + inc), lncolor)
+            to (0, lncolor)
+          when hasLeader $ fan $ mapVertices (,color `withAlpha` 0.5) $
+            rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
+        pictureBounds2 fst
 
       let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
           r rs = do bgr rs
@@ -171,7 +166,7 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
 --------------------------------------------------------------------------------
 -- Text
 --------------------------------------------------------------------------------
-slotDefaultText :: (MonadIO m, Rezed s m, Resources s m, Fonts s m)
+slotDefaultText :: (MonadIO m, CompileGraphics s m, Resources s m, Fonts s m)
                  => V4 Float -> String -> m (Slot Text)
 slotDefaultText color str = do
   comicFont <- getFontPath "KMKDSP__.ttf"

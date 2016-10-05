@@ -66,7 +66,7 @@ slotPanel str size contentSize = do
   slot $ Panel pane bg title close size 0 PanelStatePassive k
 
 renderPanel :: GUI s m
-            => Slot Panel -> [RenderTransform] -> (V2 Int -> m a)
+            => Slot Panel -> [RenderTransform2] -> (V2 Int -> m a)
             -> m (a, PanelState)
 renderPanel s rs f = do
   -- render the panel just as it is, we have to do this in order to update the

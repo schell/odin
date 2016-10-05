@@ -6,7 +6,6 @@ import Text.Printf
 import Data.Word (Word32)
 
 import Odin.Core
-import Odin.GUI.Common
 import Odin.GUI.Text.Internal
 
 data StatusBar = StatusBar { statusText :: Slot Text
@@ -16,8 +15,8 @@ data StatusBar = StatusBar { statusText :: Slot Text
                            , statusCurrent :: Word32
                            }
 
-renderStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Time s m, Resources s m)
-                => Slot StatusBar -> [RenderTransform] -> m ()
+renderStatusBar :: (MonadIO m, CompileGraphics s m, Fonts s m, Time s m)
+                => Slot StatusBar -> [RenderTransform2] -> m ()
 renderStatusBar s rs = do
   sb@StatusBar{..} <- unslot s
   dt         <- use (time.timeDelta)
@@ -40,7 +39,7 @@ renderStatusBar s rs = do
                        , statusFrames = deltas
                        }
 
-slotStatusBar :: (MonadIO m, Rezed s m, Fonts s m, Resources s m)
+slotStatusBar :: (MonadIO m, CompileGraphics s m, Fonts s m, Resources s m)
                => FontDescriptor -> V4 Float -> m (Slot StatusBar)
 slotStatusBar desc color = do
   txt <- slotText desc color "Status..."

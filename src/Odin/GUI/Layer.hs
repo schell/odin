@@ -14,6 +14,7 @@ import           Odin.GUI.Picture
 import           Foreign.Marshal hiding (void)
 --------------------------------------------------------------------------------
 -- Layer
+-- | TODO: Move a bunch of this stuff into the backend.
 --------------------------------------------------------------------------------
 -- | A Layer is an offscreen buffer that can be rendered to, and then
 -- transformed and rendered separately. It is used for GUI elements like Pane
@@ -22,7 +23,7 @@ data Layer = Layer { layerFramebuffer     :: GLuint
                    , layerTexture         :: GLuint
                    , layerSize            :: V2 Int
                    , layerBackgroundColor :: V4 Float
-                   , layerPicture         :: Slot GLRenderer
+                   , layerPicture         :: Slot Renderer2
                    }
 
 allocLayerFBTex :: MonadIO m => V2 Int -> m (GLuint, GLuint)
@@ -90,7 +91,7 @@ reslotLayer s size = do
 
 -- | Render something into the offscreen frame and then display that frame at
 -- the given transform.
-renderLayer :: GUI s m => Slot Layer -> [RenderTransform] -> m a -> m a
+renderLayer :: GUI s m => Slot Layer -> [RenderTransform2] -> m a -> m a
 renderLayer s rs f = do
   Layer{..} <- unslot s
   let V4 r g b a = layerBackgroundColor

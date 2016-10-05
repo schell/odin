@@ -21,19 +21,15 @@ import qualified SDL
 import           SDL.Raw.Event hiding (getModState)
 import           SDL.Raw.Enum hiding (Keycode, Scancode)
 import           SDL.Raw.Types (Cursor)
-import           Data.Monoid ((<>))
 import           Data.Map (Map)
 import qualified Data.Map as M
 import qualified Data.IntMap.Strict as IM
-import           Data.IntMap.Strict (IntMap)
-import           Data.Vector.Unboxed (Unbox)
 import           Data.Word (Word32)
 import qualified Data.Text as T
 import           Control.Concurrent.STM
 import           Control.Monad.State.Strict as State
 import           Control.Lens
 import           Foreign.C.String
-import           Linear as L hiding (rotate)
 import           Linear.Affine (Point(..))
 import           System.FilePath
 import           System.Directory
@@ -58,7 +54,7 @@ data SystemTime = SystemTime
   -- physics tick
   } deriving (Show, Eq)
 
-type GUIRenderer = GLRenderer
+type GUIRenderer = Renderer2
 newtype Painting = Painting {unPainting :: ((V2 Float, V2 Float) , GUIRenderer)}
 
 instance Monoid Painting where
@@ -108,13 +104,22 @@ emptyUi = Ui { _uiActiveId     = UiItemNone
              , _uiSystemCursor  = SDL_SYSTEM_CURSOR_ARROW
              , _uiSavedCursor   = Nothing
              }
-data Frame = Frame { _frameTime   :: SystemTime
-                   , _frameNextK  :: Int
-                   , _frameWindow :: Window
-                   , _frameRez    :: Rez
-                   , _frameFonts  :: FontMap
-                   , _frameRsrcs  :: [IO ()]
-                   , _frameUi     :: Ui
+
+
+type V2V4Compiler = BackendCompiler V2V4 (V2 Float) Float Raster
+type V2V2Compiler = BackendCompiler V2V2 (V2 Float) Float Raster
+type GLOps        = BackendOps GLuint SDL.Event
+
+data Frame = Frame { _frameTime    :: SystemTime
+                   , _frameNextK   :: Int
+                   --, _frameWindow     :: Window
+                   --, _frameRez        :: Rez
+                   , _frameV2v4c   :: V2V4Compiler
+                   , _frameV2v2c   :: V2V2Compiler
+                   , _frameBackOps :: GLOps
+                   , _frameFonts   :: FontMap
+                   , _frameRsrcs   :: [IO ()]
+                   , _frameUi      :: Ui
                    }
 makeFields ''Frame
 
@@ -131,22 +136,44 @@ makeLenses ''SystemTime
 class HasScene s a | s -> a where
   scene :: Lens' s a
 
-type Fresh s m      = (MonadState s m, HasNextK  s Int)
-type Time s m       = (MonadState s m, HasTime   s SystemTime)
-type Physics s m    = (MonadState s m, HasScene  s OdinScene)
-type Windowed s m   = (MonadState s m, HasWindow s Window)
-type Rezed s m      = (MonadState s m, HasRez    s Rez)
-type Fonts s m      = (MonadState s m, HasFonts  s FontMap)
-type Resources s m  = (MonadState s m, HasRsrcs  s [IO ()])
-type UIState s m    = (MonadState s m, HasUi     s Ui)
+type Fresh s m       = (MonadState s m, HasNextK  s Int)
+type Time s m        = (MonadState s m, HasTime   s SystemTime)
+type Physics s m     = (MonadState s m, HasScene  s OdinScene)
+--type Windowed s m    = (MonadState s m, HasWindow s Window)
+--type Rezed s m       = (MonadState s m, HasRez    s Rez)
+type CompileV2V4 s m = (MonadState s m, HasV2v4c  s V2V4Compiler)
+type CompileV2V2 s m = (MonadState s m, HasV2v2c  s V2V2Compiler)
+type BackOps s m     = (MonadState s m, HasBackOps s GLOps)
+type Fonts s m       = (MonadState s m, HasFonts  s FontMap)
+type Resources s m   = (MonadState s m, HasRsrcs  s [IO ()])
+type UIState s m     = (MonadState s m, HasUi     s Ui)
+
+type CompileGraphics s m =
+  (MonadIO m, CompileV2V4 s m, CompileV2V2 s m, BackOps s m)
 
 type GUI s m =
-  (MonadIO m, UIState s m, Fresh s m, Fonts s m, Rezed s m, Windowed s m, Resources s m)
+  (CompileGraphics s m, UIState s m, Fresh s m, Fonts s m, Resources s m)
 --------------------------------------------------------------------------------
 -- Time Savers/Aliases
 --------------------------------------------------------------------------------
 io :: MonadIO m => IO a -> m a
 io = liftIO
+
+type OdinBackend2 v = Backend GLuint SDL.Event v (V2 Float) Float Raster
+
+v2v4Backend :: (CompileV2V4 s m, BackOps s m)
+            => m (OdinBackend2 V2V4)
+v2v4Backend = do
+  complr <- use v2v4c
+  ops    <- use backOps
+  return $ Backend ops complr
+
+v2v2Backend :: (CompileV2V2 s m, BackOps s m)
+            => m (OdinBackend2 V2V2)
+v2v2Backend = do
+  complr <- use v2v2c
+  ops    <- use backOps
+  return $ Backend ops complr
 --------------------------------------------------------------------------------
 -- Querying the UI state
 --------------------------------------------------------------------------------
@@ -246,17 +273,17 @@ newTime = do
 ----------------------------------------------------------------------------------
 -- Rendering Pictures
 ----------------------------------------------------------------------------------
-allocColorPicRenderer :: (Rezed s m, MonadIO m) => ColorPictureT m a -> m GLRenderer
+allocColorPicRenderer :: (CompileV2V4 s m, BackOps s m, MonadIO m)
+                      => ColorPictureT m a -> m (a, Renderer2)
 allocColorPicRenderer pic = do
-  rz <- use rez
-  (_,dat) <- runPictureT pic
-  io $ compileColorPictureData rz dat
+  b <- v2v4Backend
+  compilePictureT b pic
 
-allocTexturePicRenderer ::(Rezed s m, MonadIO m) => TexturePictureT m a -> m GLRenderer
+allocTexturePicRenderer :: (CompileV2V2 s m, BackOps s m, MonadIO m)
+                        => TexturePictureT m a -> m (a, Renderer2)
 allocTexturePicRenderer pic = do
-  rz <- use rez
-  (_,dat) <- runPictureT pic
-  io $ compileTexturePictureData rz dat
+  b <- v2v2Backend
+  compilePictureT b pic
 --------------------------------------------------------------------------------
 -- Chaining Setters
 --------------------------------------------------------------------------------
@@ -319,33 +346,6 @@ modifySlotM s f = unslot s >>= f >>= reslot s
 --------------------------------------------------------------------------------
 -- Look/Feel
 --------------------------------------------------------------------------------
-move :: Float -> Float -> RenderTransform
-move x y = Spatial $ Translate $ V2 x y
-
-moveV2 :: V2 Float -> RenderTransform
-moveV2 (V2 x y) = move x y
-
-scale :: Float -> Float -> RenderTransform
-scale x y = Spatial $ Scale $ V2 x y
-
-scaleV2 :: V2 Float -> RenderTransform
-scaleV2 (V2 x y) = scale x y
-
-rotate :: Float -> RenderTransform
-rotate = Spatial . Rotate
-
-multiply :: Float -> Float -> Float -> Float -> RenderTransform
-multiply r g b a = Multiply $ V4 r g b a
-
-multiplyV4 :: V4 Float -> RenderTransform
-multiplyV4 (V4 r g b a) = multiply r g b a
-
-redChannelReplacement :: Float -> Float -> Float -> Float -> RenderTransform
-redChannelReplacement r g b a = ColorReplacement $ V4 r g b a
-
-redChannelReplacementV4 :: V4 Float -> RenderTransform
-redChannelReplacementV4 (V4 r g b a) = redChannelReplacement r g b a
-
 paintingBounds :: Painting -> (V2 Float, V2 Float)
 paintingBounds = fst . unPainting
 
@@ -360,18 +360,15 @@ paintingCenter p = let (tl,br) = paintingBounds p in tl + (br - tl)/2
 --------------------------------------------------------------------------------
 -- Window and Buffer stuff
 --------------------------------------------------------------------------------
-getWindowSize :: (Windowed s m, MonadIO m) => m (V2 Float)
-getWindowSize = do
-  win <- use window
-  (fmap fromIntegral) <$> io (SDL.get $ windowSize win)
+getWindowSize :: (MonadIO m, BackOps s m) => m (V2 Float)
+getWindowSize =
+  fmap fromIntegral <$> (use backOps >>= (io . backendOpGetWindowSize))
 
-getFramebufferSize :: (MonadIO m, Rezed s m) => m (V2 Float)
-getFramebufferSize = do
-  Rez{..} <- use rez
-  (w,h) <- io $ ctxFramebufferSize rezContext
-  return $ fromIntegral <$> V2 w h
+getFramebufferSize :: (MonadIO m, BackOps s m) => m (V2 Float)
+getFramebufferSize =
+  fmap fromIntegral <$> (use backOps >>= (io . backendOpGetFramebufferSize))
 
-getResolutionScale :: (MonadIO m, Windowed s m, Rezed s m) => m (V2 Float)
+getResolutionScale :: (MonadIO m, BackOps s m) => m (V2 Float)
 getResolutionScale = do
   wsz  <- getWindowSize
   fbsz <- getFramebufferSize
@@ -474,7 +471,7 @@ tickUIFinish = do
         io $ freeCursor old
         mkNewCursor cursor
 
-tickPhysics :: (Physics s m, Time s m, MonadIO m) => m ()
+tickPhysics :: (Physics s m, Time s m) => m ()
 tickPhysics = do
   oscene <- use scene
   -- Time is in milliseconds

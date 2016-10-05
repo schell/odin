@@ -3,7 +3,6 @@ module Odin.GUI.Animation.Internal where
 
 import Odin.Core
 import Control.Varying hiding (use)
-import Control.Lens (use)
 
 newtype Anime m b = Anime { unAnime :: VarT m Float b }
 
