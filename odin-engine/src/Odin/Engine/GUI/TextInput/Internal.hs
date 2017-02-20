@@ -6,11 +6,12 @@
 {-# LANGUAGE TupleSections         #-}
 module Odin.Engine.GUI.TextInput.Internal where
 
-import           Control.Lens                    hiding (to)
-import           Control.Monad                   (forM_)
-import           Control.Monad.Trans             (lift)
+import           Control.Monad                   (forM, forM_, when)
 import           Data.Map                        (Map)
 import           Gelatin
+import           SDL                             hiding (get)
+import           SDL.Raw.Enum
+--------------------------------------------------------------------------------
 import           Odin.Engine.Eff
 import           Odin.Engine.GUI.Button.Internal
 import           Odin.Engine.Slots
@@ -24,8 +25,7 @@ data TextInputState = TextInputStateUp
                     | TextInputStateEdited
                     deriving (Show, Eq)
 
-newtype TextInputData = TextInputData
-  { txtnDataStr :: String }
+newtype TextInputData = TextInputData { txtnDataStr :: String }
 
 data TextInputRndrs = TextInputRndrs { txtnRndrsUp   :: Renderer2
                                      , txtnRndrsOver :: Renderer2
@@ -35,33 +35,33 @@ data TextInputRndrs = TextInputRndrs { txtnRndrsUp   :: Renderer2
 
 type WordMap = Map String (V2 Float, Renderer2)
 
-data TextInput m = TextInput { txtnSize    :: V2 Float
+data TextInput r = TextInput { txtnSize    :: V2 Float
                              , txtnRndrs   :: TextInputRndrs
                              , txtnState   :: TextInputState
                              , txtnString  :: String
-                             , txtnPainter :: Painter (TextInputData, TextInputState) m
+                             , txtnPainter :: Painter (TextInputData, TextInputState) r
                              }
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-delPressed :: UIState s m => m Bool
+delPressed :: AltersUI r => Eff r Bool
 delPressed = do
-  query <- use (ui . queryKey)
-  let f k = query k Pressed False
-  return $ any f [KeycodeBackspace, KeycodeDelete]
+  presses <- forM keys $ \k -> queryKeycodeEvent k Pressed False
+  return $ True `elem` presses
+  where keys = [KeycodeBackspace, KeycodeDelete]
 
-escOrEnterPressed :: UIState s m => m Bool
+escOrEnterPressed :: AltersUI r => Eff r Bool
 escOrEnterPressed = do
-  query <- use (ui . queryKey)
-  let f k = query k Pressed False
-  return $ any f [KeycodeEscape, KeycodeReturn, KeycodeReturn2]
+  presses <- forM keys $ \k -> queryKeycodeEvent k Pressed False
+  return $ True `elem` presses
+  where keys = [KeycodeEscape, KeycodeReturn, KeycodeReturn2]
 
 deleteString :: String -> String
 deleteString t = if null t then [] else init t
 
-getMyTextEvent :: UIState s m => String -> m (Maybe String)
+getMyTextEvent :: AltersUI r => String -> Eff r (Maybe String)
 getMyTextEvent str = do
-  tstr <- use (ui . textEvent)
+  tstr <- uiTextEvent <$> get
   if not $ null tstr
     then return $ Just $ str ++ tstr
     else delPressed >>= \case
@@ -71,20 +71,20 @@ getMyTextEvent str = do
 -- Alloc'ing and releasing TextInputs
 --------------------------------------------------------------------------------
 -- | Allocs a TextInput renderer for ONE TextInputState.
-allocTextRndr :: MonadIO m
-              => Painter (TextInputData, TextInputState) m
+allocTextRndr :: Member IO r
+              => Painter (TextInputData, TextInputState) r
               -> TextInputState
               -> String
-              -> m (Renderer2, V2 Float)
+              -> Eff r (Renderer2, V2 Float)
 allocTextRndr painter st str = do
   let dat = TextInputData str
   Painting ((tl,br), r) <- unPainter painter (dat, st)
   return (r, br - tl)
 
-allocTextRndrs :: MonadIO m
-               => Painter (TextInputData, TextInputState) m
+allocTextRndrs :: Member IO r
+               => Painter (TextInputData, TextInputState) r
                -> String
-               -> m (TextInputRndrs, V2 Float)
+               -> Eff r (TextInputRndrs, V2 Float)
 allocTextRndrs painter str = do
   (up  , sz) <- allocTextRndr painter TextInputStateUp      str
   (ovr ,  _) <- allocTextRndr painter TextInputStateOver    str
@@ -94,12 +94,12 @@ allocTextRndrs painter str = do
   return (rs, sz)
 
 -- Allocs a new text input view.
-slotTextInput :: (MonadIO m, CompileGraphics s m)
-               => Painter (TextInputData, TextInputState) m
+slotTextInput :: (Member IO r, ReadsRenderers r, Member Allocates r)
+               => Painter (TextInputData, TextInputState) r
                -> String
-               -> AllocatedT os m (Slot os (TextInput m))
+               -> Eff r (Slot (TextInput r))
 slotTextInput painter str = do
-  (rs,sz) <- lift $ allocTextRndrs painter str
+  (rs, sz) <- allocTextRndrs painter str
   let t = TextInput{ txtnSize    = sz
                    , txtnRndrs   = rs
                    , txtnState   = TextInputStateUp
@@ -114,9 +114,11 @@ freeTextInput txt = do
       rs = [txtnRndrsUp,txtnRndrsOver,txtnRndrsDown,txtnRndrsEdit]
   forM_ rs fst
 
-renderTextInput :: GUI s m
-                => Slot os (TextInput m) -> [RenderTransform2]
-                -> AllocatedT os m (TextInputState, String)
+renderTextInput
+  :: (ReadsRenderers r, AltersUI r, Member IO r)
+  => Slot (TextInput r)
+  -> [RenderTransform2]
+  -> Eff r (TextInputState, String)
 renderTextInput s rs = do
   txt@TextInput{..} <- unslot s
   let mv = affine2sModelview $ extractSpatial rs
@@ -130,7 +132,7 @@ renderTextInput s rs = do
       downAndOver = (,) <$> queryMouseButton ButtonLeft
                         <*> getMouseIsOverBox mv txtnSize
       continueEditing str = do
-        (r,sz) <- lift $ allocTextRndr txtnPainter TextInputStateEditing str
+        (r,sz) <- allocTextRndr txtnPainter TextInputStateEditing str
         let newRndrs = txtnRndrs{txtnRndrsEdit=r}
         io $ do -- dealloc the previous edit renderer
                 fst $ txtnRndrsEdit txtnRndrs
@@ -145,9 +147,9 @@ renderTextInput s rs = do
       endEditing = do
         let str = txtnString
         -- realloc the other three rndrs
-        (up,   sz) <- lift $ allocTextRndr txtnPainter TextInputStateUp   str
-        (ovr,   _) <- lift $ allocTextRndr txtnPainter TextInputStateOver str
-        (down,  _) <- lift $ allocTextRndr txtnPainter TextInputStateDown str
+        (up,   sz) <- allocTextRndr txtnPainter TextInputStateUp   str
+        (ovr,   _) <- allocTextRndr txtnPainter TextInputStateOver str
+        (down,  _) <- allocTextRndr txtnPainter TextInputStateDown str
         let newRndrs = txtnRndrs{txtnRndrsUp    = up
                                 ,txtnRndrsOver  = ovr
                                 ,txtnRndrsDown  = down
@@ -163,23 +165,24 @@ renderTextInput s rs = do
                     ,txtnState   = TextInputStateUp
                     }
         return (TextInputStateEdited, str)
+      enterOver = do
+        renderOver
+        setSystemCursor SDL_SYSTEM_CURSOR_HAND
+        update TextInputStateOver
   case txtnState of
     TextInputStateUp -> getMouseIsOverBox mv txtnSize >>= \case
-      True  -> do
-        renderOver
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
-        update TextInputStateOver
+      True  -> enterOver
       False -> renderUp >> return (TextInputStateUp, txtnString)
 
     TextInputStateOver -> downAndOver >>= \case
     --(down,over)
       (False,True) -> do
         renderOver
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        setSystemCursor SDL_SYSTEM_CURSOR_HAND
         return (TextInputStateOver, txtnString)
       (True,True)  -> do
         renderDown
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        setSystemCursor  SDL_SYSTEM_CURSOR_HAND
         update TextInputStateDown
       _            -> do
         renderUp
@@ -188,34 +191,31 @@ renderTextInput s rs = do
     --(down,over)
       (False, True) -> do
         renderEdit
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        setSystemCursor  SDL_SYSTEM_CURSOR_HAND
         update TextInputStateEditing
       (False, False) -> renderUp   >> update TextInputStateUp
       (True, ovr) -> do
         renderDown
-        when ovr $ ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        when ovr $ setSystemCursor  SDL_SYSTEM_CURSOR_HAND
         return (TextInputStateDown, txtnString)
 
     TextInputStateEditing -> escOrEnterPressed >>= \case
-      True -> endEditing
+      True  -> endEditing
       False -> getMyTextEvent txtnString >>= \case
         Nothing  -> downAndOver >>= \case
         --(down,over)
           (True,False) -> endEditing
           (_, ovr) -> do
             renderEdit
-            when ovr $ ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+            when ovr $ setSystemCursor SDL_SYSTEM_CURSOR_HAND
             return (TextInputStateEditing, txtnString)
         Just str -> continueEditing str
 
     TextInputStateEdited -> getMouseIsOverBox mv txtnSize >>= \case
-      True  -> do
-        renderOver
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
-        update TextInputStateOver
+      True  -> enterOver
       False -> renderUp >> update TextInputStateUp
 --------------------------------------------------------------------------------
 -- TextInput properties
 --------------------------------------------------------------------------------
-sizeOfTextInput :: MonadIO m => Slot os (TextInput m) -> AllocatedT os m (V2 Float)
+sizeOfTextInput :: Member IO r => Slot (TextInput r) -> Eff r (V2 Float)
 sizeOfTextInput = flip fromSlot txtnSize

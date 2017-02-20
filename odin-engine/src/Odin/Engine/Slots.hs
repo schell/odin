@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeOperators         #-}
 module Odin.Engine.Slots
   ( Allocates
+  , Allocated(..)
   , autoRelease
   , Slot
   , slot

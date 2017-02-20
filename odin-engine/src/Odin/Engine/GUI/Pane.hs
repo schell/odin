@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE TupleSections    #-}
-{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TupleSections         #-}
 module Odin.Engine.GUI.Pane
   ( Pane(..)
   , slotPane
@@ -10,14 +11,15 @@ module Odin.Engine.GUI.Pane
   , offsetPane
   ) where
 
+import           Control.Lens            ((.=), (^.))
+import           Control.Monad           (unless, when)
 import           Gelatin.SDL2
-import           SDL
 import           Odin.Engine.Eff
-import           Odin.Engine.GUI.Common
 import           Odin.Engine.GUI.Layer
 import           Odin.Engine.GUI.Picture
-import           Control.Lens ((.=), (^.))
-import           Control.Monad.Trans.State.Strict
+import           Odin.Engine.Slots
+import           SDL                     hiding (get)
+import           SDL.Raw.Enum
 
 fint :: V2 Int -> V2 Float
 fint = (fromIntegral <$>)
@@ -29,14 +31,14 @@ data PaneState = PaneStatePassive
                | PaneStateScrolled
                deriving (Show, Eq)
 
-data Pane os = Pane { paneContentOffset    :: V2 Int
-                    , paneContentSize      :: V2 Int
-                    , paneHorizontalScroll :: Slot os Renderer2
-                    , paneVerticalScroll   :: Slot os Renderer2
-                    , paneLayer            :: Slot os (Layer os)
-                    , paneState            :: PaneState
-                    , paneId               :: Int
-                    }
+data Pane = Pane { paneContentOffset    :: V2 Int
+                 , paneContentSize      :: V2 Int
+                 , paneHorizontalScroll :: Slot Renderer2
+                 , paneVerticalScroll   :: Slot Renderer2
+                 , paneLayer            :: Slot Layer
+                 , paneState            :: PaneState
+                 , paneId               :: Int
+                 }
 
 paneScrollbarColor :: V4 Float
 paneScrollbarColor = V4 1 1 1 0.5
@@ -44,11 +46,11 @@ paneScrollbarColor = V4 1 1 1 0.5
 paneScrollbarExtent :: Float
 paneScrollbarExtent = 16
 
-paneVerticalScrollPic :: Monad m => Float -> ColorPictureT m ()
+paneVerticalScrollPic :: Float -> ColorPicture ()
 paneVerticalScrollPic h = setGeometry $ fan $
   mapVertices (, paneScrollbarColor) $ rectangle 0 (V2 paneScrollbarExtent h)
 
-paneHorizontalScrollPic :: Monad m => Float -> ColorPictureT m ()
+paneHorizontalScrollPic :: Float -> ColorPicture ()
 paneHorizontalScrollPic w = setGeometry $ fan $
   mapVertices (, paneScrollbarColor) $ rectangle 0 (V2 w 16)
 
@@ -97,20 +99,29 @@ clampContentOffset layerSize paneContentSize (V2 x y) = newoffset
         newoffset = V2 (max 0 $ min mxx x) (max 0 $ min mxy y)
 
 slotPane
-  :: GUI s m
+  :: ( ReadsRenderers r
+     , AltersUI r
+     , Member Allocates r
+     , Member IO r
+     , Member Fresh r
+     )
   => V2 Int
   -> V2 Int
   -> V4 Float
-  -> AllocatedT os m (Slot os (Pane os))
+  -> Eff r (Slot Pane)
 slotPane wsz csz color = do
   let V2 sw sh = paneScrollSize wsz csz
-  (_,hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
+  (_, hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
   (_,vscrl) <- slotColorPicture $ paneVerticalScrollPic sh
   layer     <- slotLayer wsz color
   k         <- fresh
   slot (Pane 0 csz hscrl vscrl layer PaneStatePassive k) $ const $ return ()
 
-resizePane :: GUI s m => Slot os (Pane os) -> V2 Int -> AllocatedT os m ()
+resizePane
+  :: (ReadsRenderers r, AltersUI r, Member Allocates r, Member IO r)
+  => Slot Pane
+  -> V2 Int
+  -> Eff r ()
 resizePane s size = do
   p@Pane{..} <- unslot s
   reslotLayer paneLayer size
@@ -121,7 +132,11 @@ resizePane s size = do
               ,paneVerticalScroll=vscrl
               }
 
-offsetPane :: GUI s m => Slot os (Pane os) -> V2 Int -> AllocatedT os m ()
+offsetPane
+  :: (ReadsRenderers r, AltersUI r, Member IO r)
+  => Slot Pane
+  -> V2 Int
+  -> Eff r ()
 offsetPane s offset0 = do
   p@Pane{..}  <- unslot s
   Layer{..} <- unslot paneLayer
@@ -130,14 +145,14 @@ offsetPane s offset0 = do
 
 -- | Renders the pane giving the subrendering the content offset.
 renderPane
-  :: GUI s m
-  => Slot os (Pane os)
+  :: (ReadsRenderers r, AltersUI r, Member IO r)
+  => Slot Pane
   -> [RenderTransform2]
-  -> (V2 Int -> m a)
-  -> AllocatedT os m a
+  -> (V2 Int -> Eff r a)
+  -> Eff r a
 renderPane s rs f = do
-  p@Pane{..}  <- unslot s
-  Layer{..} <- unslot paneLayer
+  p@Pane{..} <- unslot s
+  Layer{..}  <- unslot paneLayer
 
   -- determine the mouse position with respect to the layer origin
   mpos0       <- getMousePosition
@@ -157,48 +172,49 @@ renderPane s rs f = do
         (pointInBox mposf vsbb || pointInBox mposf hsbb)
       -- determine the local ui state to use for the layer
       uiblocked = paneState == PaneStateScrolling || mouseIsOverScroll
-                                                 || not mouseIsOver
+                                                  || not mouseIsOver
       localState = do
-        mousePos .= (floor <$> mposf)
-        when uiblocked $ activeId .= UiItemBlocked
+        modify $ \ui -> ui{ uiMousePos = floor <$> mposf }
+        when uiblocked setUIBlocked
       -- a function to render the scrollbars
       renderScrollBars x y = do
-        renderPicture paneHorizontalScroll $ move2 x 0:rs
-        renderPicture paneVerticalScroll   $ move2 0 y:rs
+        renderPicture paneHorizontalScroll $ move x 0:rs
+        renderPicture paneVerticalScroll   $ move 0 y:rs
   -- Run the nested rendering function using the layer's ui state to
   -- account for the pane's affine transformation, as well as
   -- attempting to cancel UI activity if the mouse is outside of the visible
   -- pane area.
-  (childUI, a) <- uiLocal (execState localState) $
+  (childUI, a) <- uiLocal (run . (snd <$>) . runState localState) $
     renderLayer paneLayer rs $ f $ (-1) * paneContentOffset
   -- update the outer ui with the possibly active id
-  when (childUI^.activeId /= UiItemBlocked) $ do
-    ui.activeId .= childUI^.activeId
-    ui.systemCursor .= childUI^.systemCursor
+  when (uiActiveId childUI /= UiItemBlocked) $
+    modify $ \ui -> ui{ uiActiveId     = uiActiveId childUI
+                      , uiSystemCursor = uiSystemCursor childUI
+                      }
 
   case paneState of
     PaneStateScrolling -> do
-      setActive paneId
+      setUIActive paneId
       -- If the user still has the mouse down, scroll by the amount the mouse
       -- has moved, relative to its last position
       isDown <- queryMouseButton ButtonLeft
       if isDown
-        then do rel <- use (ui . mousePosRel)
+        then do rel <- uiMousePosRel <$> get
                 let inc = mouseUnitsToContentOffset layerSize paneContentSize rel
                 offsetPane s $ paneContentOffset + inc
                 -- show the "clutching" hand
-                ui.systemCursor .= SDL_SYSTEM_CURSOR_SIZEALL
-        else reslot s p{paneState=PaneStateScrolled}
+                setSystemCursor SDL_SYSTEM_CURSOR_SIZEALL
+        else reslot s p{ paneState = PaneStateScrolled }
     _ ->
       -- When the mouse is over the scrollbars (and can activate),
       -- set the cursor to a hand if the user is over the scrollbars
       when mouseIsOverScroll $ do
-        ui.systemCursor .= SDL_SYSTEM_CURSOR_HAND
+        setSystemCursor SDL_SYSTEM_CURSOR_HAND
         isDown <- queryMouseButton ButtonLeft
         -- If the user is also holding down the left mouse, start scrolling
         -- next render
         when isDown $
-          reslot s p{paneState=PaneStateScrolling}
+          reslot s p{ paneState = PaneStateScrolling }
 
   -- Render the scrollbars
   renderScrollBars dx dy

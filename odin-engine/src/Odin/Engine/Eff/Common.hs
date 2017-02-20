@@ -2,12 +2,12 @@
 module Odin.Engine.Eff.Common
   ( module Odin.Engine.Eff.Common
     -- * Freer
-  , module Control.Monad.Freer
-  , runState
+  , module F
   ) where
 
-import           Control.Monad.Freer
-import           Control.Monad.Freer.State
+import           Control.Monad.Freer as F
+import           Control.Monad.Freer.State as F
+import           Control.Monad.Freer.Reader as F
 
 io :: Member IO r => IO a -> Eff r a
 io = send

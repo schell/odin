@@ -7,24 +7,24 @@ import Data.Word (Word32)
 import Gelatin
 
 import Odin.Engine.Eff
-import Odin.Engine.GUI.Common
+import Odin.Engine.Slots
 import Odin.Engine.GUI.Text.Internal
 
-data StatusBar os = StatusBar { statusText :: Slot os Text
-                              , statusFont :: FontDescriptor
-                              , statusColor:: V4 Float
-                              , statusFrames :: [Word32]
-                              , statusCurrent :: Word32
-                              }
+data StatusBar = StatusBar { statusText    :: Slot Text
+                           , statusFont    :: FontDescriptor
+                           , statusColor   :: V4 Float
+                           , statusFrames  :: [Word32]
+                           , statusCurrent :: Word32
+                           }
 
 renderStatusBar
-  :: (MonadIO m, CompileGraphics s m, Fonts s m, Time s m)
-  => Slot os (StatusBar os)
+  :: (Member IO r, ReadsRenderers r, AltersFontMap r, AltersTime r)
+  => Slot StatusBar
   -> [RenderTransform2]
-  -> AllocatedT os m ()
+  -> Eff r ()
 renderStatusBar s rs = do
   sb@StatusBar{..} <- unslot s
-  dt         <- use (time.timeDelta)
+  dt         <- timeDelta <$> get
   let deltas = take 100 $ dt:statusFrames
       avg    = (realToFrac $ sum deltas :: Double) / 100
       fps    = round $ 1 / avg * 1000
@@ -45,10 +45,10 @@ renderStatusBar s rs = do
                        }
 
 slotStatusBar
-  :: (MonadIO m, CompileGraphics s m, Fonts s m)
+  :: (Member IO r, ReadsRenderers r, AltersFontMap r, Member Allocates r)
   => FontDescriptor
   -> V4 Float
-  -> AllocatedT os m (Slot os (StatusBar os))
+  -> Eff r (Slot StatusBar)
 slotStatusBar desc color = do
   txt <- slotText desc color "Status..."
   slot (StatusBar txt desc color [] 0) $ const $ return ()

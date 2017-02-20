@@ -15,7 +15,8 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Odin.Engine.Eff
+  exposed-modules:     Data.Char.FontAwesome
+                     , Odin.Engine.Eff
                      , Odin.Engine.Eff.Common
                      , Odin.Engine.Eff.Coroutine
                      , Odin.Engine.Eff.Fresh

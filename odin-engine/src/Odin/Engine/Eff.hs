@@ -152,7 +152,6 @@ queryKeycodeEvent k im rep = do
   q <- uiQueryKey <$> get
   return $ q k im rep
 
-
 queryScancodeEvent
   :: AltersUI r
   => Scancode
@@ -201,10 +200,16 @@ getCanBeActive = f . uiActiveId <$> get
         f (UiItemJust _) = False
         f _              = True
 
-setActive :: AltersUI r => Int -> Eff r ()
-setActive uid = do
+setUIActiveId :: AltersUI r => UiItem -> Eff r ()
+setUIActiveId item = do
   ui <- get
-  put ui{ uiActiveId = UiItemJust uid }
+  put ui{ uiActiveId = item }
+
+setUIActive :: AltersUI r => Int -> Eff r ()
+setUIActive = setUIActiveId . UiItemJust
+
+setUIBlocked :: AltersUI r => Eff r ()
+setUIBlocked = setUIActiveId UiItemBlocked
 
 setSystemCursor :: AltersUI r => Word32 -> Eff r ()
 setSystemCursor n = do
