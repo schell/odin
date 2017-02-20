@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards  #-}
 module Main where
 
-import           Gelatin.SDL2 hiding (move, scale, rotate)
+import           Gelatin.SDL2 hiding (both)
 import           SDL
 import           Odin.Core
 import           Odin.GUI
@@ -30,7 +30,7 @@ bgPicture (V2 ww wh) (V2 tw th) tex = do
       rectangle 0 $ V2 ww wh
 
 renderBG :: (MonadIO m, CompileGraphics s m) => V2 Float -> GLuint
-         -> Slot (V2 Float) -> Slot GUIRenderer
+         -> Slot os (V2 Float) -> Slot os GUIRenderer
          -> m (V2 Float)
 renderBG texsz tex lastWindowSize bg = do
   winsz1 <- unslot lastWindowSize
@@ -49,29 +49,29 @@ maybeRead = fmap fst . listToMaybe . reads
 --------------------------------------------------------------------------------
 -- TileSet
 --------------------------------------------------------------------------------
-data TileSet = TileSet { tilesetAll      :: Slot GUIRenderer
-                       -- ^ A renderer for all tiles at once
-                       , tilesetSelector :: Slot GUIRenderer
-                       -- ^ A renderer for a selection background
-                       , tilesetOutline  :: Slot GUIRenderer
-                       -- ^ A renderer for a selection outline
-                       , tilesetSelected :: V2 Int
-                       -- ^ The currently selected tile
-                       , tilesetActive   :: V2 Int
-                       -- ^ The currently active tile (active == hovered over)
-                       , tilesetTileSize :: V2 Float
-                       -- ^ The size (in pixels) of one tile
-                       , tilesetWidth  :: Int
-                       -- ^ The number of tile columns
-                       , tilesetHeight :: Int
-                       -- ^ The number of tile rows
-                       }
+data TileSet os = TileSet { tilesetAll      :: Slot os GUIRenderer
+                          -- ^ A renderer for all tiles at once
+                          , tilesetSelector :: Slot os GUIRenderer
+                          -- ^ A renderer for a selection background
+                          , tilesetOutline  :: Slot os GUIRenderer
+                          -- ^ A renderer for a selection outline
+                          , tilesetSelected :: V2 Int
+                          -- ^ The currently selected tile
+                          , tilesetActive   :: V2 Int
+                          -- ^ The currently active tile (active == hovered over)
+                          , tilesetTileSize :: V2 Float
+                          -- ^ The size (in pixels) of one tile
+                          , tilesetWidth  :: Int
+                          -- ^ The number of tile columns
+                          , tilesetHeight :: Int
+                          -- ^ The number of tile rows
+                          }
 
-tilesetTextureSize :: TileSet -> V2 Float
+tilesetTextureSize :: TileSet os -> V2 Float
 tilesetTextureSize TileSet{..} =
   tilesetTileSize * (fromIntegral <$> V2 tilesetWidth tilesetHeight)
 
-renderTileSet :: GUI s m => Slot TileSet -> [RenderTransform2] -> m ()
+renderTileSet :: GUI s m => Slot os (TileSet os) -> [RenderTransform2] -> m ()
 renderTileSet s rs = do
   tset@TileSet{..} <- unslot s
   (_,ts)          <- unslot tilesetAll
@@ -109,14 +109,17 @@ renderTileSet s rs = do
                ,tilesetSelected = floor <$> selndx
                }
 
-freeTileSet :: MonadIO m => Slot TileSet -> m ()
-freeTileSet s = do
-  TileSet{..} <- unslot s
-  fromSlotM tilesetAll $ io . fst
-  fromSlotM tilesetSelector $ io . fst
+freeTileSet :: TileSet os -> m ()
+freeTileSet TileSet{..} = do
+  fst tilesetAll
+  fst tilesetSelector
 
-tilesetAllPic :: Monad m
-              => V2 Float -> V2 Float -> GLuint -> TexturePictureT m (V2 Int)
+tilesetAllPic
+  :: Monad m
+  => V2 Float
+  -> V2 Float
+  -> GLuint
+  -> TexturePictureT m (V2 Int)
 tilesetAllPic (V2 imgw imgh) (V2 tilew tileh) tex = do
   let cols :: Int
       cols = floor $ imgw / tilew
@@ -172,18 +175,25 @@ tilesetOutlinePic (V2 x y) = do
               to (bl, orange)
               to (tl, V4 1 1 0 1)
 
-slotTileSet :: (MonadIO m, Resources s m, CompileGraphics s m)
-           => V2 Float -> V2 Float -> GLuint -> m (Slot TileSet)
+slotTileSet
+  :: (MonadIO m, CompileGraphics s m)
+  => V2 Float
+  -> V2 Float
+  -> GLuint
+  -> AllocatedT os m (Slotted os TileSet)
 slotTileSet imgsz tsz tex = do
   (V2 w h, allgui) <- slotTexturePicture $ tilesetAllPic imgsz tsz tex
   (_, sel)         <- slotColorPicture $ tilesetSelectorPic tsz
   (_, out)         <- slotColorPicture $ tilesetOutlinePic tsz
-  s <- slot $ TileSet allgui sel out 0 0 tsz w h
-  registerFree $ freeTileSet s
-  return s
+  slot (TileSet allgui sel out 0 0 tsz w h) freeTileSet
 
-reslotTileSet :: (MonadIO m, CompileGraphics s m)
-             => Slot TileSet -> V2 Float -> V2 Float -> GLuint -> m ()
+reslotTileSet
+  :: (MonadIO m, CompileGraphics s m)
+  => Slotted os TileSet
+  -> V2 Float
+  -> V2 Float
+  -> GLuint
+  -> AllocatedT os m ()
 reslotTileSet s imgsz tsz tex = do
   t@TileSet{..} <- unslot s
   V2 w h <- reslotTexturePicture tilesetAll $ tilesetAllPic imgsz tsz tex
@@ -196,23 +206,29 @@ reslotTileSet s imgsz tsz tex = do
 --------------------------------------------------------------------------------
 -- The MapMaker Task
 --------------------------------------------------------------------------------
-getDroppedImageFromUser :: MonadIO m
-                        => Slot Text -> FontDescriptor -> V4 Float
-                        -> UpdateT m (FilePath, V2 Float, GLuint)
+getDroppedImageFromUser
+  :: MonadIO m
+  => Slot os Text
+  -> FontDescriptor
+  -> V4 Float
+  -> UpdateT os m (FilePath, V2 Float, GLuint)
 getDroppedImageFromUser title font color = do
   renderText title [move 0 16]
   getDroppedFile >>= \case
-    file:_ -> io (loadImage file) >>= \case
-      Nothing -> do
-        reslotText title font black $ unwords [show file
-                                               ,"could not be loaded."
-                                               ,"Try another file."
-                                               ]
-        next $ getDroppedImageFromUser title font color
-      Just (imgsz, imgtex) -> return (file, fromIntegral <$> imgsz, imgtex)
+    file:_ -> do
+      io $ putStrLn $ "got a dropped file: " ++ show file
+      ops <- use backOps
+      io (backendOpAllocTexture ops file) >>= \case
+        Nothing -> do
+          reslotText title font black $ unwords [show file
+                                                 ,"could not be loaded."
+                                                 ,"Try another file."
+                                                 ]
+          next $ getDroppedImageFromUser title font color
+        Just (imgtex, imgsz) -> return (file, fromIntegral <$> imgsz, imgtex)
     _ -> next $ getDroppedImageFromUser title font color
 
-mapMaker :: MonadIO m => UpdateT m ()
+mapMaker :: MonadIO m => UpdateT os m ()
 mapMaker = autoReleaseResources $ do
   -- Do a bunch of prep and slot our initial screen's GUI
   font <- getDefaultFontDescriptor
@@ -267,6 +283,8 @@ mapMaker = autoReleaseResources $ do
     "Please drag and drop an image to use for the UI demo"
   (file, imgsz, imgtex) <- checkpoint "uitestimage" $
     getDroppedImageFromUser title font black
+
+  io $ print (file, imgsz, imgtex)
 
   let stream :: Monad m => VarT m Float (Either (V2 Float) (V2 Float))
       stream = flip tweenStream (Left 0) $ fix $ \nxt -> do
@@ -360,14 +378,14 @@ mapMaker = autoReleaseResources $ do
             delW <- renderTextInput widthInput  (move 0 18 : rs) >>= \case
               (TextInputStateEdited, str) -> case maybeRead str of
                 Nothing -> return False
-                Just w  -> do modifySlot tileDimensions $ \(V2 _ h) -> V2 w h
+                Just w  -> do modifySlot os tileDimensions $ \(V2 _ h) -> V2 w h
                               return True
               _ -> return False
             renderText heightLabel      $ move 0 56 : rs
             delH <- renderTextInput heightInput (move 0 58 : rs) >>= \case
               (TextInputStateEdited, str) -> case maybeRead str of
                 Nothing -> return False
-                Just h -> do modifySlot tileDimensions $ \(V2 w _) -> V2 w h
+                Just h -> do modifySlot os tileDimensions $ \(V2 w _) -> V2 w h
                              return True
               _ -> return False
             if delW || delH then Just <$> unslot tileDimensions
@@ -403,7 +421,7 @@ mapMaker = autoReleaseResources $ do
           _ -> Control.Monad.unless (panelState == PanelStateShouldClose) $ next continue
     next toMappingScreen
 
-runFrame :: MonadIO m => UpdateT m a -> StateT Frame m a
+runFrame :: MonadIO m => UpdateT os m a -> StateT Frame m a
 runFrame f = do
   io $ glClearColor 0.5 0.5 0.5 1
   use backOps >>= io . backendOpClearWindow

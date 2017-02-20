@@ -1,43 +1,45 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 module Odin.Core.Common where
 
-import           Gelatin.SDL2 hiding (E, move, scale, rotate, multiply)
-import           Gelatin.FreeType2
-import           SDL hiding (freeCursor, Cursor, Event, get, time)
-import qualified SDL
-import           SDL.Raw.Event hiding (getModState)
-import           SDL.Raw.Enum hiding (Keycode, Scancode)
-import           SDL.Raw.Types (Cursor)
-import           Data.Map (Map)
-import qualified Data.Map as M
-import qualified Data.IntMap.Strict as IM
-import           Data.Word (Word32)
-import qualified Data.Text as T
-import           Control.Concurrent.STM
-import           Control.Monad.State.Strict as State
 import           Control.Lens
+import           Control.Monad.State.Strict as State
+import qualified Data.IntMap.Strict         as IM
+import           Data.Map                   (Map)
+import qualified Data.Map                   as M
+import qualified Data.Text                  as T
+import           Data.Word                  (Word32)
 import           Foreign.C.String
-import           Linear.Affine (Point(..))
-import           System.FilePath
+import           Gelatin.FreeType2
+import           Gelatin.SDL2               hiding (E, move, multiply, rotate,
+                                             scale)
+import           Linear.Affine              (Point (..))
+import           SDL                        hiding (Cursor, Event, freeCursor,
+                                             get, time)
+import qualified SDL
+import           SDL.Raw.Enum               hiding (Keycode, Scancode)
+import           SDL.Raw.Event              hiding (getModState)
+import           SDL.Raw.Types              (Cursor)
 import           System.Directory
-import           System.Exit (exitSuccess)
+import           System.Exit                (exitSuccess)
+import           System.FilePath
 
-import           Control.Monad.Evented as E
+import           Control.Monad.Evented      as E
 
-import           Odin.Core.Physics as OP
+import           Odin.Core.Physics          as OP
+import           Odin.GUI.Common
 --------------------------------------------------------------------------------
 -- Core types for building applications
 --------------------------------------------------------------------------------
@@ -60,7 +62,7 @@ newtype Painting = Painting {unPainting :: ((V2 Float, V2 Float) , GUIRenderer)}
 instance Monoid Painting where
   mempty = Painting ((0,0), mempty)
   mappend (Painting (abb,a)) (Painting (bbb,b)) = Painting (cbb,c)
-    where cbb = pointsBounds [fst abb, snd abb, fst bbb, snd bbb]
+    where cbb = listToBox [fst abb, snd abb, fst bbb, snd bbb]
           c   = a `mappend` b
 
 newtype Painter a m = Painter { unPainter :: a -> m Painting }
@@ -123,9 +125,9 @@ data Frame = Frame { _frameTime    :: SystemTime
                    }
 makeFields ''Frame
 
-type UpdateT m = EventT (StateT Frame m)
+type UpdateT os m = EventT (AllocatedT os (StateT Frame m))
 
-instance Monad m => MonadState Frame (UpdateT m) where
+instance Monad m => MonadState Frame (UpdateT os m) where
   get = lift get
   put = lift . put
 --------------------------------------------------------------------------------
@@ -139,20 +141,17 @@ class HasScene s a | s -> a where
 type Fresh s m       = (MonadState s m, HasNextK  s Int)
 type Time s m        = (MonadState s m, HasTime   s SystemTime)
 type Physics s m     = (MonadState s m, HasScene  s OdinScene)
---type Windowed s m    = (MonadState s m, HasWindow s Window)
---type Rezed s m       = (MonadState s m, HasRez    s Rez)
 type CompileV2V4 s m = (MonadState s m, HasV2v4c  s V2V4Compiler)
 type CompileV2V2 s m = (MonadState s m, HasV2v2c  s V2V2Compiler)
 type BackOps s m     = (MonadState s m, HasBackOps s GLOps)
 type Fonts s m       = (MonadState s m, HasFonts  s FontMap)
-type Resources s m   = (MonadState s m, HasRsrcs  s [IO ()])
 type UIState s m     = (MonadState s m, HasUi     s Ui)
 
 type CompileGraphics s m =
   (MonadIO m, CompileV2V4 s m, CompileV2V2 s m, BackOps s m)
 
 type GUI s m =
-  (CompileGraphics s m, UIState s m, Fresh s m, Fonts s m, Resources s m)
+  (CompileGraphics s m, UIState s m, Fresh s m, Fonts s m)
 --------------------------------------------------------------------------------
 -- Time Savers/Aliases
 --------------------------------------------------------------------------------
@@ -177,41 +176,44 @@ v2v2Backend = do
 --------------------------------------------------------------------------------
 -- Querying the UI state
 --------------------------------------------------------------------------------
-queryKeycodeEvent :: UIState s m
-                  => Keycode
-                  -- ^ The key code to query for
-                  -> InputMotion
-                  -- ^ Pressed or Released
-                  -> Bool
-                  -- ^ True if querying for a repeating key press from the user
-                  -- holding the key down.
-                  -> m Bool
+queryKeycodeEvent
+  :: UIState s m
+  => Keycode
+  -- ^ The key code to query for
+  -> InputMotion
+  -- ^ Pressed or Released
+  -> Bool
+  -- ^ True if querying for a repeating key press from the user
+  -- holding the key down.
+  -> m Bool
 queryKeycodeEvent k im rep = do
   q <- use (ui . queryKey)
   return $ q k im rep
 
-queryScancodeEvent :: UIState s m
-                   => Scancode
-                   -- ^ The key code to query for.
-                   -> InputMotion
-                   -- ^ Pressed or Released.
-                   -> Bool
-                   -- ^ True if querying for a repeating key press from the user
-                   -- holding the key down.
-                   -> m Bool
+queryScancodeEvent
+  :: UIState s m
+  => Scancode
+  -- ^ The key code to query for.
+  -> InputMotion
+  -- ^ Pressed or Released.
+  -> Bool
+  -- ^ True if querying for a repeating key press from the user
+  -- holding the key down.
+  -> m Bool
 queryScancodeEvent k im rep = do
   q <- use (ui . queryScan)
   return $ q k im rep
 
-queryMouseButtonEvent :: UIState s m
-                      => MouseButton
-                      -- ^ The mouse button to query for.
-                      -> InputMotion
-                      -- ^ Pressed or Released.
-                      -> Int
-                      -- ^ The amount of clicks. 1 for a single-click, 2 for a
-                      -- double-click, etc.
-                      -> m Bool
+queryMouseButtonEvent
+  :: UIState s m
+  => MouseButton
+  -- ^ The mouse button to query for.
+  -> InputMotion
+  -- ^ Pressed or Released.
+  -> Int
+  -- ^ The amount of clicks. 1 for a single-click, 2 for a
+  -- double-click, etc.
+  -> m Bool
 queryMouseButtonEvent k im clk = do
   q <- use (ui . queryMouseBtn)
   return $ q k im clk
@@ -231,10 +233,10 @@ uiLocal f m = do
   return (ui1, a)
 
 getCanBeActive :: UIState s m => m Bool
-getCanBeActive = f <$> (use (ui . activeId))
-  where f UiItemBlocked = False
+getCanBeActive = f <$> use (ui . activeId)
+  where f UiItemBlocked  = False
         f (UiItemJust _) = False
-        f _ = True
+        f _              = True
 
 setActive :: UIState s m => Int -> m ()
 setActive = (ui.activeId .=) . UiItemJust
@@ -316,34 +318,6 @@ getFontPath :: MonadIO m => String -> m FilePath
 getFontPath fontname =
   (</> "assets" </> "fonts" </> fontname) <$> (io getCurrentDirectory)
 --------------------------------------------------------------------------------
--- Storing / Retreiving messages
---------------------------------------------------------------------------------
-newtype Slot a = Slot { unSlot :: TVar a }
-
-slot :: MonadIO m => a -> m (Slot a)
-slot = (Slot <$>) . io . newTVarIO
-
-unslot :: MonadIO m => Slot a -> m a
-unslot = io . readTVarIO . unSlot
-
-reslot :: MonadIO m => Slot a -> a -> m ()
-reslot s a = void $ io $ atomically $ swapTVar (unSlot s) a
-
-is :: MonadIO m => Slot a -> a -> m ()
-is = reslot
-
-fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
-fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s
-
-fromSlotM :: MonadIO m => Slot a -> (a -> m b) -> m b
-fromSlotM s f = unslot s >>= f
-
-modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
-modifySlot s = io . atomically . modifyTVar' (unSlot s)
-
-modifySlotM :: MonadIO m => Slot a -> (a -> m a) -> m ()
-modifySlotM s f = unslot s >>= f >>= reslot s
---------------------------------------------------------------------------------
 -- Look/Feel
 --------------------------------------------------------------------------------
 paintingBounds :: Painting -> (V2 Float, V2 Float)
@@ -393,9 +367,10 @@ tickTime = do
   time.timeDelta .= t - lastT
 
 -- | Poll for new events from the backend, then fold them up into a Ui state
-tickUIPrepare :: (UIState s m, MonadIO m) => m ()
+tickUIPrepare :: (UIState s m, CompileGraphics s m) => m ()
 tickUIPrepare = do
-  evs <- map eventPayload <$> io pollEvents
+  ops <- use backOps
+  evs <- map eventPayload <$> io (backendOpGetEvents ops)
   lastUi <- use ui
   if any isQuitKeyEvent evs
     then io exitSuccess
@@ -426,7 +401,7 @@ tickUIPrepare = do
                    , _uiSystemCursor  = SDL_SYSTEM_CURSOR_ARROW
                    }
   where isQuitKeyEvent (KeyboardEvent (KeyboardEventData _ _ _ k)) = isQuit k
-        isQuitKeyEvent _ = False
+        isQuitKeyEvent _                                           = False
         keycode (KeyboardEvent (KeyboardEventData _ im rep (Keysym _ k _))) =
           [(k, (im,rep))]
         keycode _ = []
@@ -437,17 +412,17 @@ tickUIPrepare = do
           [(btn, (im,fromIntegral clk))]
         mousebtn _ = []
         textev (TextInputEvent (TextInputEventData _ t)) = T.unpack t
-        textev _ = []
+        textev _                                         = []
         drpfile (DropEvent (DropEventData file)) = [file]
-        drpfile _ = []
+        drpfile _                                = []
         queryk m k im rep = case M.lookup k m of
-          Nothing -> False
+          Nothing          -> False
           Just (im0, rep0) -> im == im0 && rep == rep0
         querys m s im rep = case M.lookup s m of
-          Nothing -> False
+          Nothing          -> False
           Just (im0, rep0) -> im == im0 && rep == rep0
         querymbtn m k im clk = case M.lookup k m of
-          Nothing -> False
+          Nothing          -> False
           Just (im0, clk0) -> im == im0 && clk == clk0
 
 -- | Finishes up some book keeping about the Ui state.
@@ -462,14 +437,11 @@ tickUIFinish = do
                              return newcursor
         ui.savedCursor .= Just (new, newcursor)
   case msaved of
-    Nothing -> if cursor == SDL_SYSTEM_CURSOR_ARROW
-      then return ()
-      else mkNewCursor cursor
-    Just (oldname, old) -> if cursor == oldname
-      then return ()
-      else do
-        io $ freeCursor old
-        mkNewCursor cursor
+    Nothing             -> unless (cursor == SDL_SYSTEM_CURSOR_ARROW) $
+      mkNewCursor cursor
+    Just (oldname, old) -> unless (cursor == oldname) $ do
+      io $ freeCursor old
+      mkNewCursor cursor
 
 tickPhysics :: (Physics s m, Time s m) => m ()
 tickPhysics = do

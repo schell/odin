@@ -7,7 +7,6 @@
   - .*\.l?hs$
   commands:
   - stack build --fast
-  - hlint \0
 - patterns:
   - .*Part-Two\.lhs$
   commands:
@@ -25,6 +24,6 @@
   - stack build --fast
   - stack exec entity -- +RTS -N8 -H512m -A4m
 - patterns:
-  - .*MapMaker\.hs$
+  - .*\.hs$
   commands:
   - stack exec mapmaker

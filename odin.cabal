@@ -67,7 +67,7 @@ library
                      , Odin.GUI.Text.Internal
                      , Odin.GUI.TextInput.Internal
                      , Odin.GUI.Button
-                     , Odin.GUI.Common
+                     , Odin.GUI.AllocatedT.Internal
                      , Odin.GUI.Layer
                      , Odin.GUI.Pane
                      , Odin.GUI.Panel
@@ -81,33 +81,33 @@ library
                      , Odin.GUI
 
   build-depends:       base >=4.8 && <5.0
-                     , transformers >= 0.4
-                     , mtl >= 2.2
                      , array >= 0.5
-                     , stm >= 2.4
                      , async >= 2.0
-                     , time >= 1.5
                      , containers >= 0.5
-                     , renderable >= 0.2.0.1
-                     , varying >= 0.6
+                     , directory >= 1.2
+                     , filepath >= 1.4
+                     , FontyFruity >= 0.5.3
+                     , freer
                      , gelatin-sdl2
                      , gelatin-gl
                      , gelatin-freetype2
                      , gelatin
-                     , sdl2 >= 2.1
-                     , directory >= 1.2
-                     , filepath >= 1.4
-                     , linear >= 1.20
-                     , FontyFruity >= 0.5.3
-                     , JuicyPixels >= 3.2
-                     , free >= 4.12
                      , hashable >= 1.2
-                     , text >= 1.2
-                     , vector >= 0.11
                      , htiled >= 0.1.3
+                     , JuicyPixels >= 3.2
                      , lens
+                     , linear >= 1.20
+                     , mtl >= 2.2
+                     , renderable >= 0.2.0.1
                      , shapes
                      , shapes-math
+                     , sdl2 >= 2.1
+                     , stm >= 2.4
+                     , text >= 1.2
+                     , time >= 1.5
+                     , transformers >= 0.4
+                     , varying >= 0.6
+                     , vector >= 0.11
 
 executable entity
   buildable: False
@@ -242,4 +242,3 @@ executable part-one-sdl2
                      , filepath >= 1.4
                      , linear >= 1.20
   default-language:    Haskell2010
-

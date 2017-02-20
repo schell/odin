@@ -1,0 +1,77 @@
+name:                odin-engine
+version:             0.1.0.0
+-- synopsis:
+-- description:
+homepage:            https://github.com/schell/odin-engine#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Schell Scivally
+maintainer:          efsubenovex@gmail.com
+copyright:           Copyright: (c) 2016 Schell Scivally
+category:            Game
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Odin.Engine.Eff
+                     , Odin.Engine.Eff.Common
+                     , Odin.Engine.Eff.Coroutine
+                     , Odin.Engine.Eff.Fresh
+                     , Odin.Engine.GUI
+                     , Odin.Engine.GUI.Animation
+                     , Odin.Engine.GUI.Button
+                     , Odin.Engine.GUI.Button.Internal
+                     , Odin.Engine.GUI.Text
+                     , Odin.Engine.GUI.Text.Internal
+                     , Odin.Engine.GUI.TextInput
+                     , Odin.Engine.GUI.TextInput.Internal
+                     , Odin.Engine.GUI.Layer
+                     , Odin.Engine.GUI.Pane
+                     , Odin.Engine.GUI.Panel
+                     , Odin.Engine.GUI.Picture
+                     , Odin.Engine.GUI.StatusBar
+                     , Odin.Engine.GUI.Styles
+                     , Odin.Engine.Slots
+
+  build-depends:       array
+                     , base >= 4.7 && < 5
+                     , containers
+                     , directory
+                     , filepath
+                     , freer
+                     , gelatin
+                     , gelatin-freetype2
+                     , gelatin-gl
+                     , gelatin-sdl2
+                     , lens
+                     , linear
+                     , sdl2
+                     , shapes
+                     , stm
+                     , text
+                     , varying >= 0.7.0.3
+
+  default-language:    Haskell2010
+
+executable odin-engine-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , odin-engine
+  default-language:    Haskell2010
+
+test-suite odin-engine-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , odin-engine
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/schell/odin-engine

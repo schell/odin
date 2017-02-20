@@ -1,8 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 module Control.Monad.Evented where
 
-import Control.Monad.Trans.Class
-import Control.Monad.IO.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class
 
 newtype EventT m b = EventT { runEventT :: m (Either b (EventT m b)) }
 --------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ wait n = next $ wait $ n - 1
 -- | Runs both evented computations (left and then right) each frame and returns
 -- the first computation that completes.
 withEither :: Monad m => EventT m a -> EventT m b -> EventT m (Either a b)
-withEither ea eb = do
+withEither ea eb =
   lift ((,) <$> runEventT ea <*> runEventT eb) >>= \case
     (Left a,_) -> done $ Left a
     (_,Left b) -> done $ Right b
@@ -37,15 +37,15 @@ withAny ts0 = do
   es <- lift $ mapM runEventT ts0
   case foldl f (Right []) es of
     Right ts -> next $ withAny ts
-    Left a -> done a
-  where f (Left a) _         = Left a
-        f (Right ts) (Right t)  = Right $ ts ++ [t]
-        f _         (Left a) = Left a
+    Left a   -> done a
+  where f (Left a) _           = Left a
+        f (Right ts) (Right t) = Right $ ts ++ [t]
+        f _         (Left a)   = Left a
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
 instance Monad m => Functor (EventT m) where
-  fmap f (EventT g) = EventT $ do
+  fmap f (EventT g) = EventT $
     g >>= \case
       Right ev -> return $ Right $ fmap f ev
       Left c -> return $ Left $ f c
