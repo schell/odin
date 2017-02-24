@@ -19,6 +19,7 @@ module Odin.Engine.Slots
   , unslot
   , reslot
   , ($=)
+  , is
   , fromSlot
   , modifySlot
   , fromSlotM
@@ -33,23 +34,20 @@ import           Odin.Engine.Eff.Common
 --------------------------------------------------------------------------------
 -- Auto releasing IO resources
 --------------------------------------------------------------------------------
-newtype Allocated = Allocated { unAllocated :: [IO ()] }
-
 type Allocates = State Allocated
 
 alloc :: Member Allocates r => IO () -> Eff r ()
 alloc f = modify (Allocated . (f:) . unAllocated)
 
-releaseAllocated :: Member Allocates r => Eff r [IO ()]
+releaseAllocated :: (Member Allocates r, Member IO r) => Eff r ()
 releaseAllocated = do
-  Allocated xs <- get
+  get >>= mapM_ io . unAllocated
   put $ Allocated []
-  return xs
 
 autoRelease :: (Member Allocates r, Member IO r) => Eff r a -> Eff r a
 autoRelease eff = do
   a <- eff
-  releaseAllocated >>= mapM_ io
+  releaseAllocated
   return a
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
@@ -73,6 +71,9 @@ reslot = ((void . io . atomically) .) . swapTVar . unSlot
 
 ($=) :: Member IO r => Slot a -> a -> Eff r ()
 ($=) = reslot
+
+is :: Member IO r => Slot a -> a -> Eff r ()
+is = reslot
 
 fromSlot :: Member IO r => Slot a -> (a -> b) -> Eff r b
 fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s

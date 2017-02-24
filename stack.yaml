@@ -1,13 +1,13 @@
 flags: {}
 packages:
 - .
+- ./odin-engine
 - location:
     git: https://github.com/schell/gelatin
-    commit: 038c53aa189a5143ffe93901232d7eb44dbc334f
+    commit: d1b2dbac021b54cf70a13a4e19c538ed984e128e
   subdirs:
   - gelatin
   - gelatin-shaders
-  - gelatin-shaders-gl
   - gelatin-gl
   - gelatin-sdl2
   - gelatin-freetype2
@@ -24,13 +24,16 @@ packages:
   - shapes
   - shapes-math
 - location:
+    git: https://github.com/phadej/gl.git
+    commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
+  extra-dep: true
+- location:
     git: https://github.com/lukexi/halive.git
-    commit: c1ded911d7cd37df4192aaa4f05c05f53b796bb3
+    commit: 32886b13c7abb9dba7ccf4a187f124c4f94fa426
+  extra-dep: true
 
 extra-deps:
-- FontyFruity-0.5.3.2
 - freetype2-0.1.1
+- freer-0.2.4.1
 
-resolver: lts-7.14
-#resolver: nightly-2016-07-14
-#resolver: nightly-2016-08-17
+resolver: lts-8.0

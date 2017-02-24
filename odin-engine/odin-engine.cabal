@@ -16,6 +16,8 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Char.FontAwesome
+                     , Odin.Engine.Checkpoint
+                     , Odin.Engine.Continue
                      , Odin.Engine.Eff
                      , Odin.Engine.Eff.Common
                      , Odin.Engine.Eff.Coroutine
@@ -34,6 +36,7 @@ library
                      , Odin.Engine.GUI.Picture
                      , Odin.Engine.GUI.StatusBar
                      , Odin.Engine.GUI.Styles
+                     , Odin.Engine.Physics
                      , Odin.Engine.Slots
 
   build-depends:       array
@@ -41,11 +44,14 @@ library
                      , containers
                      , directory
                      , filepath
+                     , foreign-store >= 0.2
                      , freer
                      , gelatin
                      , gelatin-freetype2
                      , gelatin-gl
                      , gelatin-sdl2
+                     , halive
+                     , hashable >= 1.2
                      , lens
                      , linear
                      , sdl2
@@ -70,6 +76,7 @@ test-suite odin-engine-test
   main-is:             Spec.hs
   build-depends:       base
                      , odin-engine
+                     , freer
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 

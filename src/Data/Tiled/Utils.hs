@@ -1,16 +1,16 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Tiled.Utils where
 
+import           Data.List       (find)
+import           Data.Map        (Map)
+import qualified Data.Map        as M
+import           Data.Maybe      (catMaybes)
 import           Data.Tiled
+import           Gelatin.SDL2
 import           System.FilePath
-import qualified Data.Map as M
-import           Data.Map (Map)
-import           Data.List (find)
-import           Data.Maybe (catMaybes)
-import           Gelatin.GL
 
 type ImageTextureMap = Map Image GLuint
 type TileGLRendererMap = Map Tile Renderer2
@@ -101,7 +101,7 @@ mapOfTiles be t@TiledMap{..} = do
         case M.lookup (imageOfTileset ts) img2TexMap of
               Nothing -> Left $ "Could not find texture for tileset:" ++ show ts
               Just tex -> Right (ts, tex)
-      checkErrorsAndClean _ (Left err) = putStrLn err >> return Nothing
+      checkErrorsAndClean _ (Left err)   = putStrLn err >> return Nothing
       checkErrorsAndClean k (Right tstx) = return $ Just (k, tstx)
   mtile2SetTexList <- mapM (uncurry checkErrorsAndClean) $ M.toList tile2ESetTexMap
   let tile2SetTexMap = M.fromList $ catMaybes mtile2SetTexList

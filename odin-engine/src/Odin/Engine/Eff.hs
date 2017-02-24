@@ -7,13 +7,13 @@
 module Odin.Engine.Eff
   ( module E
   , module Odin.Engine.Eff
+  , module Gelatin.SDL2
   ) where
 
 import           Control.Lens
 import           Control.Monad              (unless)
 import           Control.Monad.Freer.Reader
 import           Control.Monad.Freer.State
-import           Data.IntMap                (IntMap)
 import qualified Data.IntMap                as IM
 import           Data.Map                   (Map)
 import qualified Data.Map                   as M
@@ -25,7 +25,6 @@ import           Gelatin.FreeType2          (Atlas (..), GlyphSize (..),
 import           Gelatin.SDL2
 import           SDL                        hiding (Cursor, freeCursor, get,
                                              time)
-import qualified SDL
 import           SDL.Raw.Enum               hiding (Keycode, Scancode)
 import           SDL.Raw.Event              hiding (getModState)
 import           SDL.Raw.Types              (Cursor)
@@ -134,6 +133,22 @@ data Ui = Ui { uiActiveId      :: UiItem
              , uiQueryMouseBtn :: MouseButton -> InputMotion -> Int -> Bool
              , uiSystemCursor  :: Word32
              , uiSavedCursor   :: Maybe (Word32, Cursor)
+             }
+
+emptyUi :: Ui
+emptyUi = Ui { uiActiveId     = UiItemNone
+             , uiMousePos     = V2 (-1) (-1)
+             , uiMousePosRel  = 0
+             , uiMouseBtn     = const False
+             , uiTextEvent    = []
+             , uiDroppedFiles = []
+             , uiKeyMod = KeyModifier False False False False False False
+                                      False False False False False
+             , uiQueryScan     = \_ _ _ -> False
+             , uiQueryKey      = \_ _ _ -> False
+             , uiQueryMouseBtn = \_ _ _ -> False
+             , uiSystemCursor  = SDL_SYSTEM_CURSOR_ARROW
+             , uiSavedCursor   = Nothing
              }
 
 type AltersUI = Member (State Ui)
@@ -334,7 +349,7 @@ newTime = do
 
 tickTime :: (AltersTime r, Member IO r) => Eff r ()
 tickTime = do
-  SystemTime lastT delta left <- get
+  SystemTime lastT _ left <- get
   t <- io ticks
   put SystemTime{ timeLast  = t
                 , timeDelta = t - lastT
@@ -404,7 +419,7 @@ isQuit _ = False
 tickPhysics :: (AltersPhysics r, AltersTime r) => Eff r ()
 tickPhysics = do
   -- Time is in milliseconds
-  SystemTime last dt t0 <- get
+  SystemTime _ dt t0 <- get
   let tt = dt + t0
       -- one physics step should be 0.01
       n = floor (fromIntegral tt / 10 :: Double)
@@ -413,3 +428,14 @@ tickPhysics = do
   -- Step the scene
   scene :: OdinScene <- get
   put scene{ _scWorld = runWorldOver 0.01 scene n }
+--------------------------------------------------------------------------------
+-- A record for all the things
+--------------------------------------------------------------------------------
+data Frame = Frame { frameTime  :: SystemTime
+                   , frameFresh :: Int
+                   , frameV2V4  :: OdinRenderer V2V4
+                   , frameV2V2  :: OdinRenderer V2V2
+                   , frameFonts :: FontMap
+                   , frameRsrcs :: Allocated
+                   , frameUi    :: Ui
+                   }

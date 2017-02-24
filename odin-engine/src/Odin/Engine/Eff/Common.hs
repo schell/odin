@@ -11,3 +11,5 @@ import           Control.Monad.Freer.Reader as F
 
 io :: Member IO r => IO a -> Eff r a
 io = send
+
+newtype Allocated = Allocated { unAllocated :: [IO ()] }

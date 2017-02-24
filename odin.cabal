@@ -56,57 +56,12 @@ library
 
   exposed-modules:     Data.Tiled.Utils
 
-                     , Control.Monad.Evented
-
-                     , Odin.Core.Common
-                     , Odin.Core.Physics
-
-                     , Odin.GUI.Animation.Internal
-                     , Odin.GUI.Button.Internal
-                     , Odin.GUI.Text.Internal
-                     , Odin.GUI.TextInput.Internal
-                     , Odin.GUI.Button
-                     , Odin.GUI.AllocatedT.Internal
-                     , Odin.GUI.Layer
-                     , Odin.GUI.Pane
-                     , Odin.GUI.Panel
-                     , Odin.GUI.Picture
-                     , Odin.GUI.StatusBar
-                     , Odin.GUI.Styles
-                     , Odin.GUI.Text
-                     , Odin.GUI.TextInput
-
-                     , Odin.Core
-                     , Odin.GUI
-
   build-depends:       base >=4.8 && <5.0
-                     , array >= 0.5
-                     , async >= 2.0
-                     , containers >= 0.5
-                     , directory >= 1.2
-                     , filepath >= 1.4
-                     , FontyFruity >= 0.5.3
-                     , freer
+                     , containers
+                     , filepath
                      , gelatin-sdl2
-                     , gelatin-gl
-                     , gelatin-freetype2
-                     , gelatin
-                     , hashable >= 1.2
-                     , htiled >= 0.1.3
-                     , JuicyPixels >= 3.2
-                     , lens
-                     , linear >= 1.20
-                     , mtl >= 2.2
-                     , renderable >= 0.2.0.1
-                     , shapes
-                     , shapes-math
-                     , sdl2 >= 2.1
-                     , stm >= 2.4
-                     , text >= 1.2
-                     , time >= 1.5
-                     , transformers >= 0.4
-                     , varying >= 0.6
-                     , vector >= 0.11
+                     , htiled
+                     , odin-engine
 
 executable entity
   buildable: False
@@ -139,28 +94,17 @@ executable mapmaker
   ghc-options:         -threaded -Wall -fprof-auto -rtsopts
   hs-source-dirs:      app
   main-is:             MapMaker.hs
-  build-depends:       base >=4.8 && <5.0
-                     , odin
-                     , gelatin
+  build-depends:       async
+                     , base >=4.8 && <5.0
+                     , either
                      , gelatin-sdl2
-                     , gelatin-gl
                      , gelatin-freetype2
-                     , varying
-                     , async
-                     , vector
-                     , htiled >= 0.1.3
-                     , pretty-show >= 1.6
-                     , hashable
-                     , mtl
-                     , transformers
-                     , filepath
-                     , directory
-                     , linear
-                     , lens
-                     , sdl2
                      , halive
-                     , text
-                     , containers
+                     , hashable
+                     , odin-engine
+                     , varying
+                     , safe >= 0.3
+                     , sdl2
 
 executable sandbox
   buildable: False

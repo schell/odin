@@ -3,14 +3,8 @@
 {-# LANGUAGE RecordWildCards #-}
 module Odin.Engine.GUI.Button.Internal where
 
---import Gelatin.FreeType2
---import Gelatin hiding (both)
-import Gelatin.SDL2 hiding (both)
-import Control.Lens
---import Control.Monad.Trans
---import Linear.Affine (Point(..))
+import Gelatin.SDL2
 import SDL hiding (freeCursor)
---import qualified SDL.Raw.Event as Raw
 import SDL.Raw.Enum
 import Odin.Engine.Eff
 import Odin.Engine.Slots
@@ -44,7 +38,7 @@ getMouseIsOverBox :: AltersUI r => M44 Float -> V2 Float -> Eff r Bool
 getMouseIsOverBox mv sz = do
   vi <- getMousePosition
   let vf = fromIntegral <$> vi
-      bb = over both (transformV2 mv) (0,sz)
+      bb = both (transformV2 mv) (0,sz)
   return $ pointInBox vf bb
 --------------------------------------------------------------------------------
 -- Button Life Cycle
