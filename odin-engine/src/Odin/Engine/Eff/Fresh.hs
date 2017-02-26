@@ -23,5 +23,5 @@ fresh = send Fresh
 runFresh :: Eff (Fresh ': r) w -> Int -> Eff r (w, Int)
 runFresh m s =
   handleRelayS s (\_s x -> return (x, _s))
-                 (\s' Fresh k -> (k $! s'+1) s')
+                 (\s' Fresh k -> (k $ s'+1) s')
                  m

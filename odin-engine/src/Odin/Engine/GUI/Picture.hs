@@ -4,7 +4,6 @@ module Odin.Engine.GUI.Picture where
 
 import Odin.Engine.Eff
 import Odin.Engine.Slots
-import Gelatin.GL
 
 slotPicture
   :: (Member IO r, Member Allocates r)

@@ -11,8 +11,7 @@ module Odin.Engine.GUI.Pane
   , offsetPane
   ) where
 
-import           Control.Lens            ((.=), (^.))
-import           Control.Monad           (unless, when)
+import           Control.Monad           (when)
 import           Gelatin.SDL2
 import           Odin.Engine.Eff
 import           Odin.Engine.GUI.Layer

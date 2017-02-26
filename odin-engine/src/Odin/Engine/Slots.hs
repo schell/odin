@@ -39,15 +39,15 @@ type Allocates = State Allocated
 alloc :: Member Allocates r => IO () -> Eff r ()
 alloc f = modify (Allocated . (f:) . unAllocated)
 
-releaseAllocated :: (Member Allocates r, Member IO r) => Eff r ()
-releaseAllocated = do
-  get >>= mapM_ io . unAllocated
-  put $ Allocated []
 
 autoRelease :: (Member Allocates r, Member IO r) => Eff r a -> Eff r a
 autoRelease eff = do
+  previousAllocs :: Allocated <- get
   a <- eff
-  releaseAllocated
+  Allocated newAllocs <- get
+  io $ print ("dealloc'ing", length newAllocs)
+  mapM_ io newAllocs
+  put previousAllocs
   return a
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
@@ -56,6 +56,7 @@ newtype Slot a = Slot { unSlot :: TVar a }
 
 slot :: (Member Allocates r, Member IO r) => a -> (a -> IO ()) -> Eff r (Slot a)
 slot a free = do
+  io $ putStrLn "alloc'ing"
   var <- io $ newTVarIO a
   alloc $ readTVarIO var >>= free
   return $ Slot var
