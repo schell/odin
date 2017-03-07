@@ -149,24 +149,24 @@ tilesetSelectorPic tsz =
   setGeometry $ fan $ mapVertices (,black) $ rectangle 0 (tsz+4)
 
 tilesetOutlinePic :: V2 Float -> ColorPicture ()
-tilesetOutlinePic (V2 x y) = return () --do
-  --setStroke [StrokeWidth 3, StrokeFeather 1]
-  --setGeometry $ do
-  --  let tl = 0
-  --      tr = V2 (x+4) 0
-  --      br = V2 (x+4) (y+4)
-  --      bl = V2 0 (y+4)
-  --      inc = 1
-  --  line $ do to (tl+V2 inc inc, red)
-  --            to (tr+V2 (-inc) inc, green)
-  --            to (br+V2 (-inc) (-inc), blue)
-  --            to (bl+V2 inc (-inc), orange)
-  --            to (tl+V2 inc inc, red)
-  --  line $ do to (tl, V4 1 1 0 1)
-  --            to (tr, V4 0 1 1 1)
-  --            to (br, V4 1 0 1 1)
-  --            to (bl, orange)
-  --            to (tl, V4 1 1 0 1)
+tilesetOutlinePic (V2 x y) = do
+  setStroke [StrokeWidth 3, StrokeFeather 1]
+  setGeometry $ do
+    let tl = 0
+        tr = V2 (x+4) 0
+        br = V2 (x+4) (y+4)
+        bl = V2 0 (y+4)
+        inc = 1
+    line $ do to (tl+V2 inc inc, red)
+              to (tr+V2 (-inc) inc, green)
+              to (br+V2 (-inc) (-inc), blue)
+              to (bl+V2 inc (-inc), orange)
+              to (tl+V2 inc inc, red)
+    line $ do to (tl, V4 1 1 0 1)
+              to (tr, V4 0 1 1 1)
+              to (br, V4 1 0 1 1)
+              to (bl, orange)
+              to (tl, V4 1 1 0 1)
 
 slotTileSet
   :: (Member IO r, ReadsRenderers r, Member Allocates r)
@@ -175,12 +175,11 @@ slotTileSet
   -> GLuint
   -> Eff r (Slot TileSet)
 slotTileSet imgsz tsz tex = do
-  --(V2 w h, allgui) <- slotTexturePicture $ tilesetAllPic imgsz tsz tex
-  --(_, sel)         <- slotColorPicture   $ tilesetSelectorPic tsz
-  -- uncomment the line below and compile+run will end in <<loop>>
-  --(_, out)         <- slotColorPicture $ tilesetOutlinePic undefined --tsz
-  let ts = undefined --TileSet allgui sel out 0 0 tsz w h
-  slotNoFree ts
+  (V2 w h, allgui) <- slotTexturePicture $ tilesetAllPic imgsz tsz tex
+  (_, sel)         <- slotColorPicture   $ tilesetSelectorPic tsz
+  (_, out)         <- slotColorPicture   $ tilesetOutlinePic tsz
+  let ts = TileSet allgui sel out 0 0 tsz w h
+  slotVar ts
 
 reslotTileSet
   :: (Member IO r, ReadsRenderers r, Member Allocates r)
@@ -256,183 +255,186 @@ mapMaker = do
     -- Demo concurrency with Next
     -----------------------------------------------------------------------------
     -- First get the amount of time to delay our thread by
-    nseconds <- autoRelease $ do
-      input <- slotTextInput textInputPainter "time"
-      fix $ \getSeconds -> do
-        renderStatus
-        renderText title [move 0 16]
-        renderTextInput input [move 4 20] >>= \case
-          (TextInputStateEdited, str)
-            | Just n <- readMay str
-              -> return n
-          _ -> next getSeconds
+    --nseconds <- autoRelease $ do
+    --  input <- slotTextInput textInputPainter "time"
+    --  fix $ \getSeconds -> do
+    --    renderStatus
+    --    renderText title [move 0 16]
+    --    renderTextInput input [move 4 20] >>= \case
+    --      (TextInputStateEdited, str)
+    --        | Just n <- readMay str
+    --          -> return n
+    --      _ -> next getSeconds
 
-    -- Show the time passing using an animation while we wait for the delayed
-    -- thread to finish
-    autoRelease $ do
-      -- slot a little progress bar
-      (_,progress) <- slotColorPicture $ setGeometry $ fan $
-        mapVertices (\v -> (v, yellow)) $ rectangle 0 $ V2 200 30
-      -- slot an animation to keep track of our time progress
-      anime <- slotAnime $ flip tweenStream 0 $ tween_ linear 0 nseconds nseconds
-      a     <- io $ async $ threadDelay $ floor nseconds * 1000000
-      let showProgress = do
-            renderStatus
-            tseconds <- stepAnime anime
-            let percent = tseconds / nseconds
-            renderPicture progress [scale percent 1]
-            next showProgress
-          pollThread = io (poll a) >>= \case
-              Just (Right ()) -> return ()
-              _ -> next pollThread
-      raceEither pollThread showProgress >>= \case
-        Left () -> io $ putStrLn "done waiting!"
-        Right _ -> io $ putStrLn "this won't happen."
+    ---- Show the time passing using an animation while we wait for the delayed
+    ---- thread to finish
+    --autoRelease $ do
+    --  -- slot a little progress bar
+    --  (_,progress) <- slotColorPicture $ setGeometry $ fan $
+    --    mapVertices (\v -> (v, yellow)) $ rectangle 0 $ V2 200 30
+    --  -- slot an animation to keep track of our time progress
+    --  anime <- slotAnime $ flip tweenStream 0 $ tween_ linear 0 nseconds nseconds
+    --  a     <- io $ async $ threadDelay $ floor nseconds * 1000000
+    --  let showProgress = do
+    --        renderStatus
+    --        tseconds <- stepAnime anime
+    --        let percent = tseconds / nseconds
+    --        renderPicture progress [scale percent 1]
+    --        next showProgress
+    --      pollThread = io (poll a) >>= \case
+    --          Just (Right ()) -> return ()
+    --          _ -> next pollThread
+    --  raceEither pollThread showProgress >>= \case
+    --    Left () -> io $ putStrLn "done waiting!"
+    --    Right _ -> io $ putStrLn "this won't happen."
 
-    -- Get a UI test image from the user
-    reslotText title font black
-      "Please drag and drop an image to use for the UI demo"
+    fix $ \testLoop -> do
+      -- Get a UI test image from the user
+      reslotText title font black
+        "Please drag and drop an image to use for the UI demo"
 
-    (file, imgsz, imgtex) <- checkpoint "uitestimage" $
-      getDroppedImageFromUser title font black
+      (file, imgsz, imgtex) <- checkpoint "uitestimage" $
+        getDroppedImageFromUser title font black
 
-    let stream :: Monad m => VarT m Float (Either (V2 Float) (V2 Float))
-        stream = flip tweenStream (Left 0) $ fix $ \nxt -> do
-          withTween_ easeOutExpo 700 400 1 $ \t -> Left  $ V2 t 400
-          withTween_ easeOutExpo 400 300 1 $ \t -> Left  $ V2 400 t
+      let stream :: Var Float (Either (V2 Float) (V2 Float))
+          stream = flip tweenStream (Left 0) $ fix $ \nxt -> do
+            withTween_ easeOutExpo 700 400 1 $ \t -> Left  $ V2 t 400
+            withTween_ easeOutExpo 400 300 1 $ \t -> Left  $ V2 400 t
 
-          withTween_ easeOutExpo 0   300 1 $ \t -> Right $ V2 t   0
-          withTween_ easeOutExpo 0   300 1 $ \t -> Right $ V2 300 t
-          withTween_ easeOutExpo 300   0 1 $ \t -> Right $ V2 t 300
-          withTween_ easeOutExpo 300   0 1 $ \t -> Right $ V2 0   t
+            withTween_ easeOutExpo 0   300 1 $ \t -> Right $ V2 t   0
+            withTween_ easeOutExpo 0   300 1 $ \t -> Right $ V2 300 t
+            withTween_ easeOutExpo 300   0 1 $ \t -> Right $ V2 t 300
+            withTween_ easeOutExpo 300   0 1 $ \t -> Right $ V2 0   t
 
-          withTween_ easeOutExpo 400 700 1 $ \t -> Left  $ V2 t 300
-          withTween_ easeOutExpo 300 400 1 $ \t -> Left  $ V2 700 t
-          nxt
+            withTween_ easeOutExpo 400 700 1 $ \t -> Left  $ V2 t 300
+            withTween_ easeOutExpo 300 400 1 $ \t -> Left  $ V2 700 t
+            nxt
 
-    nextBtn   <- slotButton buttonPainter "Next"
-    (_, img)  <- slotTexturePicture $ do
-      setTextures [imgtex]
-      setGeometry $ fan $ mapVertices (\v -> (v, v/imgsz)) $ rectangle 0 imgsz
-    ----------------------------------------------------------------------------
-    -- Test out the Pane UI component
-    ----------------------------------------------------------------------------
-    autoRelease $ do
-      sizeTween <- slotAnime stream
-      pane      <- slotPane (V2 800 400) (floor <$> imgsz) red
-      -- Animate the offeset and size of the pane, respectively, until the user
-      -- clicks the "Next" button.
-      fix $ \testPane -> do
-        renderStatus
-        stepAnime sizeTween >>= \case
-          Left sizef    -> resizePane pane $ floor <$> sizef
-          Right offsetf -> offsetPane pane $ floor <$> offsetf
-        void $ renderPane pane [move 10 50] $ \offset -> do
-          let V2 x y = fromIntegral <$> offset
-          renderPicture img [move x y]
-        renderButton nextBtn [move 10 10] >>= \case
-          ButtonStateClicked -> return ()
-          _ -> next testPane
+      nextBtn   <- slotButton buttonPainter "Next"
+      (_, img)  <- slotTexturePicture $ do
+        setTextures [imgtex]
+        setGeometry $ fan $ mapVertices (\v -> (v, v/imgsz)) $ rectangle 0 imgsz
+      ----------------------------------------------------------------------------
+      -- Test out the Pane UI component
+      ----------------------------------------------------------------------------
+      autoRelease $ do
+        sizeTween <- slotAnime stream
+        pane      <- slotPane (V2 800 400) (floor <$> imgsz) red
+        -- Animate the offeset and size of the pane, respectively, until the user
+        -- clicks the "Next" button.
+        fix $ \testPane -> do
+          renderStatus
+          stepAnime sizeTween >>= \case
+            Left sizef    -> resizePane pane $ floor <$> sizef
+            Right offsetf -> offsetPane pane $ floor <$> offsetf
+          void $ renderPane pane [move 10 50] $ \offset -> do
+            let V2 x y = fromIntegral <$> offset
+            renderPicture img [move x y]
+          renderButton nextBtn [move 10 10] >>= \case
+            ButtonStateClicked -> return ()
+            _ -> next testPane
 
-      testBtn <- slotButton buttonPainter "Test"
-      clicks  <- slotNoFree (0 :: Int)
-      fix $ \testPane -> do
-        renderStatus
-        void $ renderPane pane [move 10 50] $ \offset -> do
-          let moveOffset = moveV2 $ fromIntegral <$> offset
-          renderPicture img [moveOffset]
-          st <- renderButton testBtn [moveOffset, move 400 400]
-          when (st == ButtonStateClicked) $ do
-            n <- unslot clicks
-            reslotButton testBtn buttonPainter $ "Clicked " ++ show (n + 1)
-            clicks `is` (n + 1)
-        renderButton nextBtn [move 10 10] >>= \case
-          ButtonStateClicked -> return ()
-          _ -> next testPane
-    -----------------------------------------------------------------------------
-    -- Test out the Panel UI compenent
-    -----------------------------------------------------------------------------
-    autoRelease $ do
-      panel <- slotPanel "A Panel!" 400 (floor <$> imgsz)
+        testBtn <- slotButton buttonPainter "Test"
+        clicks  <- slotVar (0 :: Int)
+        fix $ \testPane -> do
+          renderStatus
+          void $ renderPane pane [move 10 50] $ \offset -> do
+            let moveOffset = moveV2 $ fromIntegral <$> offset
+            renderPicture img [moveOffset]
+            st <- renderButton testBtn [moveOffset, move 400 400]
+            when (st == ButtonStateClicked) $ do
+              n <- unslot clicks
+              reslotButton testBtn buttonPainter $ "Clicked " ++ show (n + 1)
+              clicks `is` (n + 1)
+          renderButton nextBtn [move 10 10] >>= \case
+            ButtonStateClicked -> return ()
+            _ -> next testPane
+      -----------------------------------------------------------------------------
+      -- Test out the Panel UI compenent
+      -----------------------------------------------------------------------------
+      autoRelease $ do
+        panel <- slotPanel "A Panel!" 400 (floor <$> imgsz)
 
-      fix $ \testPanel -> do
-        renderStatus
-        void $ renderPanel panel [move 10 50] $ \offset -> do
-          let moveOffset = moveV2 $ fromIntegral <$> offset
-          renderPicture img [moveOffset]
-        renderButton nextBtn [move 10 10] >>= \case
-          ButtonStateClicked -> return ()
-          _ -> next testPanel
+        fix $ \testPanel -> do
+          renderStatus
+          void $ renderPanel panel [move 10 50] $ \offset -> do
+            let moveOffset = moveV2 $ fromIntegral <$> offset
+            renderPicture img [moveOffset]
+          renderButton nextBtn [move 10 10] >>= \case
+            ButtonStateClicked -> return ()
+            _ -> next testPanel
+
+      next testLoop
     -------------------------------------------------------------------------------
     ---- Do the actual map maker!
     -------------------------------------------------------------------------------
-    reslotText title font black
-      "Please drag and drop an image to use as a tileset."
-    (_,tsimgszf,tsimgtex) <- checkpoint "tilesetimage" $
-      getDroppedImageFromUser title font black
+    --reslotText title font black
+    --  "Please drag and drop an image to use as a tileset."
+    --(_,tsimgszf,tsimgtex) <- checkpoint "tilesetimage" $
+    --  getDroppedImageFromUser title font black
 
-    fix $ \toMappingScreen -> do
-      -- Show the mapping screen
-      let initialTW = 48 :: Int
-          initialTileSize = V2 initialTW initialTW
-      autoRelease $ do
-        resetBtn       <- slotButton buttonPainter "Reset To Image Load"
-        widthLabel     <- slotText font black "Tile Width:"
-        widthInput     <- slotTextInput textInputPainter $ show initialTW
-        heightLabel    <- slotText font black "Tile Height:"
-        heightInput    <- slotTextInput textInputPainter $ show initialTW
-        tileDimensions <- slotNoFree initialTileSize
-        let renderTileDimensionInput rs = do
-              renderText widthLabel       $ move 0 16 : rs
-              delW <- renderTextInput widthInput  (move 0 18 : rs) >>= \case
-                (TextInputStateEdited, str)
-                  | Just w <- readMay str
-                    -> do modifySlot tileDimensions $ \(V2 _ h) -> V2 w h
-                          return True
-                _ -> return False
-              renderText heightLabel      $ move 0 56 : rs
-              delH <- renderTextInput heightInput (move 0 58 : rs) >>= \case
-                (TextInputStateEdited, str)
-                  | Just h <- readMay str
-                    -> do modifySlot tileDimensions $ \(V2 w _) -> V2 w h
-                          return True
-                _ -> return False
-              if delW || delH
-                then Just <$> unslot tileDimensions
-                else return Nothing
-        reslotText title font black $ unwords ["Using", show file]
+    --fix $ \toMappingScreen -> do
+    --  -- Show the mapping screen
+    --  let initialTW = 48 :: Int
+    --      initialTileSize = V2 initialTW initialTW
+    --  autoRelease $ do
+    --    resetBtn       <- slotButton buttonPainter "Reset To Image Load"
+    --    widthLabel     <- slotText font black "Tile Width:"
+    --    widthInput     <- slotTextInput textInputPainter $ show initialTW
+    --    heightLabel    <- slotText font black "Tile Height:"
+    --    heightInput    <- slotTextInput textInputPainter $ show initialTW
+    --    tileDimensions <- slotVar initialTileSize
+    --    let renderTileDimensionInput rs = do
+    --          renderText widthLabel       $ move 0 16 : rs
+    --          delW <- renderTextInput widthInput  (move 0 18 : rs) >>= \case
+    --            (TextInputStateEdited, str)
+    --              | Just w <- readMay str
+    --                -> do modifySlot tileDimensions $ \(V2 _ h) -> V2 w h
+    --                      return True
+    --            _ -> return False
+    --          renderText heightLabel      $ move 0 56 : rs
+    --          delH <- renderTextInput heightInput (move 0 58 : rs) >>= \case
+    --            (TextInputStateEdited, str)
+    --              | Just h <- readMay str
+    --                -> do modifySlot tileDimensions $ \(V2 w _) -> V2 w h
+    --                      return True
+    --            _ -> return False
+    --          if delW || delH
+    --            then Just <$> unslot tileDimensions
+    --            else return Nothing
+    --    reslotText title font black $ unwords ["Using", show file]
 
-        (_,tilesettsimg) <- slotTexturePicture $ do
-          let V2 tsimgw tsimgh = tsimgszf
-              sz :: V2 Float
-              sz@(V2 szw szh) = if tsimgw >= tsimgh
-                                then V2 100 (100/tsimgw * tsimgh)
-                                else V2 (100/tsimgh * tsimgw) 100
-          setTextures [tsimgtex]
-          setGeometry $ fan $ mapVertices (\v@(V2 x y) -> (v, V2 (x/szw) (y/szh))) $
-            rectangle 0 sz
+    --    (_,tilesettsimg) <- slotTexturePicture $ do
+    --      let V2 tsimgw tsimgh = tsimgszf
+    --          sz :: V2 Float
+    --          sz@(V2 szw szh) = if tsimgw >= tsimgh
+    --                            then V2 100 (100/tsimgw * tsimgh)
+    --                            else V2 (100/tsimgh * tsimgw) 100
+    --      setTextures [tsimgtex]
+    --      setGeometry $ fan $ mapVertices (\v@(V2 x y) -> (v, V2 (x/szw) (y/szh))) $
+    --        rectangle 0 sz
 
-        tiles <- slotTileSet tsimgszf (fromIntegral <$> initialTileSize) tsimgtex
-        panel <- slotPanel "Tileset" (V2 200 200) $ floor <$> tsimgszf
+    --    tiles <- slotTileSet tsimgszf (fromIntegral <$> initialTileSize) tsimgtex
+    --    panel <- slotPanel "Tileset" (V2 200 200) $ floor <$> tsimgszf
 
-        fix $ \continue -> do
-          renderStatus
-          V2 _ h <- getWindowSize
-          renderText title [move 0 $ h - 4]
-          renderTileDimensionInput [] {->>= \case
-            Nothing -> return ()
-            Just sz -> reslotTileSet tiles tsimgszf sz tsimgtex
-          -}
-          renderPicture tilesettsimg [move 100 0]
-          (_,panelState) <- renderPanel panel [move 200 0] $ \offset -> do
-            let offsetf = fromIntegral <$> offset
-            --renderTileSet tiles [moveV2 offsetf, move 2 2]
-            return ()
-          renderButton resetBtn [move 0 100] >>= \case
-            ButtonStateClicked -> return ()
-            _ -> unless (panelState == PanelStateShouldClose) $ next continue
-          next continue
-      next toMappingScreen
+    --    fix $ \continue -> do
+    --      renderStatus
+    --      V2 _ h <- getWindowSize
+    --      renderText title [move 0 $ h - 4]
+    --      renderTileDimensionInput [] >>= \case
+    --        Nothing -> return ()
+    --        Just sz -> reslotTileSet tiles tsimgszf (fromIntegral <$> sz) tsimgtex
+
+    --      renderPicture tilesettsimg [move 100 0]
+    --      (_,panelState) <- renderPanel panel [move 200 0] $ \offset -> do
+    --        let offsetf = fromIntegral <$> offset
+    --        renderTileSet tiles [moveV2 offsetf, move 2 2]
+    --        return ()
+    --      renderButton resetBtn [move 0 100] >>= \case
+    --        ButtonStateClicked -> return ()
+    --        _ -> unless (panelState == PanelStateShouldClose) $ next continue
+    --      next continue
+    --  next toMappingScreen
 
 loopFrame
   :: ( Member IO r
@@ -442,7 +444,6 @@ loopFrame
      , AltersFontMap r
      , Member Allocates r
      , AltersUI r
-     , Member Next r
      )
   => Eff r (Status r () () a)
   -> Eff r a
@@ -457,9 +458,11 @@ loopFrame eff = do
   io $ backendOpUpdateWindow $ backendOps backend
   case status of
     Done a        -> return a
-    Continue () f -> loopFrame $ f ()
+    Continue () f -> do
+      io $ threadDelay 10
+      loopFrame $ f ()
 
-type Fy = '[ Fresh
+type Fx = '[ Fresh
            , Reader V2V4Renderer
            , Reader V2V2Renderer
            , State SystemTime
@@ -468,30 +471,6 @@ type Fy = '[ Fresh
            , State Allocated
            , IO
            ]
-type Fx = Next ': Fy
-
-type MapMakerFrame a =
-  (((((Status Fy () () a, Int), SystemTime), FontMap), Ui), Allocated)
-
-runFy
-  :: OdinRenderer V2V2
-  -> OdinRenderer V2V4
-  -> Int
-  -> SystemTime
-  -> FontMap
-  -> Ui
-  -> Allocated
-  -> Eff Fy (Status Fy () () a)
-  -> IO (MapMakerFrame a)
-runFy v2v2 v2v4 k t fonts ui allocs =
-  runM
-  . flip runState  allocs
-  . flip runState  ui
-  . flip runState  fonts
-  . flip runState  t
-  . flip runReader (V2V2Renderer v2v2)
-  . flip runReader (V2V4Renderer v2v4)
-  . flip runFresh  k
 
 runFx
   :: OdinRenderer V2V2
@@ -502,14 +481,17 @@ runFx
   -> Ui
   -> Allocated
   -> Eff Fx a
-  -> IO (MapMakerFrame a)
-runFx v2v2 v2v4 k t fonts ui allocs = runFy v2v2 v2v4 k t fonts ui allocs . runC
-
-exhaust :: OdinRenderer V2V2 -> OdinRenderer V2V4 -> MapMakerFrame a -> IO a
-exhaust v2v2 v2v4 (((((status, k), t), fonts), ui), allocs) = case status of
-  Done a        -> return a
-  Continue () f ->
-    exhaust v2v2 v2v4 =<< runFy v2v2 v2v4 k t fonts ui allocs (f ())
+  -> IO ()
+runFx v2v2 v2v4 k t fonts ui allocs =
+  void
+  . runM
+  . flip runState  allocs
+  . flip runState  ui
+  . flip runState  fonts
+  . flip runState  t
+  . flip runReader (V2V2Renderer v2v2)
+  . flip runReader (V2V4Renderer v2v4)
+  . flip runFresh  k
 
 test :: (Member IO r, Member Allocates r, Member Next r) => Eff r ()
 test = do
@@ -517,7 +499,7 @@ test = do
   autoRelease $ do
     io $ putStrLn "Alloc'ing"
     void $ slot () $ \() -> putStrLn "Dealloc'ing"
-    sn :: Slot Int <- slotNoFree 0
+    sn :: Slot Int <- slotVar 0
     let comp1 = do
           io $ putStrLn "never ending"
           next comp1
@@ -535,11 +517,5 @@ main = --reacquire 0 $
     Right (SDL2Backends v2v4 v2v2) -> do
       t <- runM newTime
       putStrLn "Running the MapMaker"
-      void . exhaust v2v2 v2v4 =<< runFx v2v2
-                                         v2v4
-                                         0
-                                         t
-                                         mempty
-                                         emptyUi
-                                         (Allocated [])
-                                         (loopFrame $ runC' mapMaker :: Eff Fx ())
+      let mapper = runC mapMaker :: Eff Fx (Status Fx () () ())
+      runFx v2v2 v2v4 0 t mempty emptyUi (Allocated []) (loopFrame mapper)

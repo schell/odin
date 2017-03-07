@@ -76,7 +76,7 @@ slotPanel str size contentSize = do
   close  <- slotButton (iconButtonPainter 16) [faTimes]
   (_,bg) <- slotColorPicture $ panelTrimPic size
   k      <- fresh
-  slotNoFree (Panel pane bg title close size 0 PanelStatePassive k)
+  slotVar $ Panel pane bg title close size 0 PanelStatePassive k
 
 renderPanel
   :: (ReadsRenderers r, AltersUI r, Member IO r, Member Allocates r)

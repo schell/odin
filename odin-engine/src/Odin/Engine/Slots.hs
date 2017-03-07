@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -15,7 +14,7 @@ module Odin.Engine.Slots
   , autoRelease
   , Slot
   , slot
-  , slotNoFree
+  , slotVar
   , unslot
   , reslot
   , ($=)
@@ -39,16 +38,22 @@ type Allocates = State Allocated
 alloc :: Member Allocates r => IO () -> Eff r ()
 alloc f = modify (Allocated . (f:) . unAllocated)
 
-
 autoRelease :: (Member Allocates r, Member IO r) => Eff r a -> Eff r a
 autoRelease eff = do
-  previousAllocs :: Allocated <- get
+  Allocated previousAllocs <- get
+  put $ Allocated []
   a <- eff
   Allocated newAllocs <- get
-  io $ print ("dealloc'ing", length newAllocs)
+  io $ putStrLn $ "Dealloc'ing: " ++ show (length newAllocs)
   mapM_ io newAllocs
-  put previousAllocs
+  io $ putStrLn $ "Restoring: " ++ show (length previousAllocs)
+  put $ Allocated previousAllocs
   return a
+
+getNumAllocated :: Member Allocates r => Eff r Int
+getNumAllocated = do
+  Allocated allocs <- get
+  return $ length allocs
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
 --------------------------------------------------------------------------------
@@ -56,13 +61,16 @@ newtype Slot a = Slot { unSlot :: TVar a }
 
 slot :: (Member Allocates r, Member IO r) => a -> (a -> IO ()) -> Eff r (Slot a)
 slot a free = do
-  io $ putStrLn "alloc'ing"
   var <- io $ newTVarIO a
   alloc $ readTVarIO var >>= free
+  getNumAllocated >>= io . putStrLn . ("Have alloc'd " ++) . show
   return $ Slot var
 
 slotNoFree :: Member IO r => a -> Eff r (Slot a)
 slotNoFree = (Slot <$>) . io . newTVarIO
+
+slotVar :: Member IO r => a -> Eff r (Slot a)
+slotVar = slotNoFree
 
 unslot :: Member IO r => Slot a -> Eff r a
 unslot = io . readTVarIO . unSlot

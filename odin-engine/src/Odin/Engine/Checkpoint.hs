@@ -5,9 +5,7 @@
 module Odin.Engine.Checkpoint where
 
 import           Data.Hashable
-import           Data.Word
 import           Foreign.Store
-import           System.Environment
 
 import           Odin.Engine.Eff.Common
 

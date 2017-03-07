@@ -122,14 +122,11 @@ resizePane
   -> V2 Int
   -> Eff r ()
 resizePane s size = do
-  p@Pane{..} <- unslot s
+  Pane{..} <- unslot s
   reslotLayer paneLayer size
   let V2 sw sh = paneScrollSize size paneContentSize
-  (_,hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
-  (_,vscrl) <- slotColorPicture $ paneVerticalScrollPic sh
-  reslot s p{paneHorizontalScroll=hscrl
-              ,paneVerticalScroll=vscrl
-              }
+  reslotColorPicture paneHorizontalScroll $ paneHorizontalScrollPic sw
+  reslotColorPicture paneVerticalScroll   $ paneVerticalScrollPic sh
 
 offsetPane
   :: (ReadsRenderers r, AltersUI r, Member IO r)
@@ -137,8 +134,8 @@ offsetPane
   -> V2 Int
   -> Eff r ()
 offsetPane s offset0 = do
-  p@Pane{..}  <- unslot s
-  Layer{..} <- unslot paneLayer
+  p@Pane{..} <- unslot s
+  Layer{..}  <- unslot paneLayer
   let offset = clampContentOffset layerSize paneContentSize offset0
   reslot s p{paneContentOffset=offset}
 

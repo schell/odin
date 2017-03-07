@@ -2,19 +2,20 @@
 module Odin.Engine.GUI.Animation where
 
 import Control.Varying
+import Data.Functor.Identity (Identity(..))
 --------------------------------------------------------------------------------
 import Odin.Engine.Slots
 import Odin.Engine.Eff
 
-newtype Anime r b = Anime { unAnime :: VarT (Eff r) Float b }
+newtype Anime b = Anime { unAnime :: Var Float b }
 
-slotAnime :: Member IO r => VarT (Eff r) Float b -> Eff r (Slot (Anime r b))
-slotAnime = slotNoFree . Anime
+slotAnime :: Member IO r => Var Float b -> Eff r (Slot (Anime b))
+slotAnime = slotVar . Anime
 
-stepAnime :: (Member IO r, AltersTime r) => Slot (Anime r b) -> Eff r b
+stepAnime :: (Member IO r, AltersTime r) => Slot (Anime b) -> Eff r b
 stepAnime s = do
   v0     <- fromSlot s unAnime
   dt     <- readTimeDeltaSeconds
-  (b, v) <- runVarT v0 dt
-  s $= Anime v
+  let Identity (b, v) = runVarT v0 dt
+  s `is` Anime v
   return b

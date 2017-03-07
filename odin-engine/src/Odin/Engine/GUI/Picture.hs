@@ -33,6 +33,7 @@ reslotPicture
   -> Picture GLuint v a
   -> Eff r a
 reslotPicture s b pic = do
+  freePicture s
   (a, glr) <- io $ compilePicture b pic
   s $= glr
   return a
