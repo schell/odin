@@ -4,7 +4,7 @@ Here I'm exploring building a roguelike and 2d engine.
 
 batteries included
 ------------------
-* odin-engine(https://github.com/schell/odin/tree/master/odin-engine) is a high
+* [odin-engine](https://github.com/schell/odin/tree/master/odin-engine) is a high
   level 2d game engine. It provides a novel effects system built on top of
   [freer](https://gitlab.com/queertypes/freer), as well as an immediate mode gui
   with a number of preexisting widgets.
