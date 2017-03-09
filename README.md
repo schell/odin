@@ -37,16 +37,22 @@ Then...
 
     cd odin
 
+If you just installed stack, run
+
+    stack setup
+
+Go make some ☕ and then...
+
     stack build mapMaker
 
-Go get some ☕ and then ...
+Drink your ☕, take a walk and then run...
 
     stack exec mapMaker
 
 Please follow the respective guide for installing sdl2 on your platform below.
 
 ### Mac OS X
-Simply download the `dmp` from [sdl2](http://libsdl.org/download-2.0.php) and
+Simply download the `dmg` from [sdl2](http://libsdl.org/download-2.0.php) and
 follow the instructions.
 
 ### Ubuntu
@@ -56,3 +62,8 @@ To install sdl2 use something like
 
 ### Windows
 Coming soon
+
+contributions
+-------------
+I welcome any and all contributions. This means bug reports, pull requests or
+even [donations through patreon](https://www.patreon.com/schell).
