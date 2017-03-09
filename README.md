@@ -7,7 +7,7 @@ batteries included
 * [odin-engine](https://github.com/schell/odin/tree/master/odin-engine) is a high
   level 2d game engine. It provides a novel effects system built on top of
   [freer](https://gitlab.com/queertypes/freer), as well as an immediate mode gui
-  with a number of preexisting widgets.
+  with a number of [preexisting widgets](https://github.com/schell/odin/tree/master/odin-engine/src/Odin/Engine/GUI).
 
 * [gelatin-sdl2](https://github.com/schell/gelatin/tree/master/gelatin-sdl2)
   is the OpenGL/SDL2 rendering backend.
