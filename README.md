@@ -23,13 +23,36 @@ batteries included
 
 installation
 ------------
-Please follow the respective guide for your platform below.
+The easiest way to get up and running on the Haskell toolchain is to download
+[stack](https://docs.haskellstack.org/en/stable/README/). All of odin's projects
+are spec'd out with stack.yaml build files, so picking the correct versions of
+libraries is not needed if you follow the stack path.
+
+Download [sdl2](http://libsdl.org/download-2.0.php), following your distro's
+instructions.
+
+Then...
+
+    git clone https://github.com/schell/odin.git
+
+    cd odin
+
+    stack build mapMaker
+
+Go get some ☕ and then ...
+
+    stack exec mapMaker
+
+Please follow the respective guide for installing sdl2 on your platform below.
 
 ### Mac OS X
-Coming soon
+Simply download the `dmp` from [sdl2](http://libsdl.org/download-2.0.php) and
+follow the instructions.
 
 ### Ubuntu
-Coming soon
+To install sdl2 use something like
+
+    apt-get install libsdl2-dev
 
 ### Windows
 Coming soon
