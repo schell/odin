@@ -38,9 +38,17 @@ Using [homebrew](https://brew.sh/)...
     brew install sdl2
 
 ### Ubuntu
+First install freetype2
 
     apt-get install libfreetype6
+
+The [sdl2 bindings](https://github.com/haskell-game/sdl2) require an sdl2
+install >= 2.0.4, or for special instructions to be followed. Assuming you're
+on `Ubuntu >= 16.04`, you can simply run
+
     apt-get install libsdl2-dev
+
+otherwise please visit the link above and install via their README.
 
 ### Windows
 Coming soon
