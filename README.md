@@ -23,15 +23,35 @@ batteries included
 
 installation
 ------------
+`odin-engine` depends on
+
+* [sdl2](http://libsdl.org)
+* [freetype2](https://www.freetype.org/index.html)
+
+You can install them with the following platform specific steps.
+
+### Mac OS X
+
+Using [homebrew](https://brew.sh/)...
+
+    brew install freetype
+    brew install sdl2
+
+### Ubuntu
+
+    apt-get install libfreetype6
+    apt-get install libsdl2-dev
+
+### Windows
+Coming soon
+
+
+building source
+---------------
 The easiest way to get up and running on the Haskell toolchain is to download
 [stack](https://docs.haskellstack.org/en/stable/README/). All of odin's projects
 are spec'd out with stack.yaml build files, so picking the correct versions of
 libraries is not needed if you follow the stack path.
-
-Download [sdl2](http://libsdl.org/download-2.0.php), following your distro's
-instructions.
-
-Then...
 
     git clone https://github.com/schell/odin.git
 
@@ -43,27 +63,14 @@ If you just installed stack, run
 
 Go make some ☕ and then...
 
-    stack build mapMaker
+    stack build
 
 Drink your ☕, take a walk and then run...
 
     stack exec mapMaker
 
-Please follow the respective guide for installing sdl2 on your platform below.
-
-### Mac OS X
-Simply download the `dmg` from [sdl2](http://libsdl.org/download-2.0.php) and
-follow the instructions.
-
-### Ubuntu
-To install sdl2 use something like
-
-    apt-get install libsdl2-dev
-
-### Windows
-Coming soon
-
 contributions
 -------------
 I welcome any and all contributions. This means bug reports, pull requests or
-even [donations through patreon](https://www.patreon.com/schell).
+even [donations through patreon](https://www.patreon.com/schell). This game and
+engine will always be free.

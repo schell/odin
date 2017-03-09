@@ -6,7 +6,7 @@ packages:
 
 - location:
     git: https://github.com/schell/gelatin
-    commit: d1b2dbac021b54cf70a13a4e19c538ed984e128e
+    commit: 71cdb01965cd752f34209f6c462e4a679b53324e
   subdirs:
   - gelatin
   - gelatin-shaders
