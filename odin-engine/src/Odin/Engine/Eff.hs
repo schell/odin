@@ -1,34 +1,40 @@
 {-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 module Odin.Engine.Eff
   ( module E
   , module Odin.Engine.Eff
   , module Gelatin.SDL2
   ) where
 
+import           Control.Concurrent         (threadDelay)
 import           Control.Lens
 import           Control.Monad              (unless)
 import           Control.Monad.Freer.Reader
 import           Control.Monad.Freer.State
+import           Control.Monad.Trans.Either (runEitherT)
 import qualified Data.IntMap                as IM
 import           Data.Map                   (Map)
 import qualified Data.Map                   as M
 import qualified Data.Text                  as T
 import           Data.Word                  (Word32)
+--import           Debug.Trace                (trace)
 import           Foreign.C.String           (peekCString)
 import           Gelatin.FreeType2          (Atlas (..), GlyphSize (..),
                                              allocAtlas)
-import           Gelatin.SDL2
+import           Gelatin.SDL2               hiding (trace)
 import           SDL                        hiding (Cursor, freeCursor, get,
-                                             time)
+                                             time, trace)
 import           SDL.Raw.Enum               hiding (Keycode, Scancode)
 import           SDL.Raw.Event              hiding (getModState)
 import           SDL.Raw.Types              (Cursor)
 import           System.Directory           (getCurrentDirectory)
+import           System.Exit                (exitFailure)
 import           System.Exit                (exitSuccess)
 import           System.FilePath            ((</>))
 --------------------------------------------------------------------------------
@@ -36,6 +42,7 @@ import           Odin.Engine.Eff.Common     as E
 import           Odin.Engine.Eff.Coroutine  as E
 import           Odin.Engine.Eff.Fresh      as E
 import           Odin.Engine.Physics
+import           Odin.Engine.Slots          (Allocates)
 --------------------------------------------------------------------------------
 -- Rendering pictures
 --------------------------------------------------------------------------------
@@ -431,11 +438,91 @@ tickPhysics = do
 --------------------------------------------------------------------------------
 -- A record for all the things
 --------------------------------------------------------------------------------
-data Frame = Frame { frameTime  :: SystemTime
-                   , frameFresh :: Int
-                   , frameV2V4  :: OdinRenderer V2V4
-                   , frameV2V2  :: OdinRenderer V2V2
-                   , frameFonts :: FontMap
-                   , frameRsrcs :: Allocated
-                   , frameUi    :: Ui
-                   }
+type OdinFx = '[ Fresh
+               , Reader V2V4Renderer
+               , Reader V2V2Renderer
+               , State SystemTime
+               , State FontMap
+               , State Ui
+               , State Allocated
+               , IO
+               ]
+
+runOdinFx
+  :: OdinRenderer V2V2
+  -> OdinRenderer V2V4
+  -> Int
+  -> SystemTime
+  -> FontMap
+  -> Ui
+  -> Allocated
+  -> Eff OdinFx a
+  -> IO (((((a, Int), SystemTime), FontMap), Ui), Allocated)
+runOdinFx v2v2 v2v4 k t fonts ui allocs =
+  runM
+  . flip runState  allocs
+  . flip runState  ui
+  . flip runState  fonts
+  . flip runState  t
+  . flip runReader (V2V2Renderer v2v2)
+  . flip runReader (V2V4Renderer v2v4)
+  . flip runFresh  k
+
+-- | Loop a game process
+loopFrame
+  :: ( Member IO r
+     , AltersTime r
+     , Member Fresh r
+     , ReadsRenderers r
+     , AltersFontMap r
+     , Member Allocates r
+     , AltersUI r
+     )
+  => Eff r (Status r () () a)
+  -> Eff r a
+loopFrame eff = do
+  io $ putStrLn "loopFrame"
+  io $ glClearColor 0.5 0.5 0.5 1
+  V2V4Renderer backend <- ask
+  io $ backendOpClearWindow $ backendOps backend
+  tickTime
+  tickUIPrepare
+  status <- eff
+  tickUIFinish
+  io $ backendOpUpdateWindow $ backendOps backend
+  case status of
+    Done a        -> return a
+    Continue () f -> do
+      io $ threadDelay 10
+      loopFrame $ f ()
+
+-- | Run an OdinFx computation in an SDL2 window.
+runOdin
+  :: V2 Int
+  -- ^ Window width and height
+  -> String
+  -- ^ Window title
+  -> Eff (Next ': OdinFx) a
+  -- ^ The game continuation to run
+  -> IO a
+runOdin (V2 w h) title eff =
+  runEitherT (startupSDL2Backends w h title True) >>= \case
+    Left err -> putStrLn err >> exitFailure
+    Right (SDL2Backends v2v4 v2v2) -> do
+      t <- runM newTime
+      putStrLn "runOdin"
+      let fxStatus = runC eff
+      fst . fst . fst . fst . fst <$>
+        runOdinFx v2v2 v2v4 0 t mempty emptyUi (Allocated []) (loopFrame fxStatus)
+
+-- | Loop an OdinFx continuation in an SDL2 window.
+loopOdin
+  :: forall a.
+     V2 Int
+  -- ^ Window width and height
+  -> String
+  -- ^ Window title
+  -> Eff (Next ': OdinFx) a
+  -- ^ The continuation to run
+  -> IO a
+loopOdin wh title eff = runOdin wh title eff

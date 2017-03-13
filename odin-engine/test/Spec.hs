@@ -5,11 +5,14 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-import           Control.Monad              (void, when)
+import           Control.Monad              (when)
 import           Control.Monad.Freer.Writer
 import           Data.Function              (fix)
+import           Test.Hspec
 
 import           Odin.Engine.Eff
+import           Odin.Engine.GUI
+import           Odin.Engine.Slots
 
 twoComp :: (Member (Writer [String]) r, Member (State Int) r, Member Next r) => Eff r ()
 twoComp = do
@@ -46,7 +49,7 @@ bothComps = do
       next loop
 
 nestComps
-  :: (Member Next r, Member (State Int) r, Member (Writer [String]) r)
+  :: Members '[Next, State Int, Writer [String]] r
   => Eff r (Status r () () w)
   -> Eff r w
 nestComps comp = do
@@ -77,9 +80,25 @@ exhaust :: ((Status Fy () () a, Int), [String]) -> [String]
 exhaust = exhaust' 0 []
 
 main :: IO ()
-main = do
-  putStrLn "Testing that running Next terminates."
-
-  putStrLn $ unwords $ exhaust $ runFx (bothComps :: Eff Fx ())
-  putStrLn "i3 r3-0 i4 r4-0 c0 r3-1 r4-1 c1 r3-2 r4-2 c2 r3-3 d3 !3 10-loop c3 10-loop e13"
-  putStrLn $ unwords $ exhaust $ runFx (nestComps $ runC' bothComps :: Eff Fx ())
+main = hspec $ do
+  describe "Frame by frame continuations" $
+    it "work, and eventually terminate" $ do
+      unwords (exhaust $ runFx (bothComps :: Eff Fx ()))
+        `shouldBe`
+        "i3 r3-0 i4 r4-0 c0 r3-1 r4-1 c1 r3-2 r4-2 c2 r3-3 d3 !3 10-loop c3 10-loop e13"
+      unwords (exhaust $ runFx (nestComps $ runC' bothComps :: Eff Fx ()))
+        `shouldBe`
+        "in i3 r3-0 i4 r4-0 n-1 in r3-1 r4-1 n-2 in r3-2 r4-2 n-3 in r3-3 d3 !3 10-loop n-13 in 10-loop n-13 !n e13"
+  describe "Odin computations" $
+    it "can do stuff with the user" $ do
+      done <- loopOdin (V2 800 600) "Testing" $ autoRelease $ do
+        let font = fontDescriptor "../assets/fonts/KMKDSP__.ttf" 16
+        title <- slotText font black "Click the button"
+        btn   <- slotButton buttonPainter "Okay"
+        fix $ \loop -> do
+          renderText title [move 0 16]
+          renderButton btn [move 20 20] >>= \case
+            ButtonStateClicked -> return True
+            _ -> next loop
+      putStrLn "aoeusnth"
+      done `shouldBe` True

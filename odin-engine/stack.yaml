@@ -37,6 +37,7 @@ resolver: lts-8.0
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - .
+
 - location:
     git: https://github.com/schell/gelatin
     commit: d1b2dbac021b54cf70a13a4e19c538ed984e128e
@@ -46,12 +47,16 @@ packages:
   - gelatin-gl
   - gelatin-sdl2
   - gelatin-freetype2
+  extra-dep: true
+
 - location:
     git: https://github.com/schell/shapes.git
     commit: 0f8a187695e9cd1228e79bb8a51f5a6a6de3469e
   subdirs:
   - shapes
   - shapes-math
+  extra-dep: true
+
 - location:
     git: https://github.com/phadej/gl.git
     commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
