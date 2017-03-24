@@ -16,7 +16,7 @@ import           SDL                           hiding (get)
 import           SDL.Raw.Enum
 --------------------------------------------------------------------------------
 import           Data.Char.FontAwesome
-import           Odin.Engine.Eff
+import           Odin.Engine
 import           Odin.Engine.GUI.Button
 import           Odin.Engine.GUI.Pane
 import           Odin.Engine.GUI.Picture
@@ -64,18 +64,20 @@ slotPanel
      , Member IO r
      , Member Allocates r
      , Member Fresh r
+     , Member (Reader DefaultFont) r
+     , Member (Reader IconFont) r
      )
   => String
   -> V2 Int
   -> V2 Int
   -> Eff r (Slot Panel)
 slotPanel str size contentSize = do
-  pane   <- slotPane (size - V2 0 20) contentSize 0
-  font   <- getDefaultFontDescriptor
-  title  <- slotText font black str
-  close  <- slotButton (iconButtonPainter 16) [faTimes]
-  (_,bg) <- slotColorPicture $ panelTrimPic size
-  k      <- fresh
+  pane             <- slotPane (size - V2 0 20) contentSize 0
+  DefaultFont font <- readDefaultFontDescriptor
+  title            <- slotText font black str
+  close            <- slotButton iconButtonPainter [faTimes]
+  (_,bg)           <- slotColorPicture $ panelTrimPic size
+  k                <- fresh
   slotVar $ Panel pane bg title close size 0 PanelStatePassive k
 
 renderPanel

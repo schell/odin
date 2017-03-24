@@ -39,12 +39,16 @@ packages:
   extra-dep: true
 
 - location:
-    git: https://github.com/lukexi/halive.git
-    commit: 32886b13c7abb9dba7ccf4a187f124c4f94fa426
+    git: https://github.com/schell/halive.git
+    commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
+  extra-dep: true
+
+- location:
+    git: https://github.com/IxpertaSolutions/freer-effects.git
+    commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
   extra-dep: true
 
 extra-deps:
 - freetype2-0.1.1
-- freer-0.2.4.1
 
 resolver: lts-8.0

@@ -3,8 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Odin.Engine.GUI.Styles
-  ( getDefaultFontDescriptor
-  , buttonPainter
+  ( buttonPainter
   , iconButtonPainter
   , textInputPainter
   , slotDefaultText
@@ -14,7 +13,7 @@ import           Gelatin
 import           Gelatin.FreeType2
 import           Gelatin.GL (compilePicture)
 
-import Odin.Engine.Eff
+import Odin.Engine
 import Odin.Engine.Slots
 import Odin.Engine.GUI.Button
 import Odin.Engine.GUI.TextInput
@@ -22,10 +21,6 @@ import Odin.Engine.GUI.Text.Internal
 import Control.Monad (when)
 import Data.Char.FontAwesome
 
-getDefaultFontDescriptor :: Member IO r => Eff r FontDescriptor
-getDefaultFontDescriptor = do
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  return $ fontDescriptor comicFont 16
 --------------------------------------------------------------------------------
 -- Button Styling
 --------------------------------------------------------------------------------
@@ -48,11 +43,15 @@ bgOffsetForButtonState ButtonStateDown = V2 2 2
 bgOffsetForButtonState _ = bgOffsetForButtonState ButtonStateUp
 
 buttonPainter
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r)
+  :: ( Member IO r
+     , Member (Reader DefaultFont) r
+     , ReadsRenderers r
+     , AltersFontMap r
+     )
   => Painter (ButtonData, ButtonState) r
 buttonPainter = Painter $ \(ButtonData{..}, st) -> do
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  loadAtlas (fontDescriptor comicFont 16 ) asciiChars >>= \case
+  DefaultFont font <- readDefaultFontDescriptor
+  loadAtlas font asciiChars >>= \case
     Nothing    -> do
       io $ putStrLn "ERROR PAINTING BUTTON!"
       return mempty
@@ -80,16 +79,16 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       let t = moveV2 $ V2 4 gh + bgxy
           r rs = do bgr rs
                     textr $ t:rs
-      return $ Painting (bb, (bgc >> textc, r))
+      return $ Painting bb (bgc >> textc, r)
 
 iconButtonPainter
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r)
-  => Int -> Painter (ButtonData, ButtonState) r
-iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
-  iconFont <- getFontPath "FontAwesome.otf"
-  loadAtlas (fontDescriptor iconFont px ) allFontAwesomeChars >>= \case
+  :: (Member IO r, Member (Reader IconFont) r, ReadsRenderers r, AltersFontMap r)
+  => Painter (ButtonData, ButtonState) r
+iconButtonPainter = Painter $ \(ButtonData{..}, st) -> do
+  IconFont font <- readIconFontDescriptor
+  loadAtlas font allFontAwesomeChars >>= \case
     Nothing    -> do
-      io $ putStrLn "ERROR PAINTING BUTTON!"
+      io $ putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
       return mempty
     Just atlas0 -> do
       v2v2 <- v2v2Backend
@@ -99,12 +98,12 @@ iconButtonPainter px = Painter $ \(ButtonData{..}, st) -> do
         freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) btnDataStr
       saveAtlas atlas
 
-      let p = bgOffsetForButtonState st
-          v = V2 0 $ fromIntegral px
-          r rs = do textbgr $ rs ++ [moveV2 $ fromIntegral px + 2]
-                    textfgr $ rs ++ [moveV2 $ p + v]
+      let V2 fgx fgy = bgOffsetForButtonState st
+          V2 bgx bgy = bgOffsetForButtonState ButtonStateDown
+          r rs = do textbgr $ rs ++ [move bgx $ 16 + bgy]
+                    textfgr $ rs ++ [move fgx $ 16 + fgy]
           c = textfgc >> textbgc
-      return $ Painting ((0, V2 (w+2) (fromIntegral px+2)), (c,r))
+      return $ Painting (0, V2 (w+2) 18) (c,r)
 --------------------------------------------------------------------------------
 -- TextInput Styling
 --------------------------------------------------------------------------------
@@ -123,11 +122,15 @@ lnColorForTextInputState TextInputStateDown = white
 lnColorForTextInputState _ = white `withAlpha` 0.8
 
 textInputPainter
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r)
+  :: ( Member IO r
+     , Member (Reader DefaultFont) r
+     , ReadsRenderers r
+     , AltersFontMap r
+     )
   =>  Painter (TextInputData, TextInputState) r
 textInputPainter = Painter $ \(TextInputData{..}, st) -> do
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  loadAtlas (fontDescriptor comicFont 16) asciiChars >>= \case
+  DefaultFont font <- readDefaultFontDescriptor
+  loadAtlas font asciiChars >>= \case
     Nothing -> do
       io $ putStrLn "ERROR PAINTING TEXTINPUT!"
       return mempty
@@ -139,10 +142,10 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
       saveAtlas atlas
 
       let hasLeader = st == TextInputStateEditing
-          padding = 4
-          inc = 1.5 * padding
-          bgcolor = bgColorForTextInputState st
-          lncolor = lnColorForTextInputState st
+          padding   = 4
+          inc       = 1.5 * padding
+          bgcolor   = bgColorForTextInputState st
+          lncolor   = lnColorForTextInputState st
 
       v2v4     <- v2v4Backend
       (bb,(bgc,bgr)) <- io $ compilePicture v2v4 $ do
@@ -162,15 +165,20 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
       let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
           r rs = do bgr rs
                     textr $ t:rs
-      return $ Painting (bb, (bgc >> textc, r))
+      return $ Painting bb (bgc >> textc, r)
 --------------------------------------------------------------------------------
 -- Text
 --------------------------------------------------------------------------------
 slotDefaultText
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r, Member Allocates r)
+  :: ( Member IO r
+     , Member (Reader DefaultFont) r
+     , ReadsRenderers r
+     , AltersFontMap r
+     , Member Allocates r
+     )
   => V4 Float
   -> String
   -> Eff r (Slot Text)
 slotDefaultText color str = do
-  comicFont <- getFontPath "KMKDSP__.ttf"
-  slotText (fontDescriptor comicFont 16) color str
+  DefaultFont font <- readDefaultFontDescriptor
+  slotText font color str

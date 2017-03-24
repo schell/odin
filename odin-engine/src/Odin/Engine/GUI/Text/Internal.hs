@@ -6,7 +6,7 @@ module Odin.Engine.GUI.Text.Internal where
 import Gelatin.FreeType2
 import Gelatin.SDL2
 --------------------------------------------------------------------------------
-import Odin.Engine.Eff
+import Odin.Engine
 import Odin.Engine.Slots
 --------------------------------------------------------------------------------
 -- Grapical Text

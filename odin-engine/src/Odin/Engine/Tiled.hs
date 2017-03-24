@@ -2,7 +2,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Data.Tiled.Utils where
+module Odin.Engine.Tiled where
 
 import           Data.List       (find)
 import           Data.Map        (Map)

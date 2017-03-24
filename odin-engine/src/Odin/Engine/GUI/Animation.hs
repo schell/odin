@@ -1,11 +1,12 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Odin.Engine.GUI.Animation where
 
-import Control.Varying
-import Data.Functor.Identity (Identity(..))
+import           Control.Varying
+import           Data.Functor.Identity (Identity (..))
 --------------------------------------------------------------------------------
-import Odin.Engine.Slots
-import Odin.Engine.Eff
+import           Odin.Engine
+import           Odin.Engine.Slots
 
 newtype Anime b = Anime { unAnime :: Var Float b }
 

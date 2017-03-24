@@ -12,7 +12,7 @@ import           Gelatin
 import           SDL                             hiding (get)
 import           SDL.Raw.Enum
 --------------------------------------------------------------------------------
-import           Odin.Engine.Eff
+import           Odin.Engine
 import           Odin.Engine.GUI.Button.Internal
 import           Odin.Engine.Slots
 --------------------------------------------------------------------------------
@@ -78,7 +78,7 @@ allocTextRndr :: Member IO r
               -> Eff r (Renderer2, V2 Float)
 allocTextRndr painter st str = do
   let dat = TextInputData str
-  Painting ((tl,br), r) <- unPainter painter (dat, st)
+  Painting (tl,br) r <- unPainter painter (dat, st)
   return (r, br - tl)
 
 allocTextRndrs :: Member IO r

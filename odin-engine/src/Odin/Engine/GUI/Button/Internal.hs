@@ -6,7 +6,7 @@ module Odin.Engine.GUI.Button.Internal where
 import Gelatin.SDL2
 import SDL hiding (freeCursor)
 import SDL.Raw.Enum
-import Odin.Engine.Eff
+import Odin.Engine
 import Odin.Engine.Slots
 --------------------------------------------------------------------------------
 -- Button Types
@@ -49,9 +49,9 @@ setupButton
   -> Eff r (ButtonRndrs, V2 Float)
 setupButton painter str = do
   let dat = ButtonData str
-  Painting (bounds, up  ) <- unPainter painter (dat, ButtonStateUp)
-  Painting (     _, ovr ) <- unPainter painter (dat, ButtonStateOver)
-  Painting (     _, down) <- unPainter painter (dat, ButtonStateDown)
+  Painting bounds up   <- unPainter painter (dat, ButtonStateUp)
+  Painting      _ ovr  <- unPainter painter (dat, ButtonStateOver)
+  Painting      _ down <- unPainter painter (dat, ButtonStateDown)
   return (ButtonRndrs up ovr down, uncurry (flip (-)) bounds)
 
 -- | Slots a new button.

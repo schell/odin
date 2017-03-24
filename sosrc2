@@ -1,0 +1,4 @@
+- pattern: app/[^_]*\.hs
+  commands:
+  - stack build --trace --library-profiling --executable-profiling
+  - stack exec mapmaker -- +RTS -xc -p

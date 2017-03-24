@@ -17,12 +17,10 @@ library
   ghc-options:         -Wall -Werror
   hs-source-dirs:      src
   exposed-modules:     Data.Char.FontAwesome
+                     , Odin.Engine
                      , Odin.Engine.Checkpoint
-                     , Odin.Engine.Continue
-                     , Odin.Engine.Eff
                      , Odin.Engine.Eff.Common
                      , Odin.Engine.Eff.Coroutine
-                     , Odin.Engine.Eff.Fresh
                      , Odin.Engine.GUI
                      , Odin.Engine.GUI.Animation
                      , Odin.Engine.GUI.Button
@@ -47,7 +45,7 @@ library
                      , either
                      , filepath
                      , foreign-store >= 0.2
-                     , freer
+                     , freer-effects
                      , gelatin
                      , gelatin-freetype2
                      , gelatin-gl
@@ -78,7 +76,7 @@ test-suite odin-engine-test
   main-is:             Spec.hs
   build-depends:       base
                      , odin-engine
-                     , freer
+                     , freer-effects
                      , hspec
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010

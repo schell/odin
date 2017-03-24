@@ -11,7 +11,7 @@ import           Control.Monad           (unless)
 import           Foreign.Marshal         hiding (void)
 import           Gelatin.SDL2            hiding (move, rotate, scale)
 --------------------------------------------------------------------------------
-import           Odin.Engine.Eff
+import           Odin.Engine
 import           Odin.Engine.GUI.Picture
 import           Odin.Engine.Slots
 --------------------------------------------------------------------------------

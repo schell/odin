@@ -13,11 +13,10 @@ module Odin.Engine.GUI.Pane
 
 import           Control.Monad           (when)
 import           Gelatin.SDL2
-import           Odin.Engine.Eff
+import           Odin.Engine
 import           Odin.Engine.GUI.Layer
 import           Odin.Engine.GUI.Picture
 import           Odin.Engine.Slots
-import           SDL                     hiding (get)
 import           SDL.Raw.Enum
 
 fint :: V2 Int -> V2 Float

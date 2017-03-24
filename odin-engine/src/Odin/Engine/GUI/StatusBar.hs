@@ -6,7 +6,7 @@ import Text.Printf
 import Data.Word (Word32)
 import Gelatin
 
-import Odin.Engine.Eff
+import Odin.Engine
 import Odin.Engine.Slots
 import Odin.Engine.GUI.Text.Internal
 

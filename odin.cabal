@@ -97,6 +97,7 @@ executable mapmaker
   build-depends:       async
                      , base >=4.8 && <5.0
                      , either
+                     , freer-effects
                      , gelatin-sdl2
                      , gelatin-freetype2
                      , halive

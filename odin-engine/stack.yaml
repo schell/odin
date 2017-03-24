@@ -62,16 +62,22 @@ packages:
     commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
   extra-dep: true
 
+- location:
+    git: https://github.com/IxpertaSolutions/freer-effects.git
+    commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
+  extra-dep: true
+
+- location:
+    git: https://github.com/schell/halive.git
+    commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
+  extra-dep: true
 
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - data-fix-0.0.3
-- freer-0.2.4.1
 - freetype2-0.1.1
-- halive-0.1.2
-# Override default flag values for local packages and extra-deps
 flags: {}
 
 # Extra package databases containing global packages

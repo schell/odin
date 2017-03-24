@@ -2,7 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 module Odin.Engine.GUI.Picture where
 
-import Odin.Engine.Eff
+import Odin.Engine
 import Odin.Engine.Slots
 
 slotPicture
