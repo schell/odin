@@ -19,6 +19,7 @@ library
   exposed-modules:     Data.Char.FontAwesome
                      , Odin.Engine
                      , Odin.Engine.Checkpoint
+                     , Odin.Engine.Tiled
                      , Odin.Engine.Eff.Common
                      , Odin.Engine.Eff.Coroutine
                      , Odin.Engine.GUI
@@ -37,6 +38,7 @@ library
                      , Odin.Engine.GUI.Styles
                      , Odin.Engine.Physics
                      , Odin.Engine.Slots
+  other-modules:       DevelMain, Devel.Utils
 
   build-depends:       array
                      , base >= 4.7 && < 5
@@ -52,6 +54,7 @@ library
                      , gelatin-sdl2
                      , halive
                      , hashable >= 1.2
+                     , htiled >= 0.1.3
                      , lens
                      , linear
                      , sdl2

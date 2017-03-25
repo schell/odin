@@ -98,12 +98,10 @@ backOpsV2V4 = do
   V2V4Renderer b <- ask
   return $ backendOps b
 
-v2v4Backend
-  :: ReadsRendererV2V4 r => Eff r (OdinRenderer V2V4)
+v2v4Backend :: ReadsRendererV2V4 r => Eff r (OdinRenderer V2V4)
 v2v4Backend = unV2V4Renderer <$> ask
 
-v2v2Backend
-  :: ReadsRendererV2V2 r => Eff r (OdinRenderer V2V2)
+v2v2Backend :: ReadsRendererV2V2 r => Eff r (OdinRenderer V2V2)
 v2v2Backend = unV2V2Renderer <$> ask
 
 getWindowSize :: (Member IO r, ReadsRendererV2V2 r) => Eff r (V2 Float)
@@ -558,7 +556,7 @@ runOdin (SDL2Backends v2v4 v2v2) defont ifont eachFrame app = do
       eff :: Member IO r => Eff (OdinFx r) a
       eff = loopFrameAnd fy eachFrame
   fst . fst . fst . fst . fst <$>
-    runOdinFx v2v2 v2v4 defont ifont 0 t mempty emptyUi (Allocated []) eff
+    runOdinFx v2v2 v2v4 defont ifont 0 t mempty emptyUi AllocatedNone eff
 
 -- | Run an Odin style continuation in an SDL2 window.
 runOdinIO

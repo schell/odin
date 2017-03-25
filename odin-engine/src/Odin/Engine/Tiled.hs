@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections      #-}
@@ -12,7 +13,7 @@ import           Data.Tiled
 import           Gelatin.SDL2
 import           System.FilePath
 
-type ImageTextureMap = Map Image GLuint
+type ImageTextureMap   = Map Image GLuint
 type TileGLRendererMap = Map Tile Renderer2
 
 deriving instance Ord Image
@@ -91,23 +92,36 @@ allocTileRenderer b tile Tileset{..} tex = do
       tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
   return glr
 
-mapOfTiles :: Backend GLuint e V2V2 (V2 Float) Float Raster
-           -> TiledMap -> IO TileGLRendererMap
+mapOfTiles
+  :: Backend GLuint e V2V2 (V2 Float) Float Raster
+  -> TiledMap
+  -> IO (Either String TileGLRendererMap)
 mapOfTiles be t@TiledMap{..} = do
   img2TexMap <- allocImageTextureMap t
   let tile2SetMap = assocTileWithTileset t
-      tile2ESetTexMap  = findTexBySet <$> tile2SetMap
       findTexBySet ts =
         case M.lookup (imageOfTileset ts) img2TexMap of
               Nothing -> Left $ "Could not find texture for tileset:" ++ show ts
               Just tex -> Right (ts, tex)
-      checkErrorsAndClean _ (Left err)   = putStrLn err >> return Nothing
-      checkErrorsAndClean k (Right tstx) = return $ Just (k, tstx)
-  mtile2SetTexList <- mapM (uncurry checkErrorsAndClean) $ M.toList tile2ESetTexMap
-  let tile2SetTexMap = M.fromList $ catMaybes mtile2SetTexList
-  sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer be a b c) tile2SetTexMap
+      tile2ESetTexMap = findTexBySet <$> tile2SetMap
+      -- Turn the Map TileSet (Either String Texture)
+      -- to (Either String (Map TileSet Texture))
+      f (Left err) k (Left anotherErr) = Left $ unlines [err, anotherErr]
+      f (Right m)  k (Right v)         = Right $ M.insert k v m
+      f (Right m)  k (Left err)        = Left err
+      f (Left err) k (Right _)         = Left err
+      etile2SetTexMap = M.foldlWithKey f (Right mempty) tile2ESetTexMap
+  case etile2SetTexMap of
+    Right m  -> do
+      tm <- sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer be a b c) m
+      return $ Right tm
+    Left err -> return $ Left err
 
-allocLayerRenderer :: TiledMap -> TileGLRendererMap -> String -> IO (Maybe Renderer2)
+allocLayerRenderer
+  :: TiledMap
+  -> TileGLRendererMap
+  -> String
+  -> IO (Maybe Renderer2)
 allocLayerRenderer tmap rmap name = case layerWithName tmap name of
   Nothing -> return Nothing
   Just layer -> do
@@ -123,3 +137,15 @@ allocLayerRenderer tmap rmap name = case layerWithName tmap name of
                  t  = tfrm ++ [Spatial $ Translate v]
              snd f t
     return $ Just (return (), renderLayer)
+
+allocLayerFromTiledMap
+  :: Backend GLuint e V2V2 (V2 Float) Float Raster
+  -> TiledMap
+  -> String
+  -> IO (Either String Renderer2)
+allocLayerFromTiledMap v2v2 tmap name = mapOfTiles v2v2 tmap >>= \case
+    Left err -> return $ Left err
+    Right tileRendererMap ->
+      allocLayerRenderer tmap tileRendererMap name >>= \case
+        Nothing -> return $ Left $ "Could not find layer " ++ show name
+        Just layerRenderer -> return $ Right layerRenderer

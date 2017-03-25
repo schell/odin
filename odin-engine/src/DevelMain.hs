@@ -1,41 +1,58 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE LambdaCase    #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators     #-}
 module DevelMain where
 
-import           Control.Monad   (void)
-import           Data.Function   (fix)
-import           Odin.Engine.Eff
+import           Data.Function     (fix)
+
+import           Control.Monad     (forM_)
+import           Data.Tiled.Load
+import           Devel.Utils       (assetsDir, defaultFont, destroyAllocations,
+                                    getWindow, iconFont, incrementRecomps,
+                                    persistAllocations)
+import           Odin.Engine
 import           Odin.Engine.GUI
+import           Odin.Engine.Tiled
+import           System.FilePath   (FilePath, (</>))
 
-defaultFont :: DefaultFont
-defaultFont = DefaultFont $ fontDescriptor "../assets/fonts/KMKDSP__.ttf" 16
+tinyDungeonTmxPath :: FilePath
+tinyDungeonTmxPath = assetsDir </> "oryx_tiny_dungeon"
+                               </> "td_tiled_examples"
+                               </> "Tiny_dungeon_example.tmx"
 
-iconFont :: IconFont
-iconFont = IconFont $ fontDescriptor "../assets/fonts/FontAwesome.otf" 16
-
-getBackends :: IO (Either String SDL2Backends)
-getBackends =
-  runEitherT (startupSDL2Backends 800 600 "Odin Engine Development" True)
-
-withBackends :: (SDL2Backends -> IO a) -> IO ()
-withBackends f = getBackends >>= \case
-  Left err       -> putStrLn err
-  Right backends -> void $ f backends
-
-runner :: Eff (Next ': OdinFx) ()
-runner = do
+runner :: OdinCont r => Eff r ()
+runner = autoRelease $ do
   DefaultFont font <- readDefaultFontDescriptor
-  text <- slotText font black "Here is some text"
-  fix $ \loop -> do
-    renderText text [move 0 16]
-    next loop
+  n                <- incrementRecomps
+  recompText       <- slotText font black $ unwords ["Recompilations:", show n]
+  V2 textWidth _   <- sizeOfText recompText
 
-update :: IO ()
-update = withBackends $ \(SDL2Backends v2v4 v2v2) -> do
-  t <- runM newTime
-  let fx :: Eff OdinFx (Status OdinFx () () ())
-      fx = runC runner
-      looper :: Eff OdinFx ()
-      looper = loopFrame fx
-  void $ runOdinFx v2v2 v2v4 defaultFont iconFont 0 t mempty emptyUi (Allocated []) looper
+  text <- slotText font black "Here is some text"
+
+  tiledMap <- unrelativizeImagePaths <$> io (loadMapFile tinyDungeonTmxPath)
+  v2v2     <- v2v2Backend
+  elayers  <- io $
+    mapM (allocLayerFromTiledMap v2v2 tiledMap) [ "Background"
+                                                , "Interface"
+                                                , "Shadow"
+                                                , "Objects"
+                                                , "Characters"
+                                                , "Smoke"
+                                                ]
+  case sequence elayers of
+    Left err -> io $ putStrLn err
+    Right layers -> fix $ \loop -> do
+      V2 w h <- getWindowSize
+      renderText recompText [move (w - textWidth) h]
+      renderText text [move 0 16]
+      forM_ layers $ \layer -> io $ snd layer [scale 2 2]
+      next loop
+
+main :: IO ()
+main = do
+  -- Destroy any allocations from a previous compilation.
+  runM destroyAllocations
+  backends <- getWindow
+  runOdinIO backends defaultFont iconFont persistAllocations runner

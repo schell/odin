@@ -31,6 +31,7 @@ simpleButtons = autoRelease $ do
 
 restart :: OdinCont r => Eff r a -> Eff r ()
 restart eff = withCheckpoint "RestartCount" (pure (0 :: Int)) $ \n -> do
+  -- Checkpoints are persistent through recompilations (with halive).
   updateCheckpoint "RestartCount" $ n + 1
   DefaultFont font <- readDefaultFontDescriptor
   autoRelease $ do

@@ -72,11 +72,14 @@ packages:
     commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
   extra-dep: true
 
+- location:
+    git: https://github.com/schell/htiled.git
+    commit: b008faec3971d7088e4570abc42f94b0b510dde3
+  extra-dep: true
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- data-fix-0.0.3
 - freetype2-0.1.1
 flags: {}
 

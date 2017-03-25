@@ -10,7 +10,7 @@ import           Control.Monad.Freer.Writer
 import           Data.Function              (fix)
 import           Test.Hspec
 
-import           Odin.Engine.Eff
+import           Odin.Engine
 import           Odin.Engine.GUI
 import           Odin.Engine.Slots
 

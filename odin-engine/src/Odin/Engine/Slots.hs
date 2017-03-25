@@ -36,24 +36,19 @@ import           Odin.Engine.Eff.Common
 type Allocates = State Allocated
 
 alloc :: Member Allocates r => IO () -> Eff r ()
-alloc f = modify (Allocated . (f:) . unAllocated)
+alloc f = do
+  Allocated here there <- get
+  put $ Allocated (f:here) there
 
 autoRelease :: (Member Allocates r, Member IO r) => Eff r a -> Eff r a
 autoRelease eff = do
-  Allocated previousAllocs <- get
-  put $ Allocated []
+  pushHereToThere
   a <- eff
-  Allocated newAllocs <- get
-  io $ putStrLn $ "Dealloc'ing: " ++ show (length newAllocs)
-  mapM_ io newAllocs
-  io $ putStrLn $ "Restoring: " ++ show (length previousAllocs)
-  put $ Allocated previousAllocs
+  popThereToHere
   return a
 
 getNumAllocated :: Member Allocates r => Eff r Int
-getNumAllocated = do
-  Allocated allocs <- get
-  return $ length allocs
+getNumAllocated = countAllocated <$> get
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
 --------------------------------------------------------------------------------
