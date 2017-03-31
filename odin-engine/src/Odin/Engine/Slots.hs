@@ -11,6 +11,7 @@
 module Odin.Engine.Slots
   ( Allocates
   , Allocated(..)
+  , alloc
   , autoRelease
   , Slot
   , slot
@@ -46,9 +47,6 @@ autoRelease eff = do
   a <- eff
   popThereToHere
   return a
-
-getNumAllocated :: Member Allocates r => Eff r Int
-getNumAllocated = countAllocated <$> get
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
 --------------------------------------------------------------------------------
@@ -58,7 +56,6 @@ slot :: (Member Allocates r, Member IO r) => a -> (a -> IO ()) -> Eff r (Slot a)
 slot a free = do
   var <- io $ newTVarIO a
   alloc $ readTVarIO var >>= free
-  getNumAllocated >>= io . putStrLn . ("Have alloc'd " ++) . show
   return $ Slot var
 
 slotNoFree :: Member IO r => a -> Eff r (Slot a)

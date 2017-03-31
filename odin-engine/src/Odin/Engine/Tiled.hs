@@ -1,23 +1,38 @@
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections      #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TupleSections         #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Odin.Engine.Tiled where
 
-import           Data.List       (find)
-import           Data.Map        (Map)
-import qualified Data.Map        as M
-import           Data.Maybe      (catMaybes)
+
+import           Control.Monad     (forM_, join)
+import           Data.List         (find, nub, sort)
+import           Data.Map          (Map)
+import qualified Data.Map          as M
+import           Data.Maybe        (catMaybes, fromMaybe, maybeToList)
 import           Data.Tiled
-import           Gelatin.SDL2
+import           Data.Vector       (Vector)
+import qualified Data.Vector       as V
+import           Data.Word         (Word32)
+
+
+import           Gelatin.SDL2      hiding (trace)
 import           System.FilePath
 
+import           Odin.Engine
+import           Odin.Engine.Slots
+
+type TextureBackend e  = Backend GLuint e V2V2 (V2 Float) Float Raster
 type ImageTextureMap   = Map Image GLuint
-type TileGLRendererMap = Map Tile Renderer2
+type TileGLRendererMap = Map TileIndex Renderer2
 
 deriving instance Ord Image
 
+-- | Prefix the image paths with the directory of the map itself.
 unrelativizeImagePaths :: TiledMap -> TiledMap
 unrelativizeImagePaths m@TiledMap{..} =
   let dir  = takeDirectory mapPath
@@ -26,15 +41,85 @@ unrelativizeImagePaths m@TiledMap{..} =
       unrel i@Image{..} = i{ iSource = dir </> iSource }
   in m{ mapTilesets = tsets }
 
-allImages :: TiledMap -> [Image]
-allImages TiledMap{..} = concatMap tsImages mapTilesets
+-- | The gelatin picture for rendering one specific TileIndex.
+tilePicture
+  :: V2 Int
+  -- ^ Dimensions of the tileset image
+  -> V2 Int
+  -- ^ Dimensions of the tile
+  -> Int
+  -- ^ The index of the tile in its parent tileset.
+  -> GLuint
+  -- ^ The pre-alloc'd texture
+  -> TexturePicture ()
+tilePicture imageSize tileSize localNdx tex = do
+  let -- The image's width and height in pixels
+      V2 w h = fromIntegral <$> imageSize
+      ---- The tile's width and height in pixels
+      V2 tw th = fromIntegral <$> tileSize
+      -- The tile's width and height in uv coords
+      uvw = tw / w
+      uvh = th / h
+      -- The number of tiles in x
+      numtx  = w / tw
+      -- The tile's x and y indices in the parent tileset
+      ndx = fromIntegral localNdx
+      ty  = fromIntegral (floor $ ndx / numtx :: Int)
+      tx  = ndx - ty * numtx
+      -- the tile's uv upper left
+      V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
+      -- the tile's uv bottom left
+      V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
+  setTextures [tex]
+  setGeometry $ triangles $ do
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
+    tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
 
 layerWithName :: TiledMap -> String -> Maybe Layer
 layerWithName TiledMap{..} name = find ((== name) . layerName) mapLayers
 
-allTiles :: TiledMap -> [Tile]
-allTiles = concatMap allLayerTiles . mapLayers
-  where allLayerTiles = M.elems . layerData
+allLayerData :: TiledMap -> [Vector (Vector (Maybe TileIndex))]
+allLayerData = map layerData . mapLayers
+
+animationTileIndices :: TiledMap -> [TileIndex]
+animationTileIndices tiledMap = do
+  tileset <- mapTilesets tiledMap
+  tile    <- tsTiles tileset
+  frame   <- fromMaybe [] $ animationFrames <$> tileAnimation tile
+  let setId = tsInitialGid tileset
+      ftid  = frameTileId frame
+      fgid  = setId + fromIntegral ftid
+  return TileIndex{ tileIndexGid           = fgid
+                  , tileIndexIsDiagFlipped = False
+                  , tileIndexIsHFlipped    = False
+                  , tileIndexIsVFlipped    = False
+                  }
+
+layerTileIndices :: TiledMap -> [TileIndex]
+layerTileIndices tiledMap = do
+  layer    <- mapLayers tiledMap
+  ndx      <- V.toList $ do
+    row <- layerData layer
+    flip V.concatMap row $ \case
+      Nothing  -> V.empty
+      Just ndx -> V.singleton ndx
+  return ndx
+
+allTileIndices :: TiledMap -> [TileIndex]
+allTileIndices tiledMap =
+  sort $ nub $ layerTileIndices tiledMap ++ animationTileIndices tiledMap
+
+allImages :: TiledMap -> [Image]
+allImages tiledMap = do
+  tileset <- mapTilesets tiledMap
+  tsImages tileset
+
+allAnimations :: TiledMap -> [(Word32, Word32, Animation)]
+allAnimations tiledMap = do
+  tileset <- mapTilesets tiledMap
+  tile    <- tsTiles tileset
+  ani     <- maybeToList $ tileAnimation tile
+  return (tsInitialGid tileset, tileId tile, ani)
 
 allocImageTexture :: Image -> IO (Maybe (Image, GLuint))
 allocImageTexture i@Image{..} = ((i,) <$>) <$> loadImageAsTexture iSource
@@ -44,108 +129,150 @@ allocImageTextureMap t = do
   mts <- mapM allocImageTexture $ allImages t
   return $ M.fromList $ catMaybes mts
 
-tilesetOfTile :: TiledMap -> Tile -> Tileset
-tilesetOfTile TiledMap{..} Tile{..} =
-  snd $ last $ takeWhile ((<= tileGid) . fst) initGidToTileset
-    where initGidToTileset = map f mapTilesets
-          f t@Tileset{..} = (tsInitialGid, t)
+imageOfTileset :: Tileset -> Maybe Image
+imageOfTileset ts = case tsImages ts of
+  img:_ -> Just img
+  []    -> Nothing
 
-imageOfTileset :: Tileset -> Image
-imageOfTileset = head . tsImages
+tilesetOfTileIndex :: TiledMap -> TileIndex -> Maybe Tileset
+tilesetOfTileIndex TiledMap{..} TileIndex{..} =
+  case takeWhile ((<= tileIndexGid) . tsInitialGid) mapTilesets of
+    [] -> Nothing
+    ts -> Just $ last ts
 
-imageOfTile :: TiledMap -> Tile -> Image
-imageOfTile tm t = imageOfTileset $ tilesetOfTile tm t
+imageOfTileIndex :: TiledMap -> TileIndex -> Maybe Image
+imageOfTileIndex tm t = tilesetOfTileIndex tm t >>= imageOfTileset
 
-assocTileWithTileset :: TiledMap -> Map Tile Tileset
-assocTileWithTileset t@TiledMap{..} = M.fromList $ zip tiles tilesets
-  where tilesets = map (tilesetOfTile t) tiles
-        tiles = allTiles t
+imageTextureOfTile
+  :: ImageTextureMap -> TiledMap -> TileIndex -> Maybe (Image, GLuint)
+imageTextureOfTile imap tmap ndx = do
+  img <- imageOfTileIndex tmap ndx
+  tex <- M.lookup img imap
+  return (img, tex)
 
-allocTileRenderer :: Backend GLuint e V2V2 (V2 Float) Float Raster
-                  -> Tile -> Tileset -> GLuint -> IO Renderer2
-allocTileRenderer b tile Tileset{..} tex = do
-  let img = head tsImages
-      -- the image's width and height in pixels
-      w   = fromIntegral $ iWidth img
-      h   = fromIntegral $ iHeight img
-      -- the tile's width and height in pixels
-      tw  = fromIntegral tsTileWidth
-      th  = fromIntegral tsTileHeight
-      -- the tile's width and height in uv coords
-      uvw = tw / w
-      uvh = th / h
-      -- index of the tile relative to the tileset's initial tile
-      ndx = fromIntegral $ tileGid tile - tsInitialGid
-      -- number of tiles in x
-      numtx  = w / tw
-      -- the tile's x and y indices
-      ty  = fromIntegral (floor $ ndx / numtx :: Int)
-      tx  = ndx - ty * numtx
-      -- the tile's uv upper left
-      V2 uvtlx uvtly = V2 (tx * uvw) (ty * uvh)
-      -- the tile's uv bottom left
-      V2 uvbrx uvbry = V2 uvtlx uvtly + V2 uvw uvh
-  (_,glr) <- compilePicture b $ do
-    setTextures [tex]
-    setGeometry $ triangles $ do
-      tri (V2 0 0, V2 uvtlx uvtly) (V2 tw 0,  V2 uvbrx uvtly) (V2 tw th, V2 uvbrx uvbry)
-      tri (V2 0 0, V2 uvtlx uvtly) (V2 tw th, V2 uvbrx uvbry) (V2 0 th,  V2 uvtlx uvbry)
-  return glr
+-- | Alloc resources for one specific tile renderer.
+allocTileRenderer
+  :: TextureBackend e
+  -- ^ The texture rendering backend.
+  -> GLuint
+  -- ^ The texture to use for the tileset.
+  -> Tileset
+  -- ^ The Tileset in which the Tile resides.
+  -> TileIndex
+  -- ^ The TileIndex to create a renderer for.
+  -> IO Renderer2
+allocTileRenderer b tex ts ndx =
+  snd <$> compilePicture b (tilePicture imageSize tileSize localNdx tex)
+  where imageSize = case tsImages ts of
+                      img:_ -> V2 (iWidth img) (iHeight img)
+                      _     -> 0
+        tileSize = V2 (tsTileWidth ts) (tsTileHeight ts)
+        localNdx = fromIntegral $ tileIndexGid ndx - tsInitialGid ts
 
-mapOfTiles
-  :: Backend GLuint e V2V2 (V2 Float) Float Raster
-  -> TiledMap
-  -> IO (Either String TileGLRendererMap)
-mapOfTiles be t@TiledMap{..} = do
-  img2TexMap <- allocImageTextureMap t
-  let tile2SetMap = assocTileWithTileset t
-      findTexBySet ts =
-        case M.lookup (imageOfTileset ts) img2TexMap of
-              Nothing -> Left $ "Could not find texture for tileset:" ++ show ts
-              Just tex -> Right (ts, tex)
-      tile2ESetTexMap = findTexBySet <$> tile2SetMap
-      -- Turn the Map TileSet (Either String Texture)
-      -- to (Either String (Map TileSet Texture))
-      f (Left err) k (Left anotherErr) = Left $ unlines [err, anotherErr]
-      f (Right m)  k (Right v)         = Right $ M.insert k v m
-      f (Right m)  k (Left err)        = Left err
-      f (Left err) k (Right _)         = Left err
-      etile2SetTexMap = M.foldlWithKey f (Right mempty) tile2ESetTexMap
-  case etile2SetTexMap of
-    Right m  -> do
-      tm <- sequence $ M.mapWithKey (\a (b, c) -> allocTileRenderer be a b c) m
-      return $ Right tm
-    Left err -> return $ Left err
+newtype VectorTileRenderer = VectorTileRenderer
+  { unVectorTileRenderer :: Vector (Maybe ([RenderTransform2] -> IO ()))}
 
-allocLayerRenderer
-  :: TiledMap
-  -> TileGLRendererMap
-  -> String
-  -> IO (Maybe Renderer2)
-allocLayerRenderer tmap rmap name = case layerWithName tmap name of
-  Nothing -> return Nothing
-  Just layer -> do
-    let  renderLayer :: [RenderTransform2] -> IO ()
-         renderLayer tfrm = mapM_ (tileRenderer tfrm) $ M.toList $ layerData layer
-         tileRenderer tfrm ((x,y), tile) = case M.lookup tile rmap of
-           Nothing -> putStrLn $ "Could not find renderer for tile:" ++ show tile
-           Just f  -> do
-             let ts = tilesetOfTile tmap tile
-                 w  = tsTileWidth ts
-                 h  = tsTileHeight ts
-                 v  = fromIntegral <$> V2 (w * x)  (h * y)
-                 t  = tfrm ++ [Spatial $ Translate v]
-             snd f t
-    return $ Just (return (), renderLayer)
+createVectorTileRenderer
+  :: ( Member IO r
+     , Member (State Allocated) r
+     , Member (Reader V2V2Renderer) r
+     )
+  => TiledMap
+  -> Eff r VectorTileRenderer
+createVectorTileRenderer tiledMap = do
+  texMap   <- io $ allocImageTextureMap tiledMap
+  v2v2     <- v2v2Backend
+  let indices    = allTileIndices tiledMap
+      indexMap   = M.fromList $ zip (map tileIndexGid indices) indices
+      vectorSize = case indices of
+        [] -> 0
+        _  -> 1 + fromIntegral (tileIndexGid $ last indices)
+  v <- V.generateM vectorSize $ \ndx -> sequence $ do
+    tileNdx  <- M.lookup (fromIntegral ndx) indexMap
+    (_, tex) <- imageTextureOfTile texMap tiledMap tileNdx
+    tileset  <- tilesetOfTileIndex tiledMap tileNdx
+    return $ do
+      (clean, rend) <- io $ allocTileRenderer v2v2 tex tileset tileNdx
+      alloc clean
+      return rend
+  return $ VectorTileRenderer v
 
-allocLayerFromTiledMap
-  :: Backend GLuint e V2V2 (V2 Float) Float Raster
-  -> TiledMap
-  -> String
-  -> IO (Either String Renderer2)
-allocLayerFromTiledMap v2v2 tmap name = mapOfTiles v2v2 tmap >>= \case
-    Left err -> return $ Left err
-    Right tileRendererMap ->
-      allocLayerRenderer tmap tileRendererMap name >>= \case
-        Nothing -> return $ Left $ "Could not find layer " ++ show name
-        Just layerRenderer -> return $ Right layerRenderer
+tileRendererPreview
+  :: Member IO r
+  => VectorTileRenderer
+  -> V2 Float
+  -> Int
+  -> Vector ([RenderTransform2] -> Eff r ())
+tileRendererPreview (VectorTileRenderer vec) (V2 tw th) w =
+  flip V.map posVec $ \((x, y), renderTile) t ->
+    io $ renderTile $ t ++ [move (x*tw) (y*th)]
+  where posVec :: Vector ((Float, Float), [RenderTransform2] -> IO ())
+        posVec = go (V.concatMap (V.fromList . maybeToList) vec) 0
+        go v y = let (x, xs) = V.splitAt w v
+                     h       = V.zip (row y) x
+                     t       = if V.null xs then V.empty else go xs (y + 1)
+                 in h V.++ t
+        row :: Float -> Vector (Float, Float)
+        row y  = V.generate w $ \x -> (fromIntegral x, y)
+
+renderTilePreview
+  :: Member IO r
+  => Vector ([RenderTransform2] -> Eff r ())
+  -> [RenderTransform2]
+  -> Eff r ()
+renderTilePreview v t = forM_ v ($ t)
+
+data TiledAnimation =
+  TiledAnimation { taFrames        :: Vector (Int, Maybe ([RenderTransform2] -> IO ()))
+                 , taFrameIndex    :: Int
+                 , taFrameTimeLeft :: Int
+                 }
+
+allocTiledAnimation
+  :: Member IO r
+  => VectorTileRenderer
+  -> Word32
+  -- ^ Tilset gid
+  -> Animation
+  -> Eff r (Slot TiledAnimation)
+allocTiledAnimation (VectorTileRenderer vec) sid (Animation frames) = do
+  let mkFrame (Frame fid dur) = (dur, join $ vec V.!? fromIntegral (sid + fid))
+      renderFrames = V.fromList $ map mkFrame frames
+  slotVar $ TiledAnimation{ taFrames = renderFrames
+                          , taFrameIndex = 0
+                          , taFrameTimeLeft = 0
+                          }
+
+advanceTiledAnimation
+  :: (Member IO r, Member (State SystemTime) r)
+  => Slot TiledAnimation
+  -> Eff r ()
+advanceTiledAnimation ani = do
+  delta <- readTimeDeltaMillis
+  TiledAnimation{..} <- unslot ani
+  let sz          = V.length taFrames
+      nextNdx     = ((taFrameIndex + 1) `mod` sz) `mod` sz
+      (ndx, left) = fromMaybe (taFrameIndex, 0) $ do
+        (dur, mrend) <- taFrames V.!? taFrameIndex
+        if delta <= taFrameTimeLeft
+          then return (taFrameIndex, taFrameTimeLeft - delta)
+          else do
+            (_, mnext)      <- taFrames V.!? nextNdx
+            renderNextFrame <- mnext
+            return (nextNdx, dur - (delta - taFrameTimeLeft))
+  ani `is` TiledAnimation{ taFrames        = taFrames
+                         , taFrameIndex    = ndx
+                         , taFrameTimeLeft = left
+                         }
+
+renderTiledAnimation
+  :: (Member IO r, Member (State SystemTime) r)
+  => Slot TiledAnimation
+  -> [RenderTransform2]
+  -> Eff r ()
+renderTiledAnimation ani ts = do
+  TiledAnimation{..} <- unslot ani
+  sequence_ $ do
+    (_, mrend) <- taFrames V.!? taFrameIndex
+    rend       <- mrend
+    return $ io $ rend ts

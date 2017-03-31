@@ -16,7 +16,9 @@ cabal-version:       >=1.10
 library
   ghc-options:         -Wall -Werror
   hs-source-dirs:      src
+  other-modules:
   exposed-modules:     Data.Char.FontAwesome
+                     , Devel.Utils
                      , Odin.Engine
                      , Odin.Engine.Checkpoint
                      , Odin.Engine.Tiled
@@ -38,7 +40,6 @@ library
                      , Odin.Engine.GUI.Styles
                      , Odin.Engine.Physics
                      , Odin.Engine.Slots
-  other-modules:       DevelMain, Devel.Utils
 
   build-depends:       array
                      , base >= 4.7 && < 5
@@ -57,11 +58,13 @@ library
                      , htiled >= 0.1.3
                      , lens
                      , linear
+                     , pretty-show
                      , sdl2
                      , shapes
                      , stm
                      , text
                      , varying >= 0.7.0.3
+                     , vector
 
   default-language:    Haskell2010
 
@@ -71,6 +74,18 @@ executable odin-engine-exe
   ghc-options:         -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , odin-engine
+  default-language:    Haskell2010
+
+executable odin-engine-devel
+  hs-source-dirs:      devel
+  main-is:             Main.hs
+  ghc-options:         -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , htiled
+                     , vector
+                     , filepath
+                     , odin-engine
+
   default-language:    Haskell2010
 
 test-suite odin-engine-test

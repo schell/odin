@@ -332,6 +332,9 @@ data SystemTime = SystemTime
 
 type AltersTime = Member (State SystemTime)
 
+readTimeDeltaMillis :: (Member (State SystemTime) r, Num i) => Eff r i
+readTimeDeltaMillis = fromIntegral . timeDelta <$> get
+
 readTimeDeltaSeconds :: (Member (State SystemTime) r, Fractional f) => Eff r f
 readTimeDeltaSeconds = (/1000) . fromIntegral . timeDelta <$> get
 

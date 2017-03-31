@@ -27,6 +27,9 @@ fontsDir = assetsDir </> "fonts"
 defaultFont :: DefaultFont
 defaultFont = DefaultFont $ fontDescriptor (fontsDir </> "KMKDSP__.ttf")  16
 
+monoFont :: DefaultFont
+monoFont = DefaultFont $ fontDescriptor (fontsDir </> "Inconsolata-Regular.ttf") 12
+
 iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor (fontsDir </> "FontAwesome.otf") 16
 
@@ -52,3 +55,7 @@ destroyAllocations =
                             , "from a previous compilation."
                             ]
     deallocAllAllocated allocs
+
+pad :: Int -> String -> String
+pad n = unlines . map (padding ++) . lines
+  where padding = replicate n ' '

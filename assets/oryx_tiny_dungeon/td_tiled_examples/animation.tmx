@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="1" height="1" tilewidth="16" tileheight="16" nextobjectid="1">
+ <tileset firstgid="1" name="tiny_dungeon_monsters" tilewidth="16" tileheight="16" tilecount="512" columns="16">
+  <image source="../tiny_dungeon_monsters.png" width="256" height="512"/>
+  <tile id="0">
+   <animation>
+    <frame tileid="0" duration="500"/>
+    <frame tileid="16" duration="500"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="513" name="tiny_dungeon_world" tilewidth="16" tileheight="16" tilecount="304" columns="16">
+  <image source="../tiny_dungeon_world.png" width="256" height="304"/>
+ </tileset>
+ <layer name="Background" width="1" height="1">
+  <data encoding="csv">
+604
+</data>
+ </layer>
+ <layer name="Characters" width="1" height="1">
+  <data encoding="csv">
+1
+</data>
+ </layer>
+</map>

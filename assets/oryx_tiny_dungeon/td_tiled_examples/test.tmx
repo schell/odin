@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="2" height="2" tilewidth="16" tileheight="16" nextobjectid="1">
+ <tileset firstgid="1" name="tiny_dungeon_world" tilewidth="16" tileheight="16" tilecount="304" columns="16">
+  <image source="../tiny_dungeon_world.png" width="256" height="304"/>
+  <tile id="4">
+   <animation>
+    <frame tileid="4" duration="100"/>
+    <frame tileid="20" duration="100"/>
+   </animation>
+  </tile>
+  <tile id="112">
+   <animation>
+    <frame tileid="267" duration="100"/>
+    <frame tileid="268" duration="100"/>
+    <frame tileid="269" duration="100"/>
+   </animation>
+  </tile>
+  <tile id="261">
+   <animation>
+    <frame tileid="261" duration="100"/>
+    <frame tileid="262" duration="100"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="305" name="tiny_dungeon_monsters" tilewidth="16" tileheight="16" tilecount="512" columns="16">
+  <image source="../tiny_dungeon_monsters.png" width="256" height="512"/>
+  <tile id="4">
+   <animation>
+    <frame tileid="4" duration="100"/>
+    <frame tileid="20" duration="100"/>
+   </animation>
+  </tile>
+ </tileset>
+ <layer name="Tile Layer 1" width="2" height="2">
+  <data encoding="csv">
+309,0,
+0,0
+</data>
+ </layer>
+</map>
