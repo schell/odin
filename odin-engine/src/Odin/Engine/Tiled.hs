@@ -10,7 +10,7 @@ module Odin.Engine.Tiled where
 
 
 import           Control.Monad     (forM_, join)
-import           Data.List         (find, nub, sort)
+import           Data.List         (find)
 import           Data.Map          (Map)
 import qualified Data.Map          as M
 import           Data.Maybe        (catMaybes, fromMaybe, maybeToList)
@@ -78,14 +78,19 @@ tilePicture imageSize tileSize localNdx tex = do
 layerWithName :: TiledMap -> String -> Maybe Layer
 layerWithName TiledMap{..} name = find ((== name) . layerName) mapLayers
 
-allLayerData :: TiledMap -> [Vector (Vector (Maybe TileIndex))]
-allLayerData = map layerData . mapLayers
+allLayerTileData :: TiledMap -> Vector (Vector (Vector (Maybe TileIndex)))
+allLayerTileData tm = do
+  layer <- V.fromList $ mapLayers tm
+  case layerContents layer of
+    LayerContentsTiles dat -> return dat
+    _                      -> V.empty
 
-animationTileIndices :: TiledMap -> [TileIndex]
+animationTileIndices :: TiledMap -> Vector TileIndex
 animationTileIndices tiledMap = do
-  tileset <- mapTilesets tiledMap
-  tile    <- tsTiles tileset
-  frame   <- fromMaybe [] $ animationFrames <$> tileAnimation tile
+  tileset <- V.fromList $ mapTilesets tiledMap
+  tile    <- V.fromList $ tsTiles tileset
+  frame   <- fromMaybe V.empty $
+    V.fromList . animationFrames <$> tileAnimation tile
   let setId = tsInitialGid tileset
       ftid  = frameTileId frame
       fgid  = setId + fromIntegral ftid
@@ -95,19 +100,27 @@ animationTileIndices tiledMap = do
                   , tileIndexIsVFlipped    = False
                   }
 
-layerTileIndices :: TiledMap -> [TileIndex]
+layerTileIndices :: TiledMap -> Vector TileIndex
 layerTileIndices tiledMap = do
-  layer    <- mapLayers tiledMap
-  ndx      <- V.toList $ do
-    row <- layerData layer
-    flip V.concatMap row $ \case
-      Nothing  -> V.empty
-      Just ndx -> V.singleton ndx
-  return ndx
+  layerTiles <- allLayerTileData tiledMap
+  row        <- layerTiles
+  flip V.concatMap row $ \case
+    Just ndx -> return ndx
+    Nothing  -> V.empty
 
-allTileIndices :: TiledMap -> [TileIndex]
+allTileIndices :: TiledMap -> Vector TileIndex
 allTileIndices tiledMap =
-  sort $ nub $ layerTileIndices tiledMap ++ animationTileIndices tiledMap
+  vnub $ layerTileIndices tiledMap V.++ animationTileIndices tiledMap
+  -- | TODO: remove this when vector supports nub
+
+vnub :: Eq a => Vector a -> Vector a
+vnub = vnubBy (==)
+
+vnubBy :: (a -> a -> Bool) -> Vector a -> Vector a
+vnubBy eq vs
+  | Just x <- vs V.!? 0
+  , xs <- V.tail vs = x `V.cons` vnubBy eq (V.filter (\y -> not (eq x y)) xs)
+  | otherwise = V.empty
 
 allImages :: TiledMap -> [Image]
 allImages tiledMap = do
@@ -183,10 +196,10 @@ createVectorTileRenderer tiledMap = do
   texMap   <- io $ allocImageTextureMap tiledMap
   v2v2     <- v2v2Backend
   let indices    = allTileIndices tiledMap
-      indexMap   = M.fromList $ zip (map tileIndexGid indices) indices
-      vectorSize = case indices of
-        [] -> 0
-        _  -> 1 + fromIntegral (tileIndexGid $ last indices)
+      indexMap   = M.fromList $ V.toList $ V.zip (V.map tileIndexGid indices) indices
+      vectorSize = if V.length indices == 0
+                   then 0
+                   else 1 + fromIntegral (tileIndexGid $ V.last indices)
   v <- V.generateM vectorSize $ \ndx -> sequence $ do
     tileNdx  <- M.lookup (fromIntegral ndx) indexMap
     (_, tex) <- imageTextureOfTile texMap tiledMap tileNdx
@@ -249,21 +262,20 @@ advanceTiledAnimation
   -> Eff r ()
 advanceTiledAnimation ani = do
   delta <- readTimeDeltaMillis
-  TiledAnimation{..} <- unslot ani
+  ta@TiledAnimation{..} <- unslot ani
   let sz          = V.length taFrames
       nextNdx     = ((taFrameIndex + 1) `mod` sz) `mod` sz
-      (ndx, left) = fromMaybe (taFrameIndex, 0) $ do
-        (dur, mrend) <- taFrames V.!? taFrameIndex
-        if delta <= taFrameTimeLeft
-          then return (taFrameIndex, taFrameTimeLeft - delta)
-          else do
-            (_, mnext)      <- taFrames V.!? nextNdx
-            renderNextFrame <- mnext
-            return (nextNdx, dur - (delta - taFrameTimeLeft))
-  ani `is` TiledAnimation{ taFrames        = taFrames
-                         , taFrameIndex    = ndx
-                         , taFrameTimeLeft = left
-                         }
+      (ndx, left) = fromMaybe (taFrameIndex, 0) $
+        if delta > taFrameTimeLeft
+          then do
+            (nextDur, _) <- taFrames V.!? nextNdx
+            return (nextNdx, nextDur - (delta - taFrameTimeLeft))
+          else Just (taFrameIndex, taFrameTimeLeft - delta)
+          --then (taFrameIndex, taFrameTimeLeft - delta)
+          --else (nextNdx, dur - (delta - taFrameTimeLeft))
+  ani `is` ta{ taFrameIndex    = ndx
+             , taFrameTimeLeft = left
+             }
 
 renderTiledAnimation
   :: (Member IO r, Member (State SystemTime) r)

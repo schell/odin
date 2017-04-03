@@ -81,10 +81,12 @@ executable odin-engine-devel
   main-is:             Main.hs
   ghc-options:         -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , containers
                      , htiled
                      , vector
                      , filepath
                      , odin-engine
+                     , pretty-show
 
   default-language:    Haskell2010
 

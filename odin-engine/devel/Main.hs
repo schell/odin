@@ -9,13 +9,13 @@
 module Main where
 
 import           Control.Applicative ((<|>))
-import           Control.Monad       (forM, forM_, msum)
+import           Control.Monad       (forM, forM_)
 import           Data.Function       (fix)
 import qualified Data.Map            as M
 import           Data.Tiled.Load
 import           Data.Tiled.Types
 import qualified Data.Vector         as V
-import           Text.Show.Pretty
+--import           Text.Show.Pretty
 
 import           Devel.Utils
 import           Odin.Engine
@@ -49,27 +49,32 @@ runner = autoRelease $ do
       VectorTileRenderer vtr = tileRenderer
   aniList <- forM (allAnimations tiledMap) $ \(sid, tid, ani) -> do
     tani <- allocTiledAnimation tileRenderer sid ani
-    return (fromIntegral $ sid + tid, tani)
+    return (fromIntegral (sid + tid) :: Integer, tani)
   let animations = M.fromList aniList
   fix $ \loop -> do
     renderTilePreview preview []
-    forM_ (allLayerData tiledMap) $ \ldata ->
-      flip V.imapM_ ldata $ \y row ->
-        flip V.imapM_ row $ \x mtindex -> sequence $ do
-          let ts = [moveV2 $ 50 + (16 * (fromIntegral <$> V2 x y))]
-          tindex <- mtindex
-          let gid = tileIndexGid tindex
-          mrend  <- vtr V.!? fromIntegral gid
-          (do animation <- M.lookup (fromIntegral gid) animations
-              return $ renderTiledAnimation animation ts
-           <|>
-           do rend   <- mrend
-              return (io $ rend ts))
+    forM_ (mapLayers tiledMap) $ \layer -> case layerContents layer of
+      LayerContentsTiles ldata -> do
+        let loffset = fromIntegral <$> uncurry V2 (layerOffset layer)
+        flip V.imapM_ ldata $ \y row ->
+          flip V.imapM_ row $ \x mtindex -> sequence $ do
+            let ts = [ scale 2 2
+                     , moveV2 $ 16 * (fromIntegral <$> V2 x y)
+                     , moveV2 loffset
+                     ]
+            tindex <- mtindex
+            let gid = tileIndexGid tindex
+            mrend  <- vtr V.!? fromIntegral gid
+            do animation <- M.lookup (fromIntegral gid) animations
+               return $ renderTiledAnimation animation ts
+             <|>
+             do rend   <- mrend
+                return (io $ rend ts)
+      _ -> return ()
     V2 w h <- getWindowSize
     renderText recompText [move (w - textWidth) h]
-    forM_ (zip [0 ..] $ M.elems animations) $ \(i, animation) -> do
-      renderTiledAnimation animation [move (fromIntegral i * 16) 600]
-      advanceTiledAnimation animation
+    -- Advance all of our running animations
+    sequence_ $ advanceTiledAnimation <$> animations
     next loop
 
 main :: IO ()
