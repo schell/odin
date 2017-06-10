@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-8.0
+resolver: lts-8.17
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -57,10 +57,10 @@ packages:
   - shapes-math
   extra-dep: true
 
-- location:
-    git: https://github.com/phadej/gl.git
-    commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
-  extra-dep: true
+#- location:
+#    git: https://github.com/phadej/gl.git
+#    commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
+#  extra-dep: true
 
 - location:
     git: https://github.com/IxpertaSolutions/freer-effects.git
@@ -74,14 +74,13 @@ packages:
 
 - location:
     git: https://github.com/chrra/htiled.git
-    commit: 536651727199e4e90e84d9e52df1b10454d30966
+    commit: 99326b98a8f38b9e00a0907ee7b9108df03b7375
   extra-dep: true
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - freetype2-0.1.1
-- bindings-libusb-1.4.5.0
 flags: {}
 
 # Extra package databases containing global packages
