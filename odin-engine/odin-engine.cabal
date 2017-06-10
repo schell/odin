@@ -104,7 +104,6 @@ executable odin-engine-devel-2
                      , filepath
                      , odin-engine
                      , pretty-show
-                     , usb
 
   default-language:    Haskell2010
 
