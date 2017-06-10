@@ -8,6 +8,7 @@ module Odin.Engine.GUI.Pane
   , slotPane
   , renderPane
   , resizePane
+  , resizePaneContent
   , offsetPane
   ) where
 
@@ -126,6 +127,17 @@ resizePane s size = do
   let V2 sw sh = paneScrollSize size paneContentSize
   reslotColorPicture paneHorizontalScroll $ paneHorizontalScrollPic sw
   reslotColorPicture paneVerticalScroll   $ paneVerticalScrollPic sh
+
+resizePaneContent
+  :: (ReadsRenderers r, AltersUI r, Member Allocates r, Member IO r)
+  => Slot Pane
+  -> V2 Int
+  -> Eff r ()
+resizePaneContent s size = do
+  modifySlot s $ \p -> p{ paneContentSize = size }
+  Pane{..}  <- unslot s
+  Layer{..} <- unslot paneLayer
+  resizePane s layerSize
 
 offsetPane
   :: (ReadsRenderers r, AltersUI r, Member IO r)

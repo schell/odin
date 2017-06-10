@@ -1,7 +1,6 @@
 flags: {}
 packages:
 - .
-
 - ./odin-engine
 
 - location:
@@ -15,10 +14,12 @@ packages:
   - gelatin-freetype2
   extra-dep: true
 
-- location:
-    git: https://github.com/schell/htiled.git
-    commit: b008faec3971d7088e4570abc42f94b0b510dde3
-  extra-dep: true
+#- location:
+#    git: https://github.com/chrra/htiled.git
+#    commit: 536651727199e4e90e84d9e52df1b10454d30966
+#  extra-dep: true
+
+- ../htiled
 
 - location:
     git: https://github.com/schell/varying.git
@@ -43,12 +44,8 @@ packages:
     commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
   extra-dep: true
 
-- location:
-    git: https://github.com/IxpertaSolutions/freer-effects.git
-    commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
-  extra-dep: true
-
 extra-deps:
+- freer-effects-0.3.0.0
 - freetype2-0.1.1
 
 resolver: lts-8.0

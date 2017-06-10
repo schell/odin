@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -12,11 +11,14 @@
 module Odin.Engine.Eff.Coroutine
   ( Next
   , next
+  , nextForever
   , raceEither
+  , raceAny
   ) where
 
 import           Control.Monad.Freer
 import           Control.Monad.Freer.Coroutine
+import           Data.Function                 (fix)
 
 type Next = Yield () ()
 
@@ -26,6 +28,11 @@ next :: Member Next r => Eff r a -> Eff r a
 next eff = do
   yield () $ \() -> ()
   eff
+
+-- | Run a computation and yield, then pick back up where you left off again,
+-- forever.
+nextForever :: Member Next r => Eff r a -> Eff r b
+nextForever eff = fix $ \loop -> eff >> next loop
 
 withEither'
   :: Member Next r
@@ -45,3 +52,14 @@ withEither' (Continue () fa) (Continue () fb) = next $
 -- first.
 raceEither :: Member Next r => Eff r a -> Eff r b -> Eff r (Either a b)
 raceEither effa effb = ((,) <$> interposeC effa <*> interposeC effb) >>= uncurry withEither'
+
+-- | Race all of the coroutine effects until one finishes (which means the
+-- computation completes without yielding.)
+raceAny :: Member Next r => [Eff r a] -> Eff r a
+raceAny effs = mapM interposeC effs >>= checkStats
+  where checkStats stats = case foldl f (Right []) stats of
+          Right ts -> next $ sequence ts >>= checkStats
+          Left a   -> return a
+        f (Left a)   _               = Left a
+        f (Right ts) (Continue () g) = Right $ ts ++ [g ()]
+        f (Right _ ) (Done a)        = Left a

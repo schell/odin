@@ -36,6 +36,8 @@ import           Odin.Engine.Eff.Common
 --------------------------------------------------------------------------------
 type Allocates = State Allocated
 
+-- | TODO: Call this something else, we're not really alloc'ing, we're registering
+-- something to free.
 alloc :: Member Allocates r => IO () -> Eff r ()
 alloc f = do
   Allocated here there <- get

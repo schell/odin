@@ -85,6 +85,7 @@ renderPanel
   => Slot Panel
   -> [RenderTransform2]
   -> (V2 Int -> Eff r a)
+  -- | TODO: ^ Change this to V2 Float
   -> Eff r (a, PanelState)
 renderPanel s rs f = do
   -- Render the panel just as it is, we have to do this in order to update the

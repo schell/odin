@@ -14,6 +14,7 @@ module Odin.Engine
   , MouseButton(..)
   , InputMotion(..)
   , runEitherT
+  , fix
   ) where
 
 import           Control.Concurrent            (threadDelay)
@@ -24,6 +25,7 @@ import           Control.Monad.Freer.Fresh     as E
 import           Control.Monad.Freer.Reader    as E
 import           Control.Monad.Freer.State     as E
 import           Control.Monad.Trans.Either    (runEitherT)
+import           Data.Function                 (fix)
 import qualified Data.IntMap                   as IM
 import           Data.Map                      (Map)
 import qualified Data.Map                      as M
@@ -43,6 +45,38 @@ import           System.Exit                   (exitSuccess)
 import           Odin.Engine.Eff.Common        as E
 import           Odin.Engine.Eff.Coroutine     as E
 import           Odin.Engine.Physics
+--------------------------------------------------------------------------------
+-- Flow control
+--------------------------------------------------------------------------------
+-- | Function application. Applies two parameters to a function of two parameters.
+with2 :: a -> b -> (a -> b -> c) -> c
+with2 a b f = f a b
+
+-- | Function application. Applies three parameters to a function of two parameters.
+with3 :: a -> b -> c -> (a -> b -> c -> d) -> d
+with3 a b c f = f a b c
+
+
+-- | Function application. Applies four parameters to a function of two
+-- parameters.
+with4 :: a -> b -> c -> d -> (a -> b -> c -> d -> e) -> e
+with4 a b c d f = f a b c d
+
+-- | Function application. Applies five parameters to a function of two
+-- parameters.
+with5 :: a -> b -> c -> d -> e -> (a -> b -> c -> d -> e -> f) -> f
+with5 a b c d e f = f a b c d e
+
+-- | Function application. Applies six parameters to a function of two
+-- parameters.
+with6 :: a -> b -> c -> d -> e -> f -> (a -> b -> c -> d -> e -> f -> g) -> g
+with6 a b c d e f g = g a b c d e f
+
+-- | Convert a predicate to a partial function.
+partial :: (a -> Bool) -> a -> Maybe a
+partial f a = if f a then Just a else Nothing
+
+
 --------------------------------------------------------------------------------
 -- Rendering pictures
 --------------------------------------------------------------------------------

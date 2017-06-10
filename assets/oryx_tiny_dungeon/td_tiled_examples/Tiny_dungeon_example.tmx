@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.0" orientation="orthogonal" renderorder="right-down" width="32" height="32" tilewidth="16" tileheight="16" nextobjectid="1">
+<map version="1.0" orientation="orthogonal" renderorder="right-down" width="32" height="32" tilewidth="16" tileheight="16" nextobjectid="11">
  <tileset firstgid="1" name="tiny_dungeon_world" tilewidth="16" tileheight="16" tilecount="304" columns="16">
   <image source="../tiny_dungeon_world.png" width="256" height="304"/>
   <tile id="0">
@@ -133,6 +133,12 @@
  </tileset>
  <tileset firstgid="305" name="tiny_dungeon_monsters" tilewidth="16" tileheight="16" tilecount="512" columns="16">
   <image source="../tiny_dungeon_monsters.png" width="256" height="512"/>
+  <tile id="0">
+   <animation>
+    <frame tileid="0" duration="500"/>
+    <frame tileid="16" duration="500"/>
+   </animation>
+  </tile>
   <tile id="1">
    <objectgroup draworder="index">
     <object id="1" name="CollisionEnvironment" x="3" y="13" width="9" height="3"/>
@@ -141,6 +147,18 @@
    <animation>
     <frame tileid="1" duration="500"/>
     <frame tileid="17" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="2">
+   <animation>
+    <frame tileid="2" duration="500"/>
+    <frame tileid="18" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="3">
+   <animation>
+    <frame tileid="3" duration="500"/>
+    <frame tileid="19" duration="500"/>
    </animation>
   </tile>
   <tile id="4">
@@ -177,6 +195,24 @@
    <animation>
     <frame tileid="96" duration="500"/>
     <frame tileid="112" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="97">
+   <animation>
+    <frame tileid="97" duration="500"/>
+    <frame tileid="113" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="98">
+   <animation>
+    <frame tileid="98" duration="500"/>
+    <frame tileid="114" duration="500"/>
+   </animation>
+  </tile>
+  <tile id="99">
+   <animation>
+    <frame tileid="99" duration="500"/>
+    <frame tileid="115" duration="500"/>
    </animation>
   </tile>
   <tile id="132">
@@ -266,6 +302,18 @@
    <animation>
     <frame tileid="27" duration="250"/>
     <frame tileid="28" duration="250"/>
+   </animation>
+  </tile>
+  <tile id="64">
+   <animation>
+    <frame tileid="64" duration="50"/>
+    <frame tileid="65" duration="50"/>
+    <frame tileid="66" duration="50"/>
+    <frame tileid="67" duration="50"/>
+    <frame tileid="68" duration="50"/>
+    <frame tileid="69" duration="50"/>
+    <frame tileid="70" duration="50"/>
+    <frame tileid="71" duration="50"/>
    </animation>
   </tile>
   <tile id="118">
@@ -467,6 +515,24 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
+ <objectgroup name="Warrior" visible="0">
+  <properties>
+   <property name="ToonLayer" value=""/>
+  </properties>
+  <object id="1" name="East" gid="305" x="81.3333" y="80.3333" width="16" height="16"/>
+  <object id="3" name="South" gid="306" x="82" y="88.6667" width="16" height="16"/>
+  <object id="4" name="North" gid="307" x="74.3333" y="81.3333" width="16" height="16"/>
+  <object id="6" name="West" gid="308" x="63.6667" y="89.6667" width="16" height="16"/>
+ </objectgroup>
+ <objectgroup name="Goblin">
+  <properties>
+   <property name="ToonLayer" value=""/>
+  </properties>
+  <object id="7" name="East" gid="401" x="70.6667" y="82.3333" width="16" height="16"/>
+  <object id="8" name="South" gid="402" x="73.3333" y="92.6667" width="16" height="16"/>
+  <object id="9" name="North" gid="403" x="57.3333" y="89.6667" width="16" height="16"/>
+  <object id="10" name="West" gid="404" x="81.6667" y="91.3333" width="16" height="16"/>
+ </objectgroup>
  <layer name="Characters" width="32" height="32" offsetx="0" offsety="-3">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
