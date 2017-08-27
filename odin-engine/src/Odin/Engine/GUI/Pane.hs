@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -13,6 +14,7 @@ module Odin.Engine.GUI.Pane
   ) where
 
 import           Control.Monad           (when)
+import           Control.Monad.IO.Class  (MonadIO (..))
 import           Gelatin.SDL2
 import           Odin.Engine
 import           Odin.Engine.GUI.Layer
@@ -98,29 +100,28 @@ clampContentOffset layerSize paneContentSize (V2 x y) = newoffset
         newoffset = V2 (max 0 $ min mxx x) (max 0 $ min mxy y)
 
 slotPane
-  :: ( ReadsRenderers r
-     , AltersUI r
-     , Member Allocates r
-     , Member IO r
-     , Member Fresh r
+  :: ( ReadsRenderers m
+     , Mutates '[Ui, Fresh] m
+     , MonadSafe m
+     , MonadIO m
      )
   => V2 Int
   -> V2 Int
   -> V4 Float
-  -> Eff r (Slot Pane)
+  -> m (Slot Pane)
 slotPane wsz csz color = do
   let V2 sw sh = paneScrollSize wsz csz
   (_, hscrl) <- slotColorPicture $ paneHorizontalScrollPic sw
-  (_,vscrl) <- slotColorPicture $ paneVerticalScrollPic sh
-  layer     <- slotLayer wsz color
-  k         <- fresh
+  (_,vscrl)  <- slotColorPicture $ paneVerticalScrollPic sh
+  layer      <- slotLayer wsz color
+  Fresh k    <- fresh
   slot (Pane 0 csz hscrl vscrl layer PaneStatePassive k) $ const $ return ()
 
 resizePane
-  :: (ReadsRenderers r, AltersUI r, Member Allocates r, Member IO r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadSafe m, MonadIO m)
   => Slot Pane
   -> V2 Int
-  -> Eff r ()
+  -> m ()
 resizePane s size = do
   Pane{..} <- unslot s
   reslotLayer paneLayer size
@@ -129,10 +130,10 @@ resizePane s size = do
   reslotColorPicture paneVerticalScroll   $ paneVerticalScrollPic sh
 
 resizePaneContent
-  :: (ReadsRenderers r, AltersUI r, Member Allocates r, Member IO r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadSafe m, MonadIO m)
   => Slot Pane
   -> V2 Int
-  -> Eff r ()
+  -> m ()
 resizePaneContent s size = do
   modifySlot s $ \p -> p{ paneContentSize = size }
   Pane{..}  <- unslot s
@@ -140,10 +141,10 @@ resizePaneContent s size = do
   resizePane s layerSize
 
 offsetPane
-  :: (ReadsRenderers r, AltersUI r, Member IO r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadIO m)
   => Slot Pane
   -> V2 Int
-  -> Eff r ()
+  -> m ()
 offsetPane s offset0 = do
   p@Pane{..} <- unslot s
   Layer{..}  <- unslot paneLayer
@@ -152,11 +153,11 @@ offsetPane s offset0 = do
 
 -- | Renders the pane giving the subrendering the content offset.
 renderPane
-  :: (ReadsRenderers r, AltersUI r, Member IO r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadIO m)
   => Slot Pane
   -> [RenderTransform2]
-  -> (V2 Int -> Eff r a)
-  -> Eff r a
+  -> (V2 Int -> m a)
+  -> m a
 renderPane s rs f = do
   p@Pane{..} <- unslot s
   Layer{..}  <- unslot paneLayer
@@ -180,9 +181,6 @@ renderPane s rs f = do
       -- determine the local ui state to use for the layer
       uiblocked = paneState == PaneStateScrolling || mouseIsOverScroll
                                                   || not mouseIsOver
-      localState = do
-        modify $ \ui -> ui{ uiMousePos = floor <$> mposf }
-        when uiblocked setUIBlocked
       -- a function to render the scrollbars
       renderScrollBars x y = do
         renderPicture paneHorizontalScroll $ move x 0:rs
@@ -191,13 +189,8 @@ renderPane s rs f = do
   -- account for the pane's affine transformation, as well as
   -- attempting to cancel UI activity if the mouse is outside of the visible
   -- pane area.
-  (childUI, a) <- uiLocal (run . (snd <$>) . runState localState) $
+  a <- withLocalUi uiblocked (\ui -> ui{uiMousePos = floor <$> mposf}) $
     renderLayer paneLayer rs $ f $ (-1) * paneContentOffset
-  -- update the outer ui with the possibly active id
-  when (uiActiveId childUI /= UiItemBlocked) $
-    modify $ \ui -> ui{ uiActiveId     = uiActiveId childUI
-                      , uiSystemCursor = uiSystemCursor childUI
-                      }
 
   case paneState of
     PaneStateScrolling -> do

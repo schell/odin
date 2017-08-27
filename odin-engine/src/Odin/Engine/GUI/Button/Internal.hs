@@ -3,9 +3,11 @@
 {-# LANGUAGE RecordWildCards #-}
 module Odin.Engine.GUI.Button.Internal where
 
+import Control.Monad.IO.Class (MonadIO(..))
 import Gelatin.SDL2
 import SDL hiding (freeCursor)
 import SDL.Raw.Enum
+
 import Odin.Engine
 import Odin.Engine.Slots
 --------------------------------------------------------------------------------
@@ -34,7 +36,7 @@ data Button = Button
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-getMouseIsOverBox :: AltersUI r => M44 Float -> V2 Float -> Eff r Bool
+getMouseIsOverBox :: Mutate Ui m => M44 Float -> V2 Float -> m Bool
 getMouseIsOverBox mv sz = do
   vi <- getMousePosition
   let vf = fromIntegral <$> vi
@@ -44,9 +46,10 @@ getMouseIsOverBox mv sz = do
 -- Button Life Cycle
 --------------------------------------------------------------------------------
 setupButton
-  :: Painter (ButtonData, ButtonState) r
+  :: Monad m
+  => Painter (ButtonData, ButtonState) m
   -> String
-  -> Eff r (ButtonRndrs, V2 Float)
+  -> m (ButtonRndrs, V2 Float)
 setupButton painter str = do
   let dat = ButtonData str
   Painting bounds up   <- unPainter painter (dat, ButtonStateUp)
@@ -56,10 +59,10 @@ setupButton painter str = do
 
 -- | Slots a new button.
 slotButton
-  :: (Member IO r, Member Allocates r, ReadsRenderers r)
-  => Painter (ButtonData, ButtonState) r
+  :: (MonadSafe m, ReadsRenderers m)
+  => Painter (ButtonData, ButtonState) m
   -> String
-  -> Eff r (Slot Button)
+  -> m (Slot Button)
 slotButton painter str = do
   -- Alloc all our renderers up front
   (rs, size) <- setupButton painter str
@@ -67,13 +70,13 @@ slotButton painter str = do
 
 -- | Reslots a button, allowing you to change its appearance.
 reslotButton
-  :: (Member IO r, ReadsRenderers r)
+  :: (MonadIO m, ReadsRenderers m)
   => Slot Button
-  -> Painter (ButtonData, ButtonState) r -> String
-  -> Eff r ()
+  -> Painter (ButtonData, ButtonState) m -> String
+  -> m ()
 reslotButton s painter str = do
   -- Manually free the current allocated button
-  unslot s >>= io . freeButton
+  unslot s >>= liftIO . freeButton
   -- Allocate new stuff which will be free'd automatically
   (rs, size) <- setupButton painter str
   modifySlot s $ \b -> b{btnRndrs=rs
@@ -88,14 +91,14 @@ freeButton Button{..} = do
 
 -- | Renders a slotted button.
 renderButton
-  :: (Member IO r, AltersUI r)
-  => Slot Button -> [RenderTransform2] -> Eff r ButtonState
+  :: ( Mutate Ui m)
+  => Slot Button -> [RenderTransform2] -> m ButtonState
 renderButton s rs = do
   btn@Button{..} <- unslot s
   let mv            = affine2sModelview $ extractSpatial rs
-      renderBtnUp   = io $ snd (btnRndrsUp btnRndrs) rs
-      renderBtnOver = io $ snd (btnRndrsOver btnRndrs) rs
-      renderBtnDown = io $ snd (btnRndrsDown btnRndrs) rs
+      renderBtnUp   = liftIO $ snd (btnRndrsUp btnRndrs) rs
+      renderBtnOver = liftIO $ snd (btnRndrsOver btnRndrs) rs
+      renderBtnDown = liftIO $ snd (btnRndrsDown btnRndrs) rs
       updateBtn st  = do
         reslot s btn{btnState = st}
         return st
@@ -138,5 +141,5 @@ renderButton s rs = do
 -- Button properties
 --------------------------------------------------------------------------------
 -- | Retrieves the size of the slotted button.
-sizeOfButton :: Member IO r => Slot Button -> Eff r (V2 Float)
+sizeOfButton :: MonadIO m => Slot Button -> m (V2 Float)
 sizeOfButton = flip fromSlot btnSize

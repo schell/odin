@@ -7,6 +7,7 @@ module Odin.Engine.GUI.Layer
   , renderLayer
   ) where
 
+import Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad           (unless)
 import           Foreign.Marshal         hiding (void)
 import           Gelatin.SDL2            hiding (move, rotate, scale)
@@ -57,13 +58,13 @@ layerPic size tex = do
 -- | Slots an offscreen buffer of `size`. This is like creating an
 -- entirely new window within the current context.
 slotLayer
-  :: (Member IO r, ReadsRenderers r, AltersUI r, Member Allocates r)
+  :: (MonadIO m, ReadsRenderers m, Mutate Ui m, MonadSafe m)
   => V2 Int
   -> V4 Float
-  -> Eff r (Slot Layer)
+  -> m (Slot Layer)
 slotLayer size color = do
   -- alloc our framebuffer and texture to fit the given size
-  (fb, tex) <- io $ allocLayerFBTex size
+  (fb, tex) <- liftIO $ allocLayerFBTex size
   -- slot our quad-painting picture
   (_, img)  <- slotTexturePicture $ layerPic size tex
   slot (Layer fb tex size color img) freeLayer
@@ -76,17 +77,17 @@ freeLayer Layer{..} = do
 
 -- | Reslots a layer.
 reslotLayer
-  :: (Member IO r, ReadsRenderers r, AltersUI r)
+  :: (MonadIO m, ReadsRenderers m, Mutate Ui m)
   => Slot Layer
   -> V2 Int
-  -> Eff r ()
+  -> m ()
 reslotLayer s size = do
   l@Layer{..} <- unslot s
 
-  io $ do
+  liftIO $ do
     with layerTexture $ glDeleteTextures 1
     with layerFramebuffer  $ glDeleteFramebuffers 1
-  (fb,tex) <- io $ allocLayerFBTex size
+  (fb,tex) <- liftIO $ allocLayerFBTex size
 
   reslotTexturePicture layerPicture $ layerPic size tex
   reslot s l{layerTexture=tex
@@ -97,16 +98,16 @@ reslotLayer s size = do
 -- | Render something into the offscreen frame and then display that frame at
 -- the given transform.
 renderLayer
-  :: (Member IO r, ReadsRenderers r, AltersUI r)
+  :: (MonadIO m, ReadsRenderers m, Mutate Ui m)
   => Slot Layer
   -> [RenderTransform2]
-  -> Eff r a
-  -> Eff r a
+  -> m a
+  -> m a
 renderLayer s rs f = do
   Layer{..} <- unslot s
   let V4 r g b a = layerBackgroundColor
   -- target the layerrender's framebuffer so all rendering goes there
-  io $ do
+  liftIO $ do
     glBindFramebuffer GL_FRAMEBUFFER layerFramebuffer
     glClearColor r g b a
     glClear GL_COLOR_BUFFER_BIT
@@ -116,11 +117,11 @@ renderLayer s rs f = do
   let V2 _ wh  = fromIntegral <$> layerSize
       V2 fw fh = floor <$> fbsz
 
-  io $ glViewport 0 (floor $ -fhf + 2 * wh) fw fh
+  liftIO $ glViewport 0 (floor $ -fhf + 2 * wh) fw fh
   -- do the layer rendering
   x <- f
   -- fix the viewport for later renderings
-  io $ do
+  liftIO $ do
     glViewport 0 0 fw fh
     -- target the default framebuffer
     glBindFramebuffer GL_FRAMEBUFFER 0

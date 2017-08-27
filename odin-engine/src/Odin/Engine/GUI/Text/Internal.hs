@@ -1,13 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE RecordWildCards  #-}
 module Odin.Engine.GUI.Text.Internal where
 
-import Gelatin.FreeType2
-import Gelatin.SDL2
+import           Control.Monad.IO.Class (MonadIO (..))
+import           Gelatin.FreeType2
+import           Gelatin.SDL2
 --------------------------------------------------------------------------------
-import Odin.Engine
-import Odin.Engine.Slots
+import           Odin.Engine
+import           Odin.Engine.Slots
 --------------------------------------------------------------------------------
 -- Grapical Text
 --------------------------------------------------------------------------------
@@ -16,35 +17,35 @@ data Text = Text { txtSize :: V2 Float
                  }
 
 compileText
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r, Member IO r)
+  :: (MonadIO m, ReadsRenderers m, Mutate FontMap m, MonadIO m)
   => FontDescriptor
   -> V4 Float
   -> String
-  -> Eff r Text
+  -> m Text
 compileText desc color str = loadAtlas desc asciiChars >>= \case
   Nothing -> do
-    io $ putStrLn "ERROR ALLOCING TEXT!"
+    liftIO $ putStrLn "ERROR ALLOCING TEXT!"
     return $ Text 0 mempty
   Just atlas0 -> do
     b  <- v2v2Backend
-    (r, sz, atlas) <- io $ freetypeRenderer2 b atlas0 color str
+    (r, sz, atlas) <- liftIO $ freetypeRenderer2 b atlas0 color str
     saveAtlas atlas
     return $ Text sz r
 
 -- | Slots a graphical text renderer.
 slotText
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r, Member Allocates r)
+  :: (MonadIO m, ReadsRenderers m, Mutate FontMap m, MonadSafe m)
   => FontDescriptor
   -> V4 Float
   -> String
-  -> Eff r (Slot Text)
+  -> m (Slot Text)
 slotText desc color str = compileText desc color str >>= (`slot` freeText)
 
 -- | Reslots a graphical text renderer, allowing you to change the text, font
 -- or color.
 reslotText
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r)
-  => Slot Text -> FontDescriptor -> V4 Float -> String -> Eff r ()
+  :: (MonadIO m, ReadsRenderers m, Mutate FontMap m)
+  => Slot Text -> FontDescriptor -> V4 Float -> String -> m ()
 reslotText s desc color str = compileText desc color str >>= reslot s
 
 freeText :: Text -> IO ()
@@ -52,11 +53,11 @@ freeText = fst . txtRndr
 
 -- | Renders a slotted text renderer.
 renderText
-  :: Member IO r => Slot Text -> [RenderTransform2] -> Eff r ()
+  :: MonadIO m => Slot Text -> [RenderTransform2] -> m ()
 renderText s rs = do
   Text{..} <- unslot s
-  io $ snd txtRndr rs
+  liftIO $ snd txtRndr rs
 
 --- | Retrieves the size of the slotted text.
-sizeOfText :: Member IO r => Slot Text -> Eff r (V2 Float)
+sizeOfText :: MonadIO m => Slot Text -> m (V2 Float)
 sizeOfText = flip fromSlot txtSize

@@ -9,16 +9,14 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeOperators         #-}
 module Odin.Engine.Slots
-  ( Allocates
-  , Allocated(..)
-  , alloc
+  ( MonadSafe (..)
   , autoRelease
   , Slot
   , slot
   , slotVar
   , unslot
+  , releaseSlot
   , reslot
-  , ($=)
   , is
   , fromSlot
   , modifySlot
@@ -27,65 +25,60 @@ module Odin.Engine.Slots
   ) where
 
 import           Control.Concurrent.STM
-import           Control.Monad             (void)
-import           Control.Monad.Freer.State
+import           Control.Monad          (void)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Trans    (lift)
+import           Pipes.Safe             (MonadMask, MonadSafe (..), ReleaseKey,
+                                         runSafeT)
 --------------------------------------------------------------------------------
-import           Odin.Engine.Eff.Common
+-- Auto releasing resources
 --------------------------------------------------------------------------------
--- Auto releasing IO resources
---------------------------------------------------------------------------------
-type Allocates = State Allocated
-
--- | TODO: Call this something else, we're not really alloc'ing, we're registering
--- something to free.
-alloc :: Member Allocates r => IO () -> Eff r ()
-alloc f = do
-  Allocated here there <- get
-  put $ Allocated (f:here) there
-
-autoRelease :: (Member Allocates r, Member IO r) => Eff r a -> Eff r a
-autoRelease eff = do
-  pushHereToThere
-  a <- eff
-  popThereToHere
-  return a
+-- | Run a computation that registers finalizers for alloc'd resources, running
+-- all unreleased finalizers before returning.
+autoRelease :: (MonadIO m, MonadMask m) => m a -> m a
+autoRelease = runSafeT . lift
 --------------------------------------------------------------------------------
 -- Storing / Retreiving mutable data
 --------------------------------------------------------------------------------
-newtype Slot a = Slot { unSlot :: TVar a }
+data Slot a = Slot { unSlotVar :: TVar a
+                   , unSlotKey :: Maybe ReleaseKey
+                   }
 
-slot :: (Member Allocates r, Member IO r) => a -> (a -> IO ()) -> Eff r (Slot a)
+-- | Safely slot a mutable resource and register a a finalizer for the resource.
+slot :: (MonadIO m, MonadSafe m) => a -> (a -> IO ()) -> m (Slot a)
 slot a free = do
-  var <- io $ newTVarIO a
-  alloc $ readTVarIO var >>= free
-  return $ Slot var
+  var <- liftIO $ newTVarIO a
+  key <- register $ liftIO $ readTVarIO var >>= free
+  return $ Slot var $ Just key
 
-slotNoFree :: Member IO r => a -> Eff r (Slot a)
-slotNoFree = (Slot <$>) . io . newTVarIO
+slotNoFree :: MonadIO m => a -> m (Slot a)
+slotNoFree a = do
+  var <- liftIO $ newTVarIO a
+  return $ Slot var Nothing
 
-slotVar :: Member IO r => a -> Eff r (Slot a)
+slotVar :: MonadIO m => a -> m (Slot a)
 slotVar = slotNoFree
 
-unslot :: Member IO r => Slot a -> Eff r a
-unslot = io . readTVarIO . unSlot
+unslot :: MonadIO m => Slot a -> m a
+unslot = liftIO . readTVarIO . unSlotVar
 
-reslot :: Member IO r => Slot a -> a -> Eff r ()
-reslot = ((void . io . atomically) .) . swapTVar . unSlot
+releaseSlot :: (MonadIO m, MonadSafe m) => Slot a -> m ()
+releaseSlot = maybe (return ()) release . unSlotKey
 
-($=) :: Member IO r => Slot a -> a -> Eff r ()
-($=) = reslot
+reslot :: MonadIO m => Slot a -> a -> m ()
+reslot = ((void . liftIO . atomically) .) . swapTVar . unSlotVar
 
-is :: Member IO r => Slot a -> a -> Eff r ()
+is :: MonadIO m => Slot a -> a -> m ()
 is = reslot
 
-fromSlot :: Member IO r => Slot a -> (a -> b) -> Eff r b
-fromSlot s f = (f <$>) $ io $ readTVarIO $ unSlot s
+fromSlot :: MonadIO m => Slot a -> (a -> b) -> m b
+fromSlot s f = (f <$>) $ liftIO $ readTVarIO $ unSlotVar s
 
-fromSlotM :: Member IO r => Slot a -> (a -> Eff r b) -> Eff r b
+fromSlotM :: MonadIO m => Slot a -> (a -> m b) -> m b
 fromSlotM s f = unslot s >>= f
 
-modifySlot :: Member IO r => Slot a -> (a -> a) -> Eff r ()
-modifySlot s = io . atomically . modifyTVar' (unSlot s)
+modifySlot :: MonadIO m => Slot a -> (a -> a) -> m ()
+modifySlot s = liftIO . atomically . modifyTVar' (unSlotVar s)
 
-modifySlotM :: Member IO r => Slot a -> (a -> Eff r a) -> Eff r ()
+modifySlotM :: MonadIO m => Slot a -> (a -> m a) -> m ()
 modifySlotM s f = unslot s >>= f >>= reslot s

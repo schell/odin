@@ -1,14 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards  #-}
 module Odin.Engine.GUI.StatusBar where
 
-import Text.Printf
-import Data.Word (Word32)
-import Gelatin
+import Control.Monad.IO.Class (MonadIO(..))
+import           Data.Word                     (Word32)
+import           Gelatin
+import           Text.Printf
 
-import Odin.Engine
-import Odin.Engine.Slots
-import Odin.Engine.GUI.Text.Internal
+import           Odin.Engine
+import           Odin.Engine.GUI.Text.Internal
+import           Odin.Engine.Slots
 
 data StatusBar = StatusBar { statusText    :: Slot Text
                            , statusFont    :: FontDescriptor
@@ -18,10 +19,10 @@ data StatusBar = StatusBar { statusText    :: Slot Text
                            }
 
 renderStatusBar
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r, AltersTime r)
+  :: (MonadIO m, ReadsRenderers m, Mutate FontMap m, Mutate SystemTime m)
   => Slot StatusBar
   -> [RenderTransform2]
-  -> Eff r ()
+  -> m ()
 renderStatusBar s rs = do
   sb@StatusBar{..} <- unslot s
   dt         <- timeDelta <$> get
@@ -45,10 +46,10 @@ renderStatusBar s rs = do
                        }
 
 slotStatusBar
-  :: (Member IO r, ReadsRenderers r, AltersFontMap r, Member Allocates r)
+  :: (MonadIO m, ReadsRenderers m, Mutate FontMap m, MonadSafe m)
   => FontDescriptor
   -> V4 Float
-  -> Eff r (Slot StatusBar)
+  -> m (Slot StatusBar)
 slotStatusBar desc color = do
   txt <- slotText desc color "Status..."
   slot (StatusBar txt desc color [] 0) $ const $ return ()

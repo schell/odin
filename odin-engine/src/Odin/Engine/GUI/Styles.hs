@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -9,6 +10,7 @@ module Odin.Engine.GUI.Styles
   , slotDefaultText
   ) where
 
+import Control.Monad.IO.Class (MonadIO(..))
 import           Gelatin
 import           Gelatin.FreeType2
 import           Gelatin.GL (compilePicture)
@@ -43,21 +45,21 @@ bgOffsetForButtonState ButtonStateDown = V2 2 2
 bgOffsetForButtonState _ = bgOffsetForButtonState ButtonStateUp
 
 buttonPainter
-  :: ( Member IO r
-     , Member (Reader DefaultFont) r
-     , ReadsRenderers r
-     , AltersFontMap r
+  :: ( MonadIO m
+     , OdinReader DefaultFont m
+     , ReadsRenderers m
+     , Mutate FontMap m
      )
-  => Painter (ButtonData, ButtonState) r
+  => Painter (ButtonData, ButtonState) m
 buttonPainter = Painter $ \(ButtonData{..}, st) -> do
   DefaultFont font <- readDefaultFontDescriptor
   loadAtlas font asciiChars >>= \case
     Nothing    -> do
-      io $ putStrLn "ERROR PAINTING BUTTON!"
+      liftIO $ putStrLn "ERROR PAINTING BUTTON!"
       return mempty
     Just atlas0 -> do
       v2v2 <- v2v2Backend
-      ((textc,textr), V2 tw th, atlas) <- io $
+      ((textc,textr), V2 tw th, atlas) <- liftIO $
         freetypeRenderer2 v2v2 atlas0 (textColorForButtonState st) btnDataStr
       saveAtlas atlas
 
@@ -70,7 +72,7 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
 
       -- drop shadow and background
       v2v4 <- v2v4Backend
-      (_,(bgc,bgr)) <- io $ compilePicture v2v4 $ setGeometry $ do
+      (_,(bgc,bgr)) <- liftIO $ compilePicture v2v4 $ setGeometry $ do
         fan $ mapVertices (,V4 0 0 0 0.4) $
           rectangle shxy (shxy + sz)
         fan $ mapVertices (,bgColorForButtonState st) $
@@ -82,19 +84,22 @@ buttonPainter = Painter $ \(ButtonData{..}, st) -> do
       return $ Painting bb (bgc >> textc, r)
 
 iconButtonPainter
-  :: (Member IO r, Member (Reader IconFont) r, ReadsRenderers r, AltersFontMap r)
-  => Painter (ButtonData, ButtonState) r
+  :: ( MonadIO m
+     , Reads '[IconFont, V2V2Renderer, V2V4Renderer] m
+     , Mutate FontMap m
+     )
+  => Painter (ButtonData, ButtonState) m
 iconButtonPainter = Painter $ \(ButtonData{..}, st) -> do
   IconFont font <- readIconFontDescriptor
   loadAtlas font allFontAwesomeChars >>= \case
     Nothing    -> do
-      io $ putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
+      liftIO $ putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
       return mempty
     Just atlas0 -> do
       v2v2 <- v2v2Backend
-      ((textfgc,textfgr), V2 w _, atlas1) <- io $
+      ((textfgc,textfgr), V2 w _, atlas1) <- liftIO $
         freetypeRenderer2 v2v2 atlas0 (bgColorForButtonState st) btnDataStr
-      ((textbgc,textbgr), V2 _ _, atlas)  <- io $
+      ((textbgc,textbgr), V2 _ _, atlas)  <- liftIO $
         freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) btnDataStr
       saveAtlas atlas
 
@@ -122,22 +127,21 @@ lnColorForTextInputState TextInputStateDown = white
 lnColorForTextInputState _ = white `withAlpha` 0.8
 
 textInputPainter
-  :: ( Member IO r
-     , Member (Reader DefaultFont) r
-     , ReadsRenderers r
-     , AltersFontMap r
+  :: ( MonadIO m
+     , Reads '[DefaultFont, V2V4Renderer, V2V2Renderer] m
+     , Mutate FontMap m
      )
-  =>  Painter (TextInputData, TextInputState) r
+  => Painter (TextInputData, TextInputState) m
 textInputPainter = Painter $ \(TextInputData{..}, st) -> do
   DefaultFont font <- readDefaultFontDescriptor
   loadAtlas font asciiChars >>= \case
     Nothing -> do
-      io $ putStrLn "ERROR PAINTING TEXTINPUT!"
+      liftIO $ putStrLn "ERROR PAINTING TEXTINPUT!"
       return mempty
     Just atlas0 -> do
       let color = textColorForTextInputState st
       v2v2 <- v2v2Backend
-      ((textc,textr), size@(V2 tw th), atlas) <- io $
+      ((textc,textr), size@(V2 tw th), atlas) <- liftIO $
         freetypeRenderer2 v2v2 atlas0 color txtnDataStr
       saveAtlas atlas
 
@@ -148,7 +152,7 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
           lncolor   = lnColorForTextInputState st
 
       v2v4     <- v2v4Backend
-      (bb,(bgc,bgr)) <- io $ compilePicture v2v4 $ do
+      (bb,(bgc,bgr)) <- liftIO $ compilePicture v2v4 $ do
         setStroke [StrokeWidth 3, StrokeFeather 1]
         setGeometry $ do
           fan $ mapVertices (,bgcolor) $ rectangle 0 (size + V2 inc inc)
@@ -170,15 +174,15 @@ textInputPainter = Painter $ \(TextInputData{..}, st) -> do
 -- Text
 --------------------------------------------------------------------------------
 slotDefaultText
-  :: ( Member IO r
-     , Member (Reader DefaultFont) r
-     , ReadsRenderers r
-     , AltersFontMap r
-     , Member Allocates r
+  :: ( MonadIO m
+     , OdinReader DefaultFont m
+     , ReadsRenderers m
+     , Mutate FontMap m
+     , MonadSafe m
      )
   => V4 Float
   -> String
-  -> Eff r (Slot Text)
+  -> m (Slot Text)
 slotDefaultText color str = do
   DefaultFont font <- readDefaultFontDescriptor
   slotText font color str

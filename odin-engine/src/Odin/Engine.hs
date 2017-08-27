@@ -1,50 +1,56 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 module Odin.Engine
-  ( module E
-  , module Odin.Engine
+  ( module Odin.Engine
+  , module Control.Monad.Trans.NextT
   , module Gelatin.SDL2
+  , MonadIO(..)
   , MouseButton(..)
   , InputMotion(..)
   , runEitherT
   , fix
   ) where
 
-import           Control.Concurrent            (threadDelay)
+import           Control.Concurrent         (threadDelay)
 import           Control.Lens
-import           Control.Monad                 (unless)
-import           Control.Monad.Freer.Coroutine as E
-import           Control.Monad.Freer.Fresh     as E
-import           Control.Monad.Freer.Reader    as E
-import           Control.Monad.Freer.State     as E
-import           Control.Monad.Trans.Either    (runEitherT)
-import           Data.Function                 (fix)
-import qualified Data.IntMap                   as IM
-import           Data.Map                      (Map)
-import qualified Data.Map                      as M
-import qualified Data.Text                     as T
-import           Data.Word                     (Word32)
-import           Foreign.C.String              (peekCString)
-import           Gelatin.FreeType2             (Atlas (..), GlyphSize (..),
-                                                allocAtlas)
-import           Gelatin.SDL2                  hiding (trace)
-import           SDL                           hiding (Cursor, freeCursor, get,
-                                                time, trace)
-import           SDL.Raw.Enum                  hiding (Keycode, Scancode)
-import           SDL.Raw.Event                 hiding (getModState)
-import           SDL.Raw.Types                 (Cursor)
-import           System.Exit                   (exitSuccess)
+import           Control.Monad              (unless, when)
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Control.Monad.Trans.Either (runEitherT)
+import           Control.Monad.Trans.Reader (ReaderT (..))
+import qualified Control.Monad.Trans.Reader as ReaderT
+import           Data.Function              (fix)
+import qualified Data.IntMap                as IM
+import           Data.Map                   (Map)
+import qualified Data.Map                   as M
+import qualified Data.Text                  as T
+import           Data.Word                  (Word32)
+import           Foreign.C.String           (peekCString)
+import           Gelatin.FreeType2          (Atlas (..), GlyphSize (..),
+                                             allocAtlas)
+import           Gelatin.SDL2               hiding (trace)
+import           GHC.Exts                   (Constraint)
+import           SDL                        hiding (Cursor, freeCursor, get,
+                                             time, trace)
+import           SDL.Raw.Enum               hiding (Keycode, Scancode)
+import           SDL.Raw.Event              hiding (getModState)
+import           SDL.Raw.Types              (Cursor)
+import           System.Exit                (exitSuccess)
 --------------------------------------------------------------------------------
-import           Odin.Engine.Eff.Common        as E
-import           Odin.Engine.Eff.Coroutine     as E
-import           Odin.Engine.Physics
+--import           Odin.Engine.Eff.Common     as E
+--import           Odin.Engine.Eff.Coroutine  as E
+import           Control.Monad.Trans.NextT
+import           Odin.Engine.Physics        hiding (Constraint)
+import           Odin.Engine.Slots          (Slot, is, slotVar, unslot)
 --------------------------------------------------------------------------------
 -- Flow control
 --------------------------------------------------------------------------------
@@ -75,8 +81,58 @@ with6 a b c d e f g = g a b c d e f
 -- | Convert a predicate to a partial function.
 partial :: (a -> Bool) -> a -> Maybe a
 partial f a = if f a then Just a else Nothing
+--------------------------------------------------------------------------------
+-- A specialized reader transformer.
+--------------------------------------------------------------------------------
+class OdinReader r m where
+  ask    :: m r
+  local  :: (r -> r) -> m a -> m a
+  reader :: (r -> a) -> m a
 
+instance Monad m => OdinReader r (ReaderT r m) where
+  ask    = ReaderT.ask
+  local  = ReaderT.local
+  reader = ReaderT.reader
 
+instance Monad m => OdinReader (Slot SystemTime) (ReaderT ReaderData m) where
+  ask     = reader frameSlotSystemTime
+  local f = local $ \r -> r{ frameSlotSystemTime = f $ frameSlotSystemTime r}
+  reader  = reader . (. frameSlotSystemTime)
+
+instance Monad m => OdinReader (Slot Fresh) (ReaderT ReaderData m) where
+  ask     = reader frameSlotFresh
+  local f = local $ \r -> r{ frameSlotFresh = f $ frameSlotFresh r}
+  reader  = reader . (. frameSlotFresh)
+
+instance Monad m => OdinReader (Slot FontMap) (ReaderT ReaderData m) where
+  ask     = reader frameSlotFontMap
+  local f = local $ \r -> r{ frameSlotFontMap = f $ frameSlotFontMap r}
+  reader  = reader . (. frameSlotFontMap)
+
+instance Monad m => OdinReader (Slot Ui) (ReaderT ReaderData m) where
+  ask     = reader frameSlotUi
+  local f = local $ \r -> r{ frameSlotUi = f $ frameSlotUi r}
+  reader  = reader . (. frameSlotUi)
+
+instance Monad m => OdinReader V2V4Renderer (ReaderT ReaderData m) where
+  ask     = reader frameV2V4Renderer
+  local f = local $ \r -> r{ frameV2V4Renderer = f $ frameV2V4Renderer r}
+  reader  = reader . (. frameV2V4Renderer)
+
+instance Monad m => OdinReader V2V2Renderer (ReaderT ReaderData m) where
+  ask     = reader frameV2V2Renderer
+  local f = local $ \r -> r{ frameV2V2Renderer = f $ frameV2V2Renderer r}
+  reader  = reader . (. frameV2V2Renderer)
+
+instance Monad m => OdinReader DefaultFont (ReaderT ReaderData m) where
+  ask     = reader frameDefaultFont
+  local f = local $ \r -> r{ frameDefaultFont = f $ frameDefaultFont r}
+  reader  = reader . (. frameDefaultFont)
+
+instance Monad m => OdinReader IconFont (ReaderT ReaderData m) where
+  ask     = reader frameIconFont
+  local f = local $ \r -> r{ frameIconFont = f $ frameIconFont r}
+  reader  = reader . (. frameIconFont)
 --------------------------------------------------------------------------------
 -- Rendering pictures
 --------------------------------------------------------------------------------
@@ -85,9 +141,9 @@ type OdinRenderer v = Backend GLuint SDL.Event v (V2 Float) Float Raster
 newtype V2V2Renderer = V2V2Renderer { unV2V2Renderer :: OdinRenderer V2V2 }
 newtype V2V4Renderer = V2V4Renderer { unV2V4Renderer :: OdinRenderer V2V4 }
 
-type ReadsRendererV2V2 = Member (Reader V2V2Renderer)
-type ReadsRendererV2V4 = Member (Reader V2V4Renderer)
-type ReadsRenderers r = (ReadsRendererV2V2 r, ReadsRendererV2V4 r)
+type ReadsRendererV2V2 m = (OdinReader V2V2Renderer m, Monad m)
+type ReadsRendererV2V4 m = (OdinReader V2V4Renderer m, Monad m)
+type ReadsRenderers m = (ReadsRendererV2V2 m, ReadsRendererV2V4 m)
 
 data Painting = Painting { paintingBounds   :: (V2 Float, V2 Float)
                          , paintingRenderer :: Renderer2
@@ -108,51 +164,84 @@ instance Monoid Painting where
     where cbb = listToBox [fst abb, snd abb, fst bbb, snd bbb]
           c   = a `mappend` b
 
-newtype Painter a r = Painter { unPainter :: a -> Eff r Painting }
+newtype Painter a m = Painter { unPainter :: a -> m Painting }
 
-allocColorPicRenderer :: (ReadsRendererV2V4 r, Member IO r)
-                      => ColorPicture a -> Eff r (a, Renderer2)
+allocColorPicRenderer :: (ReadsRendererV2V4 m, MonadIO m)
+                      => ColorPicture a -> m (a, Renderer2)
 allocColorPicRenderer pic = do
   V2V4Renderer b <- ask
-  io $ compilePicture b pic
+  liftIO $ compilePicture b pic
 
-allocTexturePicRenderer :: (ReadsRendererV2V2 r, Member IO r)
-                        => TexturePicture a -> Eff r (a, Renderer2)
+allocTexturePicRenderer :: (ReadsRendererV2V2 m, MonadIO m)
+                        => TexturePicture a -> m (a, Renderer2)
 allocTexturePicRenderer pic = do
   V2V2Renderer b <- ask
-  io $ compilePicture b pic
+  liftIO $ compilePicture b pic
 
-backOpsV2V2 :: ReadsRendererV2V2 r => Eff r (BackendOps GLuint Event)
+backOpsV2V2 :: ReadsRendererV2V2 m => m (BackendOps GLuint Event)
 backOpsV2V2 = do
   V2V2Renderer b <- ask
   return $ backendOps b
 
-backOpsV2V4 :: ReadsRendererV2V4 r => Eff r (BackendOps GLuint Event)
+backOpsV2V4 :: ReadsRendererV2V4 m => m (BackendOps GLuint Event)
 backOpsV2V4 = do
   V2V4Renderer b <- ask
   return $ backendOps b
 
-v2v4Backend :: ReadsRendererV2V4 r => Eff r (OdinRenderer V2V4)
+v2v4Backend :: ReadsRendererV2V4 m => m (OdinRenderer V2V4)
 v2v4Backend = unV2V4Renderer <$> ask
 
-v2v2Backend :: ReadsRendererV2V2 r => Eff r (OdinRenderer V2V2)
+v2v2Backend :: ReadsRendererV2V2 m => m (OdinRenderer V2V2)
 v2v2Backend = unV2V2Renderer <$> ask
 
-getWindowSize :: (Member IO r, ReadsRendererV2V2 r) => Eff r (V2 Float)
+getWindowSize :: (MonadIO m, ReadsRendererV2V2 m) => m (V2 Float)
 getWindowSize = do
   ops <- backOpsV2V2
-  fmap fromIntegral <$> io (backendOpGetWindowSize ops)
+  fmap fromIntegral <$> liftIO (backendOpGetWindowSize ops)
 
-getFramebufferSize :: (Member IO r, ReadsRendererV2V2 r) => Eff r (V2 Float)
+getFramebufferSize :: (MonadIO m, ReadsRendererV2V2 m) => m (V2 Float)
 getFramebufferSize = do
   ops <- backOpsV2V2
-  fmap fromIntegral <$> io (backendOpGetFramebufferSize ops)
+  fmap fromIntegral <$> liftIO (backendOpGetFramebufferSize ops)
 
-getResolutionScale :: (Member IO r, ReadsRendererV2V2 r) => Eff r (V2 Float)
+getResolutionScale :: (MonadIO m, ReadsRendererV2V2 m) => m (V2 Float)
 getResolutionScale = do
   wsz  <- getWindowSize
   fbsz <- getFramebufferSize
   return $ fbsz/wsz
+--------------------------------------------------------------------------------
+-- The ReaderT design pattern for mutation.
+-- I liked this enough that I'm trying it out:
+-- https://www.fpcomplete.com/blog/2017/06/readert-design-pattern
+--------------------------------------------------------------------------------
+type Mutate a m = (OdinReader (Slot a) m, MonadIO m)
+
+type family Mutates m r :: Constraint where
+            Mutates (t ': c) r = (Mutate t r, Mutates c r)
+            Mutates '[] r = ()
+
+type family Reads m r :: Constraint where
+            Reads (t ': c) r = (OdinReader t r, Reads c r)
+            Reads '[] r = ()
+
+get :: Mutate a m => m a
+get = ask >>= unslot
+
+put :: Mutate a m => a -> m ()
+put a = ask >>= (`is` a)
+
+modify :: Mutate a m => (a -> a) -> m ()
+modify f = get >>= put . f
+--------------------------------------------------------------------------------
+-- Freshness
+--------------------------------------------------------------------------------
+newtype Fresh = Fresh { unFresh :: Int } deriving (Show, Eq, Ord, Num, Enum)
+
+fresh :: Mutate Fresh m => m Fresh
+fresh = do
+  k <- get
+  put $ succ k
+  return k
 --------------------------------------------------------------------------------
 -- User Interface
 --------------------------------------------------------------------------------
@@ -189,10 +278,8 @@ emptyUi = Ui { uiActiveId     = UiItemNone
              , uiSavedCursor   = Nothing
              }
 
-type AltersUI = Member (State Ui)
-
 queryKeycodeEvent
-  :: Member (State Ui) r
+  :: Mutate Ui m
   => Keycode
   -- ^ The key code to query for
   -> InputMotion
@@ -200,13 +287,13 @@ queryKeycodeEvent
   -> Bool
   -- ^ True if querying for a repeating key press from the user
   -- holding the key down.
-  -> Eff r Bool
+  -> m Bool
 queryKeycodeEvent k im rep = do
   q <- uiQueryKey <$> get
   return $ q k im rep
 
 queryScancodeEvent
-  :: Member (State Ui) r
+  :: Mutate Ui m
   => Scancode
   -- ^ The key code to query for.
   -> InputMotion
@@ -214,13 +301,13 @@ queryScancodeEvent
   -> Bool
   -- ^ True if querying for a repeating key press from the user
   -- holding the key down.
-  -> Eff r Bool
+  -> m Bool
 queryScancodeEvent k im rep = do
   q <- uiQueryScan <$> get
   return $ q k im rep
 
 queryMouseButtonEvent
-  :: Member (State Ui) r
+  :: Mutate Ui m
   => MouseButton
   -- ^ The mobutton to query for. <$> get
   -> InputMotion
@@ -228,63 +315,73 @@ queryMouseButtonEvent
   -> Int
   -- ^ The amount of clicks. 1 for a single-click, 2 for a
   -- double-click, etc.
-  -> Eff r Bool
+  -> m Bool
 queryMouseButtonEvent k im clk = do
   q <- uiQueryMouseBtn <$> get
   return $ q k im clk
 
-queryMouseButton :: Member (State Ui) r => MouseButton -> Eff r Bool
+queryMouseButton :: Mutate Ui m => MouseButton -> m Bool
 queryMouseButton k = do
   f <- uiMouseBtn <$> get
   return $ f k
 
-uiLocal :: Member (State Ui) r => (Ui -> Ui) -> Eff r a -> Eff r (Ui, a)
-uiLocal f m = do
-  ui0 <- get
-  put $ f ui0
-  a   <- m
-  ui1 <- get
-  put ui0
-  return (ui1, a)
+-- | Run some computation with a modified implicit Ui. Restore the previous Ui
+-- while updating some key fields, maintaining any new active ids and system
+-- cursor.
+withLocalUi :: Mutate Ui m => Bool -> (Ui -> Ui) -> m a -> m a
+withLocalUi blocked f g = do
+  ui <- get
+  put $ f ui
+  when blocked setUIBlocked
+  a       <- g
+  childUI <- get
+  -- restore the outer ui with the possibly active id
+  put $
+    if uiActiveId childUI /= UiItemBlocked
+    then ui{ uiActiveId     = uiActiveId childUI
+           , uiSystemCursor = uiSystemCursor childUI
+           }
+    else ui
+  return a
 
-getCanBeActive :: Member (State Ui) r => Eff r Bool
+getCanBeActive :: Mutate Ui m => m Bool
 getCanBeActive = f . uiActiveId <$> get
   where f UiItemBlocked  = False
         f (UiItemJust _) = False
         f _              = True
 
-setUIActiveId :: Member (State Ui) r => UiItem -> Eff r ()
+setUIActiveId :: Mutate Ui m => UiItem -> m ()
 setUIActiveId item = do
   ui <- get
   put ui{ uiActiveId = item }
 
-setUIActive :: Member (State Ui) r => Int -> Eff r ()
+setUIActive :: Mutate Ui m => Int -> m ()
 setUIActive = setUIActiveId . UiItemJust
 
-setUIBlocked :: Member (State Ui) r => Eff r ()
+setUIBlocked :: Mutate Ui m => m ()
 setUIBlocked = setUIActiveId UiItemBlocked
 
-setSystemCursor :: Member (State Ui) r => Word32 -> Eff r ()
+setSystemCursor :: Mutate Ui m => Word32 -> m ()
 setSystemCursor n = do
   ui <- get
   put ui{ uiSystemCursor = n }
 
-getMousePosition :: Member (State Ui) r => Eff r (V2 Int)
+getMousePosition :: Mutate Ui m => m (V2 Int)
 getMousePosition = uiMousePos <$> get
 
 -- | Poll for new events from the backend, then fold them up into a Ui state
-tickUIPrepare :: (Member (State Ui) r, ReadsRendererV2V2 r, Member IO r) => Eff r ()
+tickUIPrepare :: (Mutate Ui m, ReadsRendererV2V4 m, MonadIO m) => m ()
 tickUIPrepare = do
-  ops    <- backOpsV2V2
-  evs    <- map eventPayload <$> io (backendOpGetEvents ops)
+  ops    <- backOpsV2V4
+  evs    <- map eventPayload <$> liftIO (backendOpGetEvents ops)
   lastUi <- get
   if any isQuitKeyEvent evs
-    then io exitSuccess
+    then liftIO exitSuccess
     else do
-      modstate   <- io getModState
-      P mousepos <- io getAbsoluteMouseLocation
-      P mouserel <- io getRelativeMouseLocation
-      mousebtnf  <- io getMouseButtons
+      modstate   <- liftIO getModState
+      P mousepos <- liftIO getAbsoluteMouseLocation
+      P mouserel <- liftIO getRelativeMouseLocation
+      mousebtnf  <- liftIO getMouseButtons
       let keycodes :: Map Keycode (InputMotion, Bool)
           keycodes  = M.fromList $ concatMap keycode evs
           scancodes :: Map Scancode (InputMotion, Bool)
@@ -293,7 +390,7 @@ tickUIPrepare = do
           mousebtns = M.fromList $ concatMap mousebtn evs
           textevs  = concatMap textev evs
           drpfiles = concatMap drpfile evs
-      files <- mapM (io . peekCString) drpfiles
+      files <- mapM (liftIO . peekCString) drpfiles
       put lastUi { uiActiveId      = UiItemNone
                  , uiMousePos      = fromIntegral <$> mousepos
                  , uiMousePosRel   = fromIntegral <$> mouserel
@@ -332,14 +429,14 @@ tickUIPrepare = do
           Just (im0, clk0) -> im == im0 && clk == clk0
 
 -- | Finishes up some book keeping about the Ui state.
-tickUIFinish :: (Member (State Ui) r, Member IO r) => Eff r ()
+tickUIFinish :: (Mutate Ui m, MonadIO m) => m ()
 tickUIFinish = do
   -- Update the cursor
   ui :: Ui <- get
   let msaved = uiSavedCursor ui
       cursor = uiSystemCursor ui
   let mkNewCursor new = do
-        newcursor <- io $ do
+        newcursor <- liftIO $ do
           newcursor <- createSystemCursor new
           setCursor newcursor
           return newcursor
@@ -348,7 +445,7 @@ tickUIFinish = do
     Nothing             -> unless (cursor == SDL_SYSTEM_CURSOR_ARROW) $
       mkNewCursor cursor
     Just (oldname, old) -> unless (cursor == oldname) $ do
-      io $ freeCursor old
+      liftIO $ freeCursor old
       mkNewCursor cursor
 --------------------------------------------------------------------------------
 -- Time
@@ -364,34 +461,32 @@ data SystemTime = SystemTime
   -- physics tick
   } deriving (Show, Eq)
 
-type AltersTime = Member (State SystemTime)
-
-readTimeDeltaMillis :: (Member (State SystemTime) r, Num i) => Eff r i
+readTimeDeltaMillis :: (Mutate SystemTime m, Num i) => m i
 readTimeDeltaMillis = fromIntegral . timeDelta <$> get
 
-readTimeDeltaSeconds :: (Member (State SystemTime) r, Fractional f) => Eff r f
+readTimeDeltaSeconds :: (Mutate SystemTime m, Fractional f) => m f
 readTimeDeltaSeconds = (/1000) . fromIntegral . timeDelta <$> get
 
-withTiming :: (Member (State SystemTime) r, Fractional f) => Eff r a -> Eff r (f, a)
+withTiming :: (Mutate SystemTime m, Fractional f) => m a -> m (f, a)
 withTiming f = do
   t0 <- readTimeDeltaSeconds
   a  <- f
   t1 <- readTimeDeltaSeconds
   return (t1 - t0, a)
 
-newTime :: Member IO r => Eff r SystemTime
+newTime :: MonadIO m => m SystemTime
 newTime = do
-  t <- io ticks
+  t <- liftIO ticks
   let tt = SystemTime { timeLast  = t
                       , timeDelta = 0
                       , timeLeft  = 0
                       }
   return tt
 
-tickTime :: (Member (State SystemTime) r, Member IO r) => Eff r ()
+tickTime :: (Mutate SystemTime m, MonadIO m) => m ()
 tickTime = do
   SystemTime lastT _ left <- get
-  t <- io ticks
+  t <- liftIO ticks
   put SystemTime{ timeLast  = t
                 , timeDelta = t - lastT
                 , timeLeft  = left
@@ -399,12 +494,9 @@ tickTime = do
 --------------------------------------------------------------------------------
 -- Physics
 --------------------------------------------------------------------------------
-type AltersPhysics = Member (State OdinScene)
-
-setBody :: Member (State OdinScene) r => Int -> Body -> Eff r ()
-setBody k b = do
-  scene :: OdinScene <- get
-  put (scene & scWorld.worldObjs %~ IM.insert k (odinBodyToWorldObj b))
+setBody :: OdinScene -> Int -> Body -> OdinScene
+setBody scene k b =
+  scene & scWorld.worldObjs %~ IM.insert k (odinBodyToWorldObj b)
 --------------------------------------------------------------------------------
 -- Working with Fonts
 --------------------------------------------------------------------------------
@@ -418,23 +510,21 @@ newtype IconFont    = IconFont    FontDescriptor deriving (Show, Eq, Ord)
 
 type FontMap = Map FontDescriptor Atlas
 
-type AltersFontMap = Member (State FontMap)
-
 loadAtlas
-  :: Members '[IO, State FontMap] r
+  :: Mutate FontMap m
   => FontDescriptor
   -> String
-  -> Eff r (Maybe Atlas)
+  -> m (Maybe Atlas)
 loadAtlas desc@(FontDescriptor font sz) chars = do
   atlases <- get
   case M.lookup desc atlases of
-    Nothing -> io (allocAtlas font sz chars) >>= \case
+    Nothing -> liftIO (allocAtlas font sz chars) >>= \case
       Nothing    -> return Nothing
       Just atlas -> do put $ M.insert desc atlas atlases
                        return $ Just atlas
     Just atlas -> return $ Just atlas
 
-saveAtlas :: Member (State FontMap) r => Atlas -> Eff r ()
+saveAtlas :: Mutate FontMap m => Atlas -> m ()
 saveAtlas atlas = do
   atlases :: FontMap <- get
   put (atlases & at (atlasDescriptor atlas) .~ Just atlas)
@@ -445,14 +535,14 @@ atlasDescriptor Atlas{..} = FontDescriptor atlasFilePath atlasGlyphSize
 fontDescriptor :: FilePath -> Int -> FontDescriptor
 fontDescriptor file px = FontDescriptor file $ PixelSize px px
 
---getFontPath :: Member IO r => String -> Eff r FilePath
+--getFontPath :: MonadIO m => String -> m FilePath
 --getFontPath fontname =
 --  (</> "assets" </> "fonts" </> fontname) <$> io getCurrentDirectory
 
-readDefaultFontDescriptor :: Member (Reader DefaultFont) r => Eff r DefaultFont
+readDefaultFontDescriptor :: OdinReader DefaultFont m => m DefaultFont
 readDefaultFontDescriptor = ask
 
-readIconFontDescriptor :: Member (Reader IconFont) r => Eff r IconFont
+readIconFontDescriptor :: OdinReader IconFont m => m IconFont
 readIconFontDescriptor = ask
 --------------------------------------------------------------------------------
 -- Sytem Control Stuff
@@ -466,9 +556,8 @@ isQuit (Keysym (Scancode 20) (Keycode 113) m) = any ($ m)
     ]
 isQuit _ = False
 
-
-tickPhysics :: Members '[State OdinScene, State SystemTime] r => Eff r ()
-tickPhysics = do
+tickPhysics :: Mutate SystemTime m => OdinScene -> m OdinScene
+tickPhysics scene = do
   -- Time is in milliseconds
   SystemTime _ dt t0 <- get
   let tt = dt + t0
@@ -477,90 +566,38 @@ tickPhysics = do
       t1 = tt - (fromIntegral n * 10)
   modify $ \t -> t{ timeLeft = t1 }
   -- Step the scene
-  scene :: OdinScene <- get
-  put scene{ _scWorld = runWorldOver 0.01 scene n }
+  return scene{ _scWorld = runWorldOver 0.01 scene n }
 --------------------------------------------------------------------------------
 -- Running
 --------------------------------------------------------------------------------
-type OdinFx r = Fresh
-             ': Reader V2V4Renderer
-             ': Reader V2V2Renderer
-             ': Reader DefaultFont
-             ': Reader IconFont
-             ': State SystemTime
-             ': State FontMap
-             ': State Ui
-             ': State Allocated
-             ': r
+-- | A type to hold all of our mutable data.
+data ReaderData = ReaderData { frameSlotSystemTime :: Slot SystemTime
+                             , frameSlotFresh      :: Slot Fresh
+                             , frameSlotFontMap    :: Slot FontMap
+                             , frameSlotUi         :: Slot Ui
+                             , frameV2V4Renderer   :: V2V4Renderer
+                             , frameV2V2Renderer   :: V2V2Renderer
+                             , frameDefaultFont    :: DefaultFont
+                             , frameIconFont       :: IconFont
+                             }
 
-
-type OdinFrame r = ( Member IO r
-                   , Member (State SystemTime) r
-                   , Member Fresh r
-                   , Member (Reader V2V4Renderer) r
-                   , Member (Reader V2V2Renderer) r
-                   , Member (Reader DefaultFont) r
-                   , Member (Reader IconFont) r
-                   , Member (State FontMap) r
-                   , Member (State Allocated) r
-                   , Member (State Ui) r
-                   )
-
-type OdinCont r = (OdinFrame r, Member Next r)
-
--- | Run an OdinFx computation, stripping all Odin effects and returning the
--- resulting values.
-runOdinFx
-  :: OdinRenderer V2V2
-  -> OdinRenderer V2V4
-  -> DefaultFont
-  -> IconFont
-  -> Int
-  -> SystemTime
-  -> FontMap
-  -> Ui
-  -> Allocated
-  -> Eff (OdinFx r) a
-  -> Eff r (((((a, Int), SystemTime), FontMap), Ui), Allocated)
-runOdinFx v2v2 v2v4 defont ifont k t fonts ui allocs =
-    flip runState  allocs
-  . flip runState  ui
-  . flip runState  fonts
-  . flip runState  t
-  . flip runReader ifont
-  . flip runReader defont
-  . flip runReader (V2V2Renderer v2v2)
-  . flip runReader (V2V4Renderer v2v4)
-  . flip runFresh  k
-
-prepareFrame :: OdinFrame r => Eff r ()
+prepareFrame
+  :: ( Mutates '[SystemTime, Ui] m
+     , OdinReader V2V4Renderer m
+     )
+  => m ()
 prepareFrame = do
-  io $ glClearColor 0.5 0.5 0.5 1
+  liftIO $ glClearColor 0.5 0.5 0.5 1
   V2V4Renderer backend <- ask
-  io $ backendOpClearWindow $ backendOps backend
+  liftIO $ backendOpClearWindow $ backendOps backend
   tickTime
   tickUIPrepare
 
-presentFrame :: OdinFrame r => Eff r ()
+presentFrame :: (Mutate Ui m, OdinReader V2V4Renderer m) => m ()
 presentFrame = do
   tickUIFinish
   V2V4Renderer backend <- ask
-  io $ backendOpUpdateWindow $ backendOps backend
-
--- | Sandwich a continuation between a frame preparation and presentation,
--- running a separate computation after each presentation, until the continuation
--- ends in a result value.
-loopFrameAnd :: OdinFrame r => Eff r (Status r () () a) -> Eff r () -> Eff r a
-loopFrameAnd eff eachFrame = do
-  prepareFrame
-  status <- eff
-  presentFrame
-  case status of
-    Done a        -> return a
-    Continue () f -> do
-      eachFrame
-      io $ threadDelay 10
-      loopFrameAnd (f ()) eachFrame
+  liftIO $ backendOpUpdateWindow $ backendOps backend
 
 -- | Open an SDL2 window and initialize and return the backend renderers.
 startupWindow
@@ -570,44 +607,48 @@ startupWindow
   -- ^ Title of the window
   -> IO (Either String SDL2Backends)
 startupWindow (V2 w h) title = runEitherT $ startupSDL2Backends w h title True
+--------------------------------------------------------------------------------
+-- The Odin stack
+--------------------------------------------------------------------------------
+-- | A monad stack for Odin programs.
+type OdinT m = NextT (ReaderT ReaderData m)
 
--- | Enters the given Odin style continuation and loops it forever, displaying
+-- | Enters the given OdinT computation and loops it until it ends, displaying
 -- each frame in the given backend.
-runOdin
-  :: forall r a. Member IO r
+runOdinT
+  :: MonadIO m
   => SDL2Backends
   -- ^ The sdl2 rendering backends
   -> DefaultFont
   -- ^ A default font descriptor
   -> IconFont
   -- ^ An icon font descriptor
-  -> Eff (OdinFx r) ()
+  -> ReaderT ReaderData m ()
   -- ^ A computation to run after each frame, like cleanup, value persistance etc
-  -> Eff (Next ': OdinFx r) a
+  -> OdinT m a
   -- ^ The game continuation to run
-  -> Eff r a
-runOdin (SDL2Backends v2v4 v2v2) defont ifont eachFrame app = do
-  t <- newTime
-  let fy  :: Member IO r => Eff (OdinFx r) (Status (OdinFx r) () () a)
-      fy = runC app
-      eff :: Member IO r => Eff (OdinFx r) a
-      eff = loopFrameAnd fy eachFrame
-  fst . fst . fst . fst . fst <$>
-    runOdinFx v2v2 v2v4 defont ifont 0 t mempty emptyUi AllocatedNone eff
-
--- | Run an Odin style continuation in an SDL2 window.
-runOdinIO
-  :: forall a.
-     SDL2Backends
-  -- ^ The sdl2 rendering backends
-  -> DefaultFont
-  -- ^ A default font descriptor
-  -> IconFont
-  -- ^ An icon font descriptor
-  -> Eff (OdinFx '[IO]) ()
-  -- ^ A computation to run after each frame, like cleanup, value persistance etc
-  -> Eff (Next ': OdinFx '[IO]) a
-  -- ^ The game continuation to run
-  -> IO a
-runOdinIO backends defont ifont eachFrame app =
-  runM $ runOdin backends defont ifont eachFrame app
+  -> m a
+runOdinT (SDL2Backends v2v4 v2v2) defont ifont eachFrame app = do
+  systemTimeVar <- slotVar =<< newTime
+  freshVar      <- slotVar 0
+  fontMapVar    <- slotVar mempty
+  uiVar         <- slotVar emptyUi
+  let readerData = ReaderData { frameSlotSystemTime = systemTimeVar
+                              , frameSlotFresh      = freshVar
+                              , frameSlotFontMap    = fontMapVar
+                              , frameSlotUi         = uiVar
+                              , frameV2V4Renderer   = V2V4Renderer v2v4
+                              , frameV2V2Renderer   = V2V2Renderer v2v2
+                              , frameDefaultFont    = defont
+                              , frameIconFont       = ifont
+                              }
+  flip runReaderT readerData $ ($ app) $ fix $ \loop frame -> do
+    prepareFrame
+    status <- runNextT frame
+    presentFrame
+    case status of
+      Left a          -> return a
+      Right nextFrame -> do
+        eachFrame
+        liftIO $ threadDelay 10
+        loop nextFrame

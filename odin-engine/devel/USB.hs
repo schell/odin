@@ -38,7 +38,7 @@ tinyDungeonExampleMapPath = tinyDungeonTmxDir </> "Tiny_dungeon_example.tmx"
 tinyDungeonExampleAnimationMapPath :: FilePath
 tinyDungeonExampleAnimationMapPath = tinyDungeonTmxDir </> "animation.tmx"
 
-loadTinyDungeonMap :: Member IO r => FilePath -> Eff r TiledMap
+loadTinyDungeonMap :: MonadIO m => FilePath -> Eff r TiledMap
 loadTinyDungeonMap = fmap unrelativizeImagePaths . io . loadMapFile
 
 

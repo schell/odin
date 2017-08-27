@@ -7,6 +7,7 @@
 module Odin.Engine.GUI.TextInput.Internal where
 
 import           Control.Monad                   (forM, forM_, when)
+import           Control.Monad.IO.Class          (MonadIO (..))
 import           Data.Map                        (Map)
 import           Gelatin
 import           SDL                             hiding (get)
@@ -44,13 +45,13 @@ data TextInput r = TextInput { txtnSize    :: V2 Float
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
-delPressed :: AltersUI r => Eff r Bool
+delPressed :: Mutate Ui m => m Bool
 delPressed = do
   presses <- forM keys $ \k -> queryKeycodeEvent k Pressed False
   return $ True `elem` presses
   where keys = [KeycodeBackspace, KeycodeDelete]
 
-escOrEnterPressed :: AltersUI r => Eff r Bool
+escOrEnterPressed :: Mutate Ui m => m Bool
 escOrEnterPressed = do
   presses <- forM keys $ \k -> queryKeycodeEvent k Pressed False
   return $ True `elem` presses
@@ -59,7 +60,7 @@ escOrEnterPressed = do
 deleteString :: String -> String
 deleteString t = if null t then [] else init t
 
-getMyTextEvent :: AltersUI r => String -> Eff r (Maybe String)
+getMyTextEvent :: Mutate Ui m => String -> m (Maybe String)
 getMyTextEvent str = do
   tstr <- uiTextEvent <$> get
   if not $ null tstr
@@ -71,20 +72,20 @@ getMyTextEvent str = do
 -- Alloc'ing and releasing TextInputs
 --------------------------------------------------------------------------------
 -- | Allocs a TextInput renderer for ONE TextInputState.
-allocTextRndr :: Member IO r
-              => Painter (TextInputData, TextInputState) r
+allocTextRndr :: MonadIO m
+              => Painter (TextInputData, TextInputState) m
               -> TextInputState
               -> String
-              -> Eff r (Renderer2, V2 Float)
+              -> m (Renderer2, V2 Float)
 allocTextRndr painter st str = do
   let dat = TextInputData str
   Painting (tl,br) r <- unPainter painter (dat, st)
   return (r, br - tl)
 
-allocTextRndrs :: Member IO r
-               => Painter (TextInputData, TextInputState) r
+allocTextRndrs :: MonadIO m
+               => Painter (TextInputData, TextInputState) m
                -> String
-               -> Eff r (TextInputRndrs, V2 Float)
+               -> m (TextInputRndrs, V2 Float)
 allocTextRndrs painter str = do
   (up  , sz) <- allocTextRndr painter TextInputStateUp      str
   (ovr ,  _) <- allocTextRndr painter TextInputStateOver    str
@@ -94,10 +95,10 @@ allocTextRndrs painter str = do
   return (rs, sz)
 
 -- Allocs a new text input view.
-slotTextInput :: (Member IO r, ReadsRenderers r, Member Allocates r)
-               => Painter (TextInputData, TextInputState) r
+slotTextInput :: (MonadIO m, ReadsRenderers m, MonadSafe m)
+               => Painter (TextInputData, TextInputState) m
                -> String
-               -> Eff r (Slot (TextInput r))
+               -> m (Slot (TextInput m))
 slotTextInput painter str = do
   (rs, sz) <- allocTextRndrs painter str
   let t = TextInput{ txtnSize    = sz
@@ -115,17 +116,17 @@ freeTextInput txt = do
   forM_ rs fst
 
 renderTextInput
-  :: (ReadsRenderers r, AltersUI r, Member IO r)
-  => Slot (TextInput r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadIO m)
+  => Slot (TextInput m)
   -> [RenderTransform2]
-  -> Eff r (TextInputState, String)
+  -> m (TextInputState, String)
 renderTextInput s rs = do
   txt@TextInput{..} <- unslot s
   let mv = affine2sModelview $ extractSpatial rs
-      renderUp   = io $ (snd $ txtnRndrsUp   txtnRndrs) rs
-      renderOver = io $ (snd $ txtnRndrsOver txtnRndrs) rs
-      renderDown = io $ (snd $ txtnRndrsDown txtnRndrs) rs
-      renderEdit = io $ (snd $ txtnRndrsEdit txtnRndrs) rs
+      renderUp   = liftIO $ (snd $ txtnRndrsUp   txtnRndrs) rs
+      renderOver = liftIO $ (snd $ txtnRndrsOver txtnRndrs) rs
+      renderDown = liftIO $ (snd $ txtnRndrsDown txtnRndrs) rs
+      renderEdit = liftIO $ (snd $ txtnRndrsEdit txtnRndrs) rs
       update st = do
         reslot s $ txt{txtnState=st}
         return (st, txtnString)
@@ -134,7 +135,7 @@ renderTextInput s rs = do
       continueEditing str = do
         (r,sz) <- allocTextRndr txtnPainter TextInputStateEditing str
         let newRndrs = txtnRndrs{txtnRndrsEdit=r}
-        io $ do -- dealloc the previous edit renderer
+        liftIO $ do -- dealloc the prevliftIOus edit renderer
                 fst $ txtnRndrsEdit txtnRndrs
                 -- render the new edit
                 snd r rs
@@ -154,7 +155,7 @@ renderTextInput s rs = do
                                 ,txtnRndrsOver  = ovr
                                 ,txtnRndrsDown  = down
                                 }
-        io $ do -- dealloc the previous 3 rndrs
+        liftIO $ do -- dealloc the prevliftIOus 3 rndrs
                 fst $ txtnRndrsUp   txtnRndrs
                 fst $ txtnRndrsOver txtnRndrs
                 fst $ txtnRndrsDown txtnRndrs
@@ -217,5 +218,5 @@ renderTextInput s rs = do
 --------------------------------------------------------------------------------
 -- TextInput properties
 --------------------------------------------------------------------------------
-sizeOfTextInput :: Member IO r => Slot (TextInput r) -> Eff r (V2 Float)
+sizeOfTextInput :: MonadIO m => Slot (TextInput r) -> m (V2 Float)
 sizeOfTextInput = flip fromSlot txtnSize

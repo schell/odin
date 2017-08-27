@@ -7,16 +7,17 @@
 {-# LANGUAGE TypeOperators         #-}
 module Devel.Utils where
 
+import           Control.Monad.IO.Class (MonadIO (..))
 import           Odin.Engine
 import           Odin.Engine.Checkpoint
 import           System.Exit            (exitFailure)
 import           System.FilePath        (FilePath, (</>))
 
-getWindow :: IO SDL2Backends
-getWindow = runM $ withCheckpoint "window" startWindow $ \case
-  Left err       -> io (putStrLn err >> exitFailure)
+getWindow :: MonadIO m => m SDL2Backends
+getWindow = withCheckpoint "window" startWindow $ \case
+  Left err       -> liftIO (putStrLn err >> exitFailure)
   Right backends -> return backends
-  where startWindow = io $ startupWindow (V2 800 600) "odin-engine-exe"
+  where startWindow = liftIO $ startupWindow (V2 800 600) "odin-engine-exe"
 
 assetsDir :: FilePath
 assetsDir = ".." </> "assets"
@@ -33,28 +34,28 @@ monoFont = DefaultFont $ fontDescriptor (fontsDir </> "Inconsolata-Regular.ttf")
 iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor (fontsDir </> "FontAwesome.otf") 16
 
-incrementRecomps :: Member IO r => Eff r Int
+incrementRecomps :: MonadIO m => m Int
 incrementRecomps = withCheckpoint "recomps" (pure (0 :: Int)) $ \n -> do
   updateCheckpoint "recomps" $ succ n
   return n
 
-persistentAllocations :: Checkpoint Allocated
-persistentAllocations = "persistent-allocations"
-
-persistAllocations :: (Member (State Allocated) r, Member IO r) => Eff r ()
-persistAllocations = do
-  allocs :: Allocated <- get
-  withCheckpoint persistentAllocations (pure AllocatedNone) $ const $
-    updateCheckpoint persistentAllocations allocs
-
-destroyAllocations :: Member IO r => Eff r ()
-destroyAllocations =
-  withCheckpoint persistentAllocations (pure AllocatedNone) $ \allocs -> do
-    io $ putStrLn $ unwords [ "Deallocating"
-                            , show $ countAllocated allocs
-                            , "from a previous compilation."
-                            ]
-    deallocAllAllocated allocs
+--persistentAllocations :: Checkpoint Allocated
+--persistentAllocations = "persistent-allocations"
+--
+--persistAllocations :: (MonadSafe m, MonadIO m) => m ()
+--persistAllocations = do
+--  allocs :: Allocated <- get
+--  withCheckpoint persistentAllocations (pure AllocatedNone) $ const $
+--    updateCheckpoint persistentAllocations allocs
+--
+--destroyAllocations :: MonadIO m => m ()
+--destroyAllocations =
+--  withCheckpoint persistentAllocations (pure AllocatedNone) $ \allocs -> do
+--    liftIO $ putStrLn $ unwords [ "Deallocating"
+--                                , show $ countAllocated allocs
+--                                , "from a previous compilation."
+--                                ]
+--    deallocAllAllocated allocs
 
 pad :: Int -> String -> String
 pad n = unlines . map (padding ++) . lines

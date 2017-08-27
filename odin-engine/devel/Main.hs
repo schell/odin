@@ -34,10 +34,10 @@ tinyDungeonExampleMapPath = tinyDungeonTmxDir </> "Tiny_dungeon_example.tmx"
 tinyDungeonExampleAnimationMapPath :: FilePath
 tinyDungeonExampleAnimationMapPath = tinyDungeonTmxDir </> "animation.tmx"
 
-loadTinyDungeonMap :: Member IO r => FilePath -> Eff r TiledMap
-loadTinyDungeonMap = fmap unrelativizeImagePaths . io . loadMapFile
+loadTinyDungeonMap :: MonadIO m => FilePath -> m TiledMap
+loadTinyDungeonMap = fmap unrelativizeImagePaths . liftIO . loadMapFile
 
-runner :: OdinCont r => Eff r ()
+runner :: (MonadMask m, MonadIO m) => OdinT m ()
 runner = autoRelease $ do
   DefaultFont font <- readDefaultFontDescriptor
   n                <- incrementRecomps
@@ -69,7 +69,7 @@ runner = autoRelease $ do
                return $ renderTiledAnimation animation ts
              <|>
              do rend   <- mrend
-                return (io $ rend ts)
+                return (liftIO $ rend ts)
       _ -> return ()
     V2 w h <- getWindowSize
     renderText recompText [move (w - textWidth) h]
@@ -79,7 +79,5 @@ runner = autoRelease $ do
 
 main :: IO ()
 main = do
-  -- Destroy any allocations from a previous compilation.
-  runM destroyAllocations
   backends <- getWindow
-  runOdinIO backends defaultFont iconFont persistAllocations runner
+  runOdinT backends defaultFont iconFont (return ()) runner

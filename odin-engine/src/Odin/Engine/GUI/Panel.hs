@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -11,6 +12,7 @@ module Odin.Engine.GUI.Panel
   ) where
 
 import           Control.Monad                 (when)
+import           Control.Monad.IO.Class        (MonadIO (..))
 import           Gelatin.SDL2
 import           SDL                           hiding (get)
 import           SDL.Raw.Enum
@@ -58,35 +60,31 @@ panelTrimPic size = do
       to 0
 
 slotPanel
-  :: ( ReadsRenderers r
-     , AltersUI r
-     , AltersFontMap r
-     , Member IO r
-     , Member Allocates r
-     , Member Fresh r
-     , Member (Reader DefaultFont) r
-     , Member (Reader IconFont) r
+  :: ( Reads '[DefaultFont, IconFont, V2V2Renderer, V2V4Renderer] m
+     , Mutates '[Ui, FontMap, Fresh] m
+     , MonadIO m
+     , MonadSafe m
      )
   => String
   -> V2 Int
   -> V2 Int
-  -> Eff r (Slot Panel)
+  -> m (Slot Panel)
 slotPanel str size contentSize = do
   pane             <- slotPane (size - V2 0 20) contentSize 0
   DefaultFont font <- readDefaultFontDescriptor
   title            <- slotText font black str
   close            <- slotButton iconButtonPainter [faTimes]
   (_,bg)           <- slotColorPicture $ panelTrimPic size
-  k                <- fresh
+  Fresh k          <- fresh
   slotVar $ Panel pane bg title close size 0 PanelStatePassive k
 
 renderPanel
-  :: (ReadsRenderers r, AltersUI r, Member IO r, Member Allocates r)
+  :: (ReadsRenderers m, Mutate Ui m, MonadIO m, MonadSafe m)
   => Slot Panel
   -> [RenderTransform2]
-  -> (V2 Int -> Eff r a)
+  -> (V2 Int -> m a)
   -- | TODO: ^ Change this to V2 Float
-  -> Eff r (a, PanelState)
+  -> m (a, PanelState)
 renderPanel s rs f = do
   -- Render the panel just as it is, we have to do this in order to update the
   -- ui from the window pane
@@ -100,13 +98,7 @@ renderPanel s rs f = do
     let paneOffset = V2 0 20
         finalState = if shouldClose then PanelStateShouldClose else pState
         uiblocked  = pState `elem` [PanelStateResizing, PanelStateDragging]
-        localState = when uiblocked setUIBlocked
-    (childUI, a) <- uiLocal (run . (snd <$>) . runState localState) $
-      renderPane pPane (moveV2 paneOffset:ts) f
-    when (uiActiveId childUI /= UiItemBlocked) $
-      modify $ \ui -> ui{ uiActiveId = uiActiveId childUI
-                        , uiSystemCursor = uiSystemCursor childUI
-                        }
+    a <- withLocalUi uiblocked id $ renderPane pPane (moveV2 paneOffset:ts) f
     reslot s p{pState=finalState}
     return a
 

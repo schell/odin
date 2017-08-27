@@ -8,19 +8,19 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Odin.Engine.Tiled where
 
-
-import           Control.Monad     (forM_, join)
-import           Data.List         (find)
-import           Data.Map          (Map)
-import qualified Data.Map          as M
-import           Data.Maybe        (catMaybes, fromMaybe, maybeToList)
+import           Control.Monad          (forM_, join, void)
+import           Control.Monad.IO.Class (MonadIO (..))
+import           Data.List              (find)
+import           Data.Map               (Map)
+import qualified Data.Map               as M
+import           Data.Maybe             (catMaybes, fromMaybe, maybeToList)
 import           Data.Tiled
-import           Data.Vector       (Vector)
-import qualified Data.Vector       as V
-import           Data.Word         (Word32)
+import           Data.Vector            (Vector)
+import qualified Data.Vector            as V
+import           Data.Word              (Word32)
 
 
-import           Gelatin.SDL2      hiding (trace)
+import           Gelatin.SDL2           hiding (trace)
 import           System.FilePath
 
 import           Odin.Engine
@@ -186,14 +186,14 @@ newtype VectorTileRenderer = VectorTileRenderer
   { unVectorTileRenderer :: Vector (Maybe ([RenderTransform2] -> IO ()))}
 
 createVectorTileRenderer
-  :: ( Member IO r
-     , Member (State Allocated) r
-     , Member (Reader V2V2Renderer) r
+  :: ( MonadIO m
+     , MonadSafe m
+     , ReadsRenderers m
      )
   => TiledMap
-  -> Eff r VectorTileRenderer
+  -> m VectorTileRenderer
 createVectorTileRenderer tiledMap = do
-  texMap   <- io $ allocImageTextureMap tiledMap
+  texMap   <- liftIO $ allocImageTextureMap tiledMap
   v2v2     <- v2v2Backend
   let indices    = allTileIndices tiledMap
       indexMap   = M.fromList $ V.toList $ V.zip (V.map tileIndexGid indices) indices
@@ -205,20 +205,20 @@ createVectorTileRenderer tiledMap = do
     (_, tex) <- imageTextureOfTile texMap tiledMap tileNdx
     tileset  <- tilesetOfTileIndex tiledMap tileNdx
     return $ do
-      (clean, rend) <- io $ allocTileRenderer v2v2 tex tileset tileNdx
-      alloc clean
+      (clean, rend) <- liftIO $ allocTileRenderer v2v2 tex tileset tileNdx
+      void $ register $ liftIO clean
       return rend
   return $ VectorTileRenderer v
 
 tileRendererPreview
-  :: Member IO r
+  :: MonadIO m
   => VectorTileRenderer
   -> V2 Float
   -> Int
-  -> Vector ([RenderTransform2] -> Eff r ())
+  -> Vector ([RenderTransform2] -> m ())
 tileRendererPreview (VectorTileRenderer vec) (V2 tw th) w =
   flip V.map posVec $ \((x, y), renderTile) t ->
-    io $ renderTile $ t ++ [move (x*tw) (y*th)]
+    liftIO $ renderTile $ t ++ [move (x*tw) (y*th)]
   where posVec :: Vector ((Float, Float), [RenderTransform2] -> IO ())
         posVec = go (V.concatMap (V.fromList . maybeToList) vec) 0
         go v y = let (x, xs) = V.splitAt w v
@@ -229,10 +229,10 @@ tileRendererPreview (VectorTileRenderer vec) (V2 tw th) w =
         row y  = V.generate w $ \x -> (fromIntegral x, y)
 
 renderTilePreview
-  :: Member IO r
-  => Vector ([RenderTransform2] -> Eff r ())
+  :: MonadIO m
+  => Vector ([RenderTransform2] -> m ())
   -> [RenderTransform2]
-  -> Eff r ()
+  -> m ()
 renderTilePreview v t = forM_ v ($ t)
 
 data TiledAnimation =
@@ -242,12 +242,12 @@ data TiledAnimation =
                  }
 
 allocTiledAnimation
-  :: Member IO r
+  :: (MonadIO m, MonadSafe m)
   => VectorTileRenderer
   -> Word32
   -- ^ Tilset gid
   -> Animation
-  -> Eff r (Slot TiledAnimation)
+  -> m (Slot TiledAnimation)
 allocTiledAnimation (VectorTileRenderer vec) sid (Animation frames) = do
   let mkFrame (Frame fid dur) = (dur, join $ vec V.!? fromIntegral (sid + fid))
       renderFrames = V.fromList $ map mkFrame frames
@@ -257,9 +257,9 @@ allocTiledAnimation (VectorTileRenderer vec) sid (Animation frames) = do
                           }
 
 advanceTiledAnimation
-  :: (Member IO r, Member (State SystemTime) r)
+  :: (MonadIO m, Mutate SystemTime m)
   => Slot TiledAnimation
-  -> Eff r ()
+  -> m ()
 advanceTiledAnimation ani = do
   delta <- readTimeDeltaMillis
   ta@TiledAnimation{..} <- unslot ani
@@ -278,13 +278,13 @@ advanceTiledAnimation ani = do
              }
 
 renderTiledAnimation
-  :: (Member IO r, Member (State SystemTime) r)
+  :: (MonadIO m, Mutate SystemTime m)
   => Slot TiledAnimation
   -> [RenderTransform2]
-  -> Eff r ()
+  -> m ()
 renderTiledAnimation ani ts = do
   TiledAnimation{..} <- unslot ani
   sequence_ $ do
     (_, mrend) <- taFrames V.!? taFrameIndex
     rend       <- mrend
-    return $ io $ rend ts
+    return $ liftIO $ rend ts
