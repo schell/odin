@@ -37,10 +37,15 @@ resolver: lts-8.17
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - .
+- ../../reflex-sdl2
+#- location:
+#    git: https://github.com/schell/reflex-sdl2
+#    commit: 54a212972d63671a3ab645260ba035e2ea2eb141
+#  extra-dep: true
 
 - location:
     git: https://github.com/schell/gelatin
-    commit: d1b2dbac021b54cf70a13a4e19c538ed984e128e
+    commit: 0af61cd5540c7651978fb10cea269161209c41c6
   subdirs:
   - gelatin
   - gelatin-shaders
@@ -57,11 +62,6 @@ packages:
   - shapes-math
   extra-dep: true
 
-#- location:
-#    git: https://github.com/phadej/gl.git
-#    commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
-#  extra-dep: true
-
 - location:
     git: https://github.com/IxpertaSolutions/freer-effects.git
     commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
@@ -77,10 +77,17 @@ packages:
     commit: 99326b98a8f38b9e00a0907ee7b9108df03b7375
   extra-dep: true
 
+- location:
+    git: https://github.com/reflex-frp/reflex
+    commit: a6ee264850cf80c55e8fed99575107a44af57081
+  extra-dep: true
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
 - freetype2-0.1.1
+- prim-uniq-0.1.0.1
+- ref-tf-0.4.0.1
 flags: {}
 
 # Extra package databases containing global packages

@@ -14,38 +14,42 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  ghc-options:         -Wall -Werror
+  ghc-options:         -Wall
   hs-source-dirs:      src
   other-modules:
-  exposed-modules:     Data.Char.FontAwesome
-                     , Devel.Utils
-                     , Odin.Engine
-                     , Odin.Engine.Checkpoint
-                     , Odin.Engine.Tiled
-                     , Odin.Engine.Eff.Common
-                     , Odin.Engine.Eff.Coroutine
-                     , Odin.Engine.GUI
-                     , Odin.Engine.GUI.Animation
-                     , Odin.Engine.GUI.Button
-                     , Odin.Engine.GUI.Button.Internal
-                     , Odin.Engine.GUI.Text
-                     , Odin.Engine.GUI.Text.Internal
-                     , Odin.Engine.GUI.TextInput
-                     , Odin.Engine.GUI.TextInput.Internal
-                     , Odin.Engine.GUI.Layer
-                     , Odin.Engine.GUI.Pane
-                     , Odin.Engine.GUI.Panel
-                     , Odin.Engine.GUI.Picture
-                     , Odin.Engine.GUI.StatusBar
-                     , Odin.Engine.GUI.Styles
-                     , Odin.Engine.Physics
-                     , Odin.Engine.Slots
+  exposed-modules:   Odin.Engine.New
+                     --  Control.Monad.Trans.NextT
+                     --, Data.Char.FontAwesome
+                     --, Devel.Utils
+                     --, Odin.Engine
+                     --, Odin.Engine.Checkpoint
+                     --, Odin.Engine.Tiled
+                     ----, Odin.Engine.Eff.Common
+                     ----, Odin.Engine.Eff.Coroutine
+                     --, Odin.Engine.GUI
+                     --, Odin.Engine.GUI.Animation
+                     --, Odin.Engine.GUI.Button
+                     --, Odin.Engine.GUI.Button.Internal
+                     --, Odin.Engine.GUI.Text
+                     --, Odin.Engine.GUI.Text.Internal
+                     --, Odin.Engine.GUI.TextInput
+                     --, Odin.Engine.GUI.TextInput.Internal
+                     --, Odin.Engine.GUI.Layer
+                     --, Odin.Engine.GUI.Pane
+                     --, Odin.Engine.GUI.Panel
+                     --, Odin.Engine.GUI.Picture
+                     --, Odin.Engine.GUI.StatusBar
+                     --, Odin.Engine.GUI.Styles
+                     --, Odin.Engine.Physics
+                     --, Odin.Engine.Slots
 
   build-depends:       array
                      , base >= 4.7 && < 5
                      , containers
+                     , data-default >= 0.7 && < 0.8
                      , directory
                      , either
+                     , exceptions
                      , filepath
                      , foreign-store >= 0.2
                      , freer-effects
@@ -54,22 +58,42 @@ library
                      , gelatin-freetype2
                      , gelatin-gl
                      , gelatin-sdl2
+                     , gl
                      , halive
                      , hashable >= 1.2
                      , htiled >= 0.1.3
                      , lens
                      , linear
+                     , mtl
+                     , pipes-safe
                      , pretty-show
+                     , reflex-sdl2
                      , sdl2
                      , shapes
                      , stm
                      , text
+                     , transformers
                      , varying >= 0.7.0.3
                      , vector
 
   default-language:    Haskell2010
 
+executable odin-engine-new-exe
+  hs-source-dirs:      new
+  main-is:             Main.hs
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , lens
+                     , containers
+                     , data-default >= 0.7
+                     , gelatin-freetype2 >= 0.0
+                     , gelatin-gl
+                     , odin-engine
+                     , reflex-sdl2
+  default-language:    Haskell2010
+
 executable odin-engine-exe
+  buildable:           False
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
@@ -78,6 +102,7 @@ executable odin-engine-exe
   default-language:    Haskell2010
 
 executable odin-engine-devel
+  buildable:           False
   hs-source-dirs:      devel
   main-is:             Main.hs
   ghc-options:         -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
@@ -92,6 +117,7 @@ executable odin-engine-devel
   default-language:    Haskell2010
 
 executable odin-engine-devel-2
+  buildable:           False
   hs-source-dirs:      devel
   main-is:             USB.hs
   ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
@@ -109,6 +135,7 @@ executable odin-engine-devel-2
 
 
 test-suite odin-engine-test
+  buildable:           False
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
