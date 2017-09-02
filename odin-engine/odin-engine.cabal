@@ -18,6 +18,10 @@ library
   hs-source-dirs:      src
   other-modules:
   exposed-modules:   Odin.Engine.New
+                   , Odin.Engine.New.UI.Configs
+                   , Odin.Engine.New.UI.Paint
+                   , Odin.Engine.New.UI.Picture
+                   , Odin.Engine.New.UI.TextField
                      --  Control.Monad.Trans.NextT
                      --, Data.Char.FontAwesome
                      --, Devel.Utils

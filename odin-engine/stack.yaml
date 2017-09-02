@@ -37,7 +37,8 @@ resolver: lts-8.17
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - .
-- ../../reflex-sdl2
+- location: ../../reflex-sdl2
+  extra-dep: true
 #- location:
 #    git: https://github.com/schell/reflex-sdl2
 #    commit: 54a212972d63671a3ab645260ba035e2ea2eb141

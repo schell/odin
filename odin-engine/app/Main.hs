@@ -61,6 +61,7 @@ getWindow = runM $ withCheckpoint "window" startWindow $ \case
 defaultFont :: DefaultFont
 defaultFont = DefaultFont $ fontDescriptor "../assets/fonts/KMKDSP__.ttf" 16
 
+
 iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor "../assets/fonts/FontAwesome.otf" 16
 

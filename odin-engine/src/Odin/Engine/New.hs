@@ -10,10 +10,13 @@ module Odin.Engine.New
   , TVar
   ) where
 
+
+import           Control.Applicative         (liftA2)
+import           Control.Arrow               ((&&&))
 import           Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVar,
                                               readTVarIO, writeTVar)
 import           Control.Lens                (at, (&), (.~))
-import           Control.Monad.Reader        (MonadReader)
+import           Control.Monad               (guard)
 import           Control.Monad.STM           (atomically)
 import           Control.Monad.Trans.Either  (runEitherT)
 import           Data.Map                    (Map)
@@ -67,15 +70,15 @@ type OdinLayered r t m = (Odin r t m, MonadDynamicWriter t [Layer] m)
 
 
 getWindow :: Odin r t m => m Window
-getWindow = asks $ odinWindow . sysUserData
+getWindow = odinWindow <$> getUserData
 
 
-getV2V2 :: MonadReader (SystemEvents t (OdinData r)) m => m V2V2Renderer
-getV2V2 = asks $ odinV2V2Renderer . sysUserData
+getV2V2 :: Odin r t m => m V2V2Renderer
+getV2V2 = odinV2V2Renderer <$> getUserData
 
 
-getV2V4 :: MonadReader (SystemEvents t (OdinData r)) m => m V2V4Renderer
-getV2V4 = asks $ odinV2V4Renderer . sysUserData
+getV2V4 :: Odin r t m => m V2V4Renderer
+getV2V4 = odinV2V4Renderer <$> getUserData
 
 --------------------------------------------------------------------------------
 -- Working with Fonts
@@ -88,14 +91,12 @@ iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor "../assets/fonts/FontAwesome.otf" 16
 
 
-getTVarFontMap
-  :: (MonadIO m, MonadReader (SystemEvents t (OdinData r)) m)
-  => m (TVar FontMap)
-getTVarFontMap = asks $ odinFontMap . sysUserData
+getTVarFontMap :: Odin r t m => m (TVar FontMap)
+getTVarFontMap = odinFontMap <$> getUserData
 
 
-getFreshVar :: MonadReader (SystemEvents t (OdinData r)) m => m (TVar Word64)
-getFreshVar = asks $ odinFresh . sysUserData
+getFreshVar :: Odin r t m=> m (TVar Word64)
+getFreshVar = odinFresh <$> getUserData
 
 
 freshWith :: MonadIO m => TVar Word64 -> m Word64
@@ -105,9 +106,7 @@ freshWith tvFresh = do
   return k
 
 
-fresh
-  :: (MonadIO m, MonadReader (SystemEvents t (OdinData r)) m)
-  => m Word64
+fresh :: Odin r t m => m Word64
 fresh = getFreshVar >>= freshWith
 
 
@@ -145,15 +144,12 @@ fontDescriptor :: FilePath -> Int -> FontDescriptor
 fontDescriptor file px = FontDescriptor file $ PixelSize px px
 
 
-getDefaultFont :: MonadReader (SystemEvents t (OdinData r)) m => m DefaultFont
-getDefaultFont = asks $ odinDefaultFont . sysUserData
+getDefaultFont :: Odin r t m => m DefaultFont
+getDefaultFont = odinDefaultFont <$> getUserData
 
 
-getIconFont :: MonadReader (SystemEvents t (OdinData r)) m => m IconFont
-getIconFont = asks $ odinIconFont . sysUserData
-
-
-type ConcreteReflexSDL2 r = ReflexSDL2T r Spider (PerformEventT Spider (SpiderHost Global))
+getIconFont :: Odin r t m => m IconFont
+getIconFont = odinIconFont <$> getUserData
 
 
 runOdin :: r -> ConcreteReflexSDL2 (OdinData r) a -> IO ()
@@ -180,3 +176,81 @@ runOdin r guest = do
                       , odinIconFont     = iconFont
                       }
   host odin guest
+
+
+stepLayers :: MonadIO m => (Map Word64 Layer, [Layer]) -> [Layer] -> m (Map Word64 Layer, [Layer])
+stepLayers (oldMap, _) layers = do
+  -- First make a map of the current layers and a map of
+  -- the layers that no longer exist.
+  let newMap  = M.fromList $ map (layerUid &&& id) layers
+      freeMap = M.difference oldMap newMap
+  -- Free the old layers
+  sequence_ $ liftIO . layerFree <$> freeMap
+  -- Return the new map
+  return (newMap, layers)
+
+
+render :: MonadIO m => Window -> [Layer] -> m ()
+render window layers = do
+  liftIO $ print $ map layerUid layers
+  -- Render the new layers in order
+  glClearColor 0 0 0 1
+  glClear GL_COLOR_BUFFER_BIT
+  mapM_ (liftIO . layerRender) layers
+  glSwapWindow window
+
+
+----------------------------------------------------------------------
+mainLoop :: Odin r t m => DynamicWriterT t [Layer] m () -> m ()
+mainLoop guest = do
+  window         <- getWindow
+  (_, dynLayers) <- runDynamicWriterT guest
+  let initial = (M.empty, [])
+  evLayers <- snd <$$> accumM stepLayers initial (updated dynLayers)
+  performEvent_ $ render window <$> evLayers
+
+
+commitLayers :: OdinLayered r t m => Dynamic t [Layer] -> m ()
+commitLayers = tellDyn
+
+
+commitLayer :: OdinLayered r t m => Dynamic t Layer -> m ()
+commitLayer = tellDyn . fmap pure
+
+
+commitLayerWhen
+  :: OdinLayered r t m
+  => Dynamic t Bool -> Dynamic t Layer -> m ()
+commitLayerWhen dIsAlive = commitLayers . zipDynWith f dIsAlive
+  where f isAlive layer = layer <$ guard isAlive
+
+
+ffor3 :: Applicative f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d
+ffor3 a b c f = f <$> a <*> b <*> c
+
+
+forDyn2 :: Reflex t => Dynamic t a -> Dynamic t b -> (a -> b -> c) -> Dynamic t c
+forDyn2 da db f = zipDynWith f da db
+
+
+forDyn3 :: Reflex t => Dynamic t a -> Dynamic t b -> Dynamic t c -> (a -> b -> c -> d) -> Dynamic t d
+forDyn3 da db dc = forDyn2 (zipDyn da db) dc . uncurry
+
+
+forDyn4
+  :: Reflex t
+  => Dynamic t a -> Dynamic t b -> Dynamic t c -> Dynamic t d -> (a -> b -> c -> d -> e) -> Dynamic t e
+forDyn4 da db dc dd = forDyn3 (zipDyn da db) dc dd . uncurry
+
+------------------------------------------------------------------------------
+-- | fmap 1 Functor deeper
+infixl 4 <$$>
+(<$$>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
+(<$$>) = fmap . fmap
+
+
+------------------------------------------------------------------------------
+-- | Sequential application 1 Functor deeper
+infixl 4 <**>
+(<**>) :: (Applicative f, Applicative g) => f (g (a -> b)) -> f (g a) -> f (g b)
+(<**>) = liftA2 (<*>)
