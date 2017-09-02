@@ -23,6 +23,7 @@ import           Odin.Engine.New.UI.Configs
 import           Odin.Engine.New.UI.Paint
 import           Odin.Engine.New.UI.Picture
 import           Odin.Engine.New.UI.TextField
+import           Odin.Engine.New.UI.Painters
 
 
 data ButtonNeeds = ButtonNeeds String (Painter ButtonData IO)
@@ -63,13 +64,36 @@ globalPointIsInsideButton btn st ts p =
 
 
 data ButtonStep = ButtonStep { bsInternal :: ButtonInternal
-                             , bsMotion   :: Maybe MouseMotionEventData
+                             , bsMousePos :: V2 Float
                              , bsButton   :: Maybe MouseButtonEventData
+                             , bsTfrms    :: [RenderTransform2]
                              }
 
 
 stepButton :: ButtonStep -> ButtonState -> ButtonState
-stepButton = undefined
+stepButton (ButtonStep btn pos mayPress ts) bstate
+  | ButtonStateUp == bstate
+  , globalPointIsInsideButton btn bstate ts pos = case mayPress of
+      Nothing -> ButtonStateOver
+      _       -> ButtonStateUp
+  | ButtonStateOver == bstate
+  , globalPointIsInsideButton btn bstate ts pos
+  , Just dat <- mayPress
+  , ButtonLeft == mouseButtonEventButton dat
+  , 1          == mouseButtonEventClicks dat
+  , Pressed    == mouseButtonEventMotion dat = ButtonStateDown
+  | ButtonStateDown == bstate
+  , globalPointIsInsideButton btn bstate ts pos
+  , Just dat <- mayPress
+  , ButtonLeft == mouseButtonEventButton dat
+  , 1          == mouseButtonEventClicks dat
+  , Released   == mouseButtonEventMotion dat = ButtonStateClicked
+  | ButtonStateClicked == bstate =
+    if globalPointIsInsideButton btn bstate ts pos
+    then ButtonStateUp
+    else ButtonStateOver
+  | otherwise = bstate
+
 
 
 button :: forall r t m. OdinLayered r t m => ButtonCfg t -> m ()
@@ -93,17 +117,18 @@ button cfg = do
         let layerf :: [RenderTransform2] -> ButtonState -> [Layer]
             layerf ts st = [Layer k (renderButton btn ts st) (freeButton btn)]
         return (btn, layerf)
+      mousePos dat = ($ mouseMotionEventPos dat) $ \(P v) -> fromIntegral <$> v
 
   evBtnMkLayer <- performEvent $ mkLayer <$> evNeeds
   dMkLayer     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkLayer
   dMayBInt     <- holdDyn Nothing $ Just . fst <$> evBtnMkLayer
-  dMayMotion   <- holdDyn Nothing . (Just <$>) =<< getMouseMotionEvent
+  dMousePos    <- holdDyn ((-1)/0) . (mousePos <$>) =<< getMouseMotionEvent
   dMayButton   <- holdDyn Nothing . (Just <$>) =<< getMouseButtonEvent
 
-  let dStateInputs  = forDyn3 dMayBInt dMayMotion dMayButton (,,)
+  let dStateInputs  = forDyn4 dMayBInt dMousePos dMayButton dTfrm (,,,)
       evStateInputs = flip fmapMaybe (updated dStateInputs) $ \case
-        (Nothing, _, _)       -> Nothing
-        (Just nt, mmot, mbtn) -> Just $ ButtonStep nt mmot mbtn
+        (Nothing, _, _, _)       -> Nothing
+        (Just nt, pos, mbtn, ts) -> Just $ ButtonStep nt pos mbtn ts
   dState <- foldDyn stepButton ButtonStateUp evStateInputs
   commitLayers $ forDyn3 dTfrm dState dMkLayer $ \ts st mk -> mk ts st
 
@@ -134,6 +159,11 @@ guest = do
         to (V2 (-100)    100, V4 1 1 1 1)
   colorPicture $ def & setTransformEvent .~ updated (pure . moveV2 <$> dPicPos)
                      & setPictureEvent   .~ (pic <$ evPB)
+
+  buttonPainter <- getButtonPainter
+  void $ button $ def & setTransformEvent     .~ ([move 100 250] <$ evPB)
+                      & setButtonPainterEvent .~ (buttonPainter  <$ evPB)
+                      & setTextEvent          .~ ("Button"       <$ evPB)
 
   getQuitEvent >>= performEvent_ . (liftIO exitSuccess <$)
 

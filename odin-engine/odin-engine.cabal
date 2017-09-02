@@ -20,6 +20,7 @@ library
   exposed-modules:   Odin.Engine.New
                    , Odin.Engine.New.UI.Configs
                    , Odin.Engine.New.UI.Paint
+                   , Odin.Engine.New.UI.Painters
                    , Odin.Engine.New.UI.Picture
                    , Odin.Engine.New.UI.TextField
                      --  Control.Monad.Trans.NextT

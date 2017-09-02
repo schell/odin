@@ -90,7 +90,7 @@ defaultFont = DefaultFont $ fontDescriptor "../assets/fonts/KMKDSP__.ttf" 16
 iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor "../assets/fonts/FontAwesome.otf" 16
 
-
+-- | TODO: Change this to 'getFontMapVar'
 getTVarFontMap :: Odin r t m => m (TVar FontMap)
 getTVarFontMap = odinFontMap <$> getUserData
 
