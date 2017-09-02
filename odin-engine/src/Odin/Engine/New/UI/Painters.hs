@@ -52,7 +52,7 @@ getButtonPainter = do
   DefaultFont font  <- getDefaultFont
   tvFontMap         <- getTVarFontMap
 
-  return $ Painter $ \(ButtonData txt st) -> do
+  return $ Painter $ \(ButtonData txt st) ->
     loadAtlasInto tvFontMap font asciiChars >>= \case
       Nothing    -> do
         putStrLn "ERROR PAINTING BUTTON!"
@@ -63,11 +63,11 @@ getButtonPainter = do
         saveAtlasInto tvFontMap atlas
 
         let pad  = V2 4 4
-            sz = V2 tw th + 2*pad
+            sz   = V2 tw th + 2*pad
             shxy = V2 4 4
             bgxy = bgOffsetForButtonState st
-            gh = glyphHeight $ atlasGlyphSize atlas
-            bb = listToBox [shxy, shxy+sz, bgxy, bgxy+sz]
+            gh   = glyphHeight $ atlasGlyphSize atlas
+            bb   = listToBox [shxy, shxy+sz, bgxy, bgxy+sz]
 
         -- drop shadow and background
         (_,(bgc,bgr)) <- compilePicture v2v4 $ setGeometry $ do

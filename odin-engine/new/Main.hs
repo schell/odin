@@ -63,35 +63,55 @@ globalPointIsInsideButton btn st ts p =
   in pointInBox p gbnds
 
 
+data ButtonUpdate = ButtonUpdateMotion MouseMotionEventData
+                  | ButtonUpdateButton MouseButtonEventData
+                  | ButtonUpdateNone
+
+
 data ButtonStep = ButtonStep { bsInternal :: ButtonInternal
                              , bsMousePos :: V2 Float
-                             , bsButton   :: Maybe MouseButtonEventData
                              , bsTfrms    :: [RenderTransform2]
+                             , bsUpdate   :: ButtonUpdate
                              }
 
 
 stepButton :: ButtonStep -> ButtonState -> ButtonState
-stepButton (ButtonStep btn pos mayPress ts) bstate
-  | ButtonStateUp == bstate
-  , globalPointIsInsideButton btn bstate ts pos = case mayPress of
-      Nothing -> ButtonStateOver
-      _       -> ButtonStateUp
-  | ButtonStateOver == bstate
-  , globalPointIsInsideButton btn bstate ts pos
-  , Just dat <- mayPress
-  , ButtonLeft == mouseButtonEventButton dat
-  , 1          == mouseButtonEventClicks dat
-  , Pressed    == mouseButtonEventMotion dat = ButtonStateDown
-  | ButtonStateDown == bstate
-  , globalPointIsInsideButton btn bstate ts pos
-  , Just dat <- mayPress
-  , ButtonLeft == mouseButtonEventButton dat
-  , 1          == mouseButtonEventClicks dat
-  , Released   == mouseButtonEventMotion dat = ButtonStateClicked
-  | ButtonStateClicked == bstate =
+stepButton (ButtonStep btn pos ts update) bstate
+  | ButtonUpdateNone <- update = bstate
+
+  | ButtonUpdateMotion _ <- update
+  , ButtonStateUp == bstate
+  , globalPointIsInsideButton btn bstate ts pos = ButtonStateOver
+
+  | ButtonUpdateMotion _ <- update
+  , ButtonStateOver == bstate
+  , not $ globalPointIsInsideButton btn bstate ts pos = ButtonStateUp
+
+  | ButtonUpdateButton dat <- update
+  , ButtonStateOver == bstate
+  , ButtonLeft      == mouseButtonEventButton dat
+  , 1               == mouseButtonEventClicks dat
+  , Pressed         == mouseButtonEventMotion dat = ButtonStateDown
+
+  | ButtonUpdateButton dat <- update
+  , ButtonStateDown == bstate
+  , ButtonLeft      == mouseButtonEventButton dat
+  , Released        == mouseButtonEventMotion dat =
     if globalPointIsInsideButton btn bstate ts pos
-    then ButtonStateUp
-    else ButtonStateOver
+    then ButtonStateClicked
+    else ButtonStateUp
+
+  | ButtonStateClicked == bstate
+  , ButtonUpdateMotion _ <- update =
+    if globalPointIsInsideButton btn bstate ts pos
+    then ButtonStateOver
+    else ButtonStateUp
+
+  | ButtonStateClicked == bstate
+  , ButtonUpdateButton dat <- update
+  , ButtonLeft == mouseButtonEventButton dat
+  , Pressed    == mouseButtonEventMotion dat = ButtonStateDown
+
   | otherwise = bstate
 
 
@@ -122,14 +142,24 @@ button cfg = do
   evBtnMkLayer <- performEvent $ mkLayer <$> evNeeds
   dMkLayer     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkLayer
   dMayBInt     <- holdDyn Nothing $ Just . fst <$> evBtnMkLayer
-  dMousePos    <- holdDyn ((-1)/0) . (mousePos <$>) =<< getMouseMotionEvent
-  dMayButton   <- holdDyn Nothing . (Just <$>) =<< getMouseButtonEvent
 
-  let dStateInputs  = forDyn4 dMayBInt dMousePos dMayButton dTfrm (,,,)
-      evStateInputs = flip fmapMaybe (updated dStateInputs) $ \case
-        (Nothing, _, _, _)       -> Nothing
-        (Just nt, pos, mbtn, ts) -> Just $ ButtonStep nt pos mbtn ts
-  dState <- foldDyn stepButton ButtonStateUp evStateInputs
+  evMotion     <- getMouseMotionEvent
+  evButton     <- getMouseButtonEvent
+  let evUpdate = leftmost [ ButtonUpdateMotion <$> evMotion
+                          , ButtonUpdateButton <$> evButton
+                          ]
+  dUpdate      <- holdDyn ButtonUpdateNone evUpdate
+  dMousePos    <- holdDyn ((-1)/0) $ mousePos <$> evMotion
+  let evStep = fmapMaybe id $ updated $
+        forDyn4 dMayBInt dMousePos dTfrm dUpdate $ \case
+          Nothing -> \_ _ _ -> Nothing
+          Just b  -> \p t u -> Just $ ButtonStep b p t u
+
+  dState <- foldDyn stepButton ButtonStateUp evStep
+  dUniqState <- holdUniqDyn dState
+  putDebugLnE (updated dUniqState) show
+  evUniqBtn  <- switchPromptly never $ evButton <$ updated dUniqState
+  putDebugLnE evUniqBtn show
   commitLayers $ forDyn3 dTfrm dState dMkLayer $ \ts st mk -> mk ts st
 
 
