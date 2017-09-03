@@ -73,12 +73,25 @@ getWindow :: Odin r t m => m Window
 getWindow = odinWindow <$> getUserData
 
 
+getWindowSizeEvent :: Odin r t m => m (Event t (V2 Int))
+getWindowSizeEvent = do
+  evPB   <- getPostBuild
+  window <- getWindow
+  v2Cint <- get $ windowSize window
+  let sz = fromIntegral <$> v2Cint
+      evFirstSize = sz <$ evPB
+  evResized <-
+    fmap fromIntegral . windowResizedEventSize <$$> getWindowResizedEvent
+  return $ leftmost [evFirstSize, evResized]
+
+
 getV2V2 :: Odin r t m => m V2V2Renderer
 getV2V2 = odinV2V2Renderer <$> getUserData
 
 
 getV2V4 :: Odin r t m => m V2V4Renderer
 getV2V4 = odinV2V4Renderer <$> getUserData
+
 
 --------------------------------------------------------------------------------
 -- Working with Fonts
@@ -196,6 +209,9 @@ render window layers = do
   -- Render the new layers in order
   glClearColor 0 0 0 1
   glClear GL_COLOR_BUFFER_BIT
+  v2Cint <- get $ windowSize window
+  let V2 ww wh = fromIntegral <$> v2Cint
+  glViewport 0 0 ww wh
   mapM_ (liftIO . layerRender) layers
   glSwapWindow window
 
