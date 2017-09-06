@@ -39,13 +39,17 @@ paintingForButtonState btn = \case
   ButtonStateClicked -> biClicked btn
 
 
-renderButton :: ButtonInternal -> [RenderTransform2] -> ButtonState -> IO ()
-renderButton btn ts = flip renderPainting ts . paintingForButtonState btn
+buttonRenderer2 :: ButtonInternal -> ButtonState -> Renderer2
+buttonRenderer2 btn st = paintingRenderer $ paintingForButtonState btn st
 
 
-freeButton :: ButtonInternal -> IO ()
-freeButton (ButtonInternal up ovr down clicked) =
-  mapM_ freePainting [up, ovr, down, clicked]
+--renderButton :: ButtonInternal -> [RenderTransform2] -> ButtonState -> IO ()
+--renderButton btn ts = flip renderPainting ts . paintingForButtonState btn
+--
+--
+--freeButton :: ButtonInternal -> IO ()
+--freeButton (ButtonInternal up ovr down clicked) =
+--  mapM_ freePainting [up, ovr, down, clicked]
 
 
 ----------------------------------------------------------------------
@@ -120,7 +124,7 @@ stepButton (ButtonStep btn pos ts update) bstate
   | otherwise = bstate
 
 
-button :: forall r t m. OdinLayered r t m => ButtonCfg t -> m (ButtonOutput t)
+button :: forall r t m. OdinWidget r t m => ButtonCfg t -> m (ButtonOutput t)
 button cfg0 = do
   buttonPainter <- getButtonPainter
   evPB          <- getPostBuild
@@ -137,28 +141,27 @@ button cfg0 = do
       dMayNeeds = forDyn2 dMayText dMayPaint $ liftA2 ButtonNeeds
       evNeeds :: Event t ButtonNeeds
       evNeeds = fmapMaybe id $ updated dMayNeeds
-      mkLayer (ButtonNeeds txt p) = do
+      mkWidget (ButtonNeeds txt p) = do
         k   <- freshWith tvFresh
         btn <- ButtonInternal <$> paint p (ButtonData txt ButtonStateUp)
                               <*> paint p (ButtonData txt ButtonStateOver)
                               <*> paint p (ButtonData txt ButtonStateDown)
                               <*> paint p (ButtonData txt ButtonStateClicked)
-        let layerf :: [RenderTransform2] -> ButtonState -> [Layer]
-            layerf ts st = [Layer k (renderButton btn ts st) (freeButton btn)]
+        let layerf :: [RenderTransform2] -> ButtonState -> [Widget]
+            layerf ts st = [Widget k ts $ buttonRenderer2 btn st]
         return (btn, layerf)
-      mousePos dat = ($ mouseMotionEventPos dat) $ \(P v) -> fromIntegral <$> v
 
-  evBtnMkLayer <- performEvent $ mkLayer <$> evNeeds
-  dMkLayer     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkLayer
-  dMayBInt     <- holdDyn Nothing $ Just . fst <$> evBtnMkLayer
+  evBtnMkWidget <- performEvent $ mkWidget <$> evNeeds
+  dMkWidget     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkWidget
+  dMayBInt      <- holdDyn Nothing $ Just . fst <$> evBtnMkWidget
 
-  evMotion     <- getMouseMotionEvent
-  evButton     <- getMouseButtonEvent
+  evMotion      <- getMouseMotionEvent
+  evButton      <- getMouseButtonEvent
   let evUpdate = leftmost [ ButtonUpdateMotion <$> evMotion
                           , ButtonUpdateButton <$> evButton
                           ]
-  dUpdate      <- holdDyn ButtonUpdateNone evUpdate
-  dMousePos    <- holdDyn ((-1)/0) $ mousePos <$> evMotion
+  dUpdate       <- holdDyn ButtonUpdateNone evUpdate
+  dMousePos     <- holdDyn ((-1)/0) =<< getMousePositionEvent
   let evStep = fmapMaybe id $ updated $
         forDyn4 dMayBInt dMousePos dTfrm dUpdate $ \case
           Nothing -> \_ _ _ -> Nothing
@@ -166,7 +169,7 @@ button cfg0 = do
 
   dState      <- foldDyn stepButton ButtonStateUp evStep
   dUniqState  <- holdUniqDyn dState
-  dMkPainting <- holdDyn mempty $ paintingForButtonState . fst <$> evBtnMkLayer
+  dMkPainting <- holdDyn mempty $ paintingForButtonState . fst <$> evBtnMkWidget
   let dBounds = paintingBounds <$> zipDynWith ($) dMkPainting dUniqState
-  commitLayers $ forDyn3 dTfrm dState dMkLayer $ \ts st mk -> mk ts st
+  commitWidgets $ forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
   return $ ButtonOutput (zipDynWith transformBounds dTfrm dBounds) dUniqState

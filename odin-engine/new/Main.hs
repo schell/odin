@@ -4,28 +4,59 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecursiveDo           #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Main where
 
 import           Control.Lens                 hiding (to)
-import           Control.Monad                (void, guard)
+import           Control.Monad                (guard, void)
 import           Data.Default                 (def)
 import           Gelatin.GL
 import           Reflex.SDL2                  hiding (fan)
 import           System.Exit                  (exitSuccess)
 
 import           Odin.Engine.New
+import           Odin.Engine.New.UI.Button
 import           Odin.Engine.New.UI.Configs
 import           Odin.Engine.New.UI.Picture
 import           Odin.Engine.New.UI.TextField
-import           Odin.Engine.New.UI.Painters
-import           Odin.Engine.New.UI.Button
 
 
-guest :: forall r t m. (OdinLayered r t m) => m ()
-guest = do
+widgetLayer
+  :: forall r t m a. Odin r t m
+  => (Dynamic t WidgetUserMotion -> DynamicWriterT t WidgetTree m a)
+  -> m a
+widgetLayer f = mdo
+  (a, dWidgetTree) <- runEventWriterT $ f dMotion
+  dBounds          <- holdDyn [] evBoundaries
+  dMousePos        <- holdDyn (-1/0) =<< getMousePositionEvent
+  dMotion          <- holdUniqDyn =<< foldDyn foldf UserNoMotion
+    (updated $ zipDynWith boundariesHavePoint dBounds dMousePos)
+  return a
+  where foldf True = \case
+          UserNoMotion          -> UserMousedIntoWidget
+          UserMousedIntoWidget  -> UserUsingWidget
+          UserUsingWidget       -> UserUsingWidget
+          UserMousedOutOfWidget -> UserMousedIntoWidget
+
+        foldf False = \case
+          UserNoMotion          -> UserNoMotion
+          UserMousedIntoWidget  -> UserMousedOutOfWidget
+          UserUsingWidget       -> UserMousedOutOfWidget
+          UserMousedOutOfWidget -> UserNoMotion
+
+
+
+
+
+guest :: forall r t m. (OdinWidget r t m) => m ()
+guest = initialize12FPSEvent $ do
+  widgetLayer $ \dUserMotion -> do
+    putDebugLnE (updated dUserMotion) show
+    evPB <- getPostBuild
+    tellEvent $ [Boundary 0 (V2 100 0) 100 $ V.singleton $ V2 0 100] <$ evPB
   ------------------------------------------------------------------------------
   -- First we'll draw a colorful background that always stays anchored at the
   -- top left corner, but also stretces to the boundaries of the window.
@@ -48,6 +79,17 @@ guest = do
   let evClicked = fmapMaybe (guard . (== ButtonStateClicked)) $ updated $
                     buttonOutputState btnOut
   performEvent_ $ liftIO exitSuccess <$ evClicked
+  -- Test stuff
+  btnA <- button $ def & setTransformEvent .~ ([move 5 5] <$ evPB)
+                         & setTextEvent      .~ ("Button A"         <$ evPB)
+  let evClickedA = fmapMaybe (guard . (== ButtonStateClicked)) $ updated $
+                    buttonOutputState btnA
+  performEvent_ $ liftIO (putStrLn "Clicked A") <$ evClickedA
+  btnB <- button $ def & setTransformEvent .~ ([move 20 13] <$ evPB)
+                         & setTextEvent      .~ ("Button B"         <$ evPB)
+  let evClickedB = fmapMaybe (guard . (== ButtonStateClicked)) $ updated $
+                    buttonOutputState btnB
+  performEvent_ $ liftIO (putStrLn "Clicked B") <$ evClickedB
   ------------------------------------------------------------------------------
   -- Then we'll draw a text field that says "Hello" and follows the mouse.
   ------------------------------------------------------------------------------

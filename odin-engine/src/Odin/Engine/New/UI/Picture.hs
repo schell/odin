@@ -35,26 +35,26 @@ compileTexturePicture pic = do
   snd <$> liftIO (compilePicture v2v2 pic)
 
 
-picture :: OdinLayered r t m => OdinRenderer v -> PictureCfg GLuint v t -> m ()
+picture :: OdinWidget r t m => OdinRenderer v -> PictureCfg GLuint v t -> m ()
 picture v2vX cfg = do
   tvFresh <- getFreshVar
   dTfrm   <- holdDyn [] (cfg ^. setTransformEvent)
   let mkLayer pic = do
-        k             <- freshWith tvFresh
-        (clean, rend) <- snd <$> compilePicture v2vX pic
-        return $ \ts -> [Layer k (rend ts) clean]
+        k  <- freshWith tvFresh
+        r2 <- snd <$> compilePicture v2vX pic
+        return $ \ts -> [Widget k ts r2]
   evMkLayer <- performEvent $ mkLayer <$> (cfg ^. setPictureEvent)
   dMkLayer  <- holdDyn (const []) evMkLayer
-  commitLayers $ zipDynWith ($) dMkLayer dTfrm
+  commitWidgets $ zipDynWith ($) dMkLayer dTfrm
 
 
-colorPicture :: OdinLayered r t m => PictureCfg GLuint V2V4 t -> m ()
+colorPicture :: OdinWidget r t m => PictureCfg GLuint V2V4 t -> m ()
 colorPicture cfg = do
   V2V4Renderer v2v4 <- getV2V4
   picture v2v4 cfg
 
 
-texturePicture :: OdinLayered r t m => PictureCfg GLuint V2V2 t -> m ()
+texturePicture :: OdinWidget r t m => PictureCfg GLuint V2V2 t -> m ()
 texturePicture cfg = do
   V2V2Renderer v2v2 <- getV2V2
   picture v2v2 cfg

@@ -1,10 +1,14 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE RecursiveDo           #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module Odin.Engine.New
   ( module Odin.Engine.New
   , TVar
@@ -16,16 +20,19 @@ import           Control.Arrow               ((&&&))
 import           Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVar,
                                               readTVarIO, writeTVar)
 import           Control.Lens                (at, (&), (.~))
-import           Control.Monad               (guard)
+import           Control.Monad               (forM_, guard)
+import           Control.Monad.Reader        (MonadReader (..))
 import           Control.Monad.STM           (atomically)
 import           Control.Monad.Trans.Either  (runEitherT)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as M
+import qualified Data.Vector.Unboxed         as V
 import           Data.Word                   (Word64)
 import           Gelatin.FreeType2           (Atlas (..), GlyphSize (..),
                                               allocAtlas)
 import           Gelatin.SDL2
 import           Reflex.SDL2
+import           Reflex.SDL2.Internal        (SystemEvents (sysUserData))
 import qualified SDL
 
 
@@ -49,24 +56,97 @@ newtype IconFont    = IconFont    FontDescriptor deriving (Show, Eq, Ord)
 type FontMap = Map FontDescriptor Atlas
 
 
-data OdinData r = OdinData { odinUserData     :: r
-                           , odinWindow       :: Window
-                           , odinFontMap      :: TVar FontMap
-                           , odinFresh        :: TVar Word64
-                           , odinV2V4Renderer :: V2V4Renderer
-                           , odinV2V2Renderer :: V2V2Renderer
-                           , odinDefaultFont  :: DefaultFont
-                           , odinIconFont     :: IconFont
-                           }
+data Boundary = Boundary (V2 Float) (V2 Float) (V2 Float) (Vector (V2 Float)) deriving (Show)
 
 
-data Layer = Layer { layerUid    :: Word64
-                   , layerRender :: IO ()
-                   , layerFree   :: IO ()
-                   }
+boundaryToVectorV2 :: Boundary -> Vector (V2 Float)
+boundaryToVectorV2 (Boundary a b c ds) = V.fromList [a, b, c] V.++ ds
 
-type Odin r t m = (ReflexSDL2 (OdinData r) t m, MonadIO (PushM t))
-type OdinLayered r t m = (Odin r t m, MonadDynamicWriter t [Layer] m)
+
+boundaryHasPoint :: Boundary -> V2 Float -> Bool
+boundaryHasPoint b = pathHasPoint (boundaryToVectorV2 b)
+
+
+boundariesHavePoint :: [Boundary] -> V2 Float -> Bool
+boundariesHavePoint bs p = any (`boundaryHasPoint` p) bs
+
+
+data WidgetUserMotion = UserNoMotion
+                      | UserMousedIntoWidget
+                      | UserUsingWidget
+                      | UserMousedOutOfWidget
+                      deriving (Show, Eq)
+
+
+data WidgetTree = WidgetTreeBranch [RenderTransform2] [WidgetTree]
+                | WidgetTreeNode [RenderTransform2] [Boundary] Renderer2
+
+
+instance Monoid WidgetTree where
+  mempty = WidgetTreeBranch [] []
+  mappend a b = WidgetTreeBranch [] [a, b]
+
+
+data OdinData r t = OdinData { odinUserData     :: r
+                             , odinWindow       :: Window
+                             , odinFontMap      :: TVar FontMap
+                             , odinFresh        :: TVar Word64
+                             , odinV2V4Renderer :: V2V4Renderer
+                             , odinV2V2Renderer :: V2V2Renderer
+                             , odinDefaultFont  :: DefaultFont
+                             , odinIconFont     :: IconFont
+                             , odin12FPSEvent   :: Event t ()
+                             , odinWidgetTree   :: WidgetTree
+                             }
+
+
+data Widget = Widget { widgetUid       :: Word64
+                     , widgetTransform :: [RenderTransform2]
+                     , widgetRenderer2 :: Renderer2
+                     }
+
+
+renderWidget :: Widget -> [RenderTransform2] -> IO ()
+renderWidget w = snd (widgetRenderer2 w)
+
+
+freeWidget :: Widget -> IO ()
+freeWidget = fst . widgetRenderer2
+
+
+stepWidgets
+  :: MonadIO m
+  => (Map Word64 Widget, [Widget])
+  -> [Widget]
+  -> m (Map Word64 Widget, [Widget])
+stepWidgets (oldMap, _) widgets = do
+  -- First make a map of the current widgets and a map of
+  -- the widgets that no longer exist.
+  let newMap  = M.fromList $ map (widgetUid &&& id) widgets
+      freeMap = M.difference oldMap newMap
+  -- Free the old widgets
+  sequence_ $ liftIO . freeWidget <$> freeMap
+  -- Return the new map
+  return (newMap, widgets)
+
+
+commitWidgets :: OdinWidget r t m => Dynamic t [Widget] -> m ()
+commitWidgets = tellDyn
+
+
+commitWidget :: OdinWidget r t m => Dynamic t Widget -> m ()
+commitWidget = tellDyn . fmap pure
+
+
+commitWidgetWhen
+  :: OdinWidget r t m
+  => Dynamic t Bool -> Dynamic t Widget -> m ()
+commitWidgetWhen dIsAlive = commitWidgets . zipDynWith f dIsAlive
+  where f isAlive widget = widget <$ guard isAlive
+
+
+type Odin r t m = (ReflexSDL2 (OdinData r t) t m, MonadIO (PushM t))
+type OdinWidget r t m = (Odin r t m, MonadDynamicWriter t [Widget] m)
 
 
 getWindow :: Odin r t m => m Window
@@ -83,6 +163,13 @@ getWindowSizeEvent = do
   evResized <-
     fmap fromIntegral . windowResizedEventSize <$$> getWindowResizedEvent
   return $ leftmost [evFirstSize, evResized]
+
+
+getMousePositionEvent :: Odin r t m => m (Event t (V2 Float))
+getMousePositionEvent = do
+  evMotion <- getMouseMotionEvent
+  let mousePos dat = ($ mouseMotionEventPos dat) $ \(P v) -> fromIntegral <$> v
+  return $ mousePos <$> evMotion
 
 
 getV2V2 :: Odin r t m => m V2V2Renderer
@@ -165,7 +252,13 @@ getIconFont :: Odin r t m => m IconFont
 getIconFont = odinIconFont <$> getUserData
 
 
-runOdin :: r -> ConcreteReflexSDL2 (OdinData r) a -> IO ()
+initialize12FPSEvent :: Odin r t m => m a -> m a
+initialize12FPSEvent guest = do
+  ev12FPS <- getRecurringTimerEvent $ floor $ 1000/(12 :: Double)
+  userLocal (\o -> o{odin12FPSEvent = ev12FPS}) guest
+
+
+runOdin :: Reflex t => r -> ConcreteReflexSDL2 (OdinData r t) a -> IO ()
 runOdin r guest = do
   initializeAll
   let ogl = defaultOpenGL{ glProfile = Core Debug 3 3 }
@@ -187,58 +280,34 @@ runOdin r guest = do
                       , odinV2V2Renderer = V2V2Renderer v2v2
                       , odinDefaultFont  = defaultFont
                       , odinIconFont     = iconFont
+                      , odin12FPSEvent   = never
+                      , odinMyWidgets    = []
                       }
   host odin guest
 
 
-stepLayers :: MonadIO m => (Map Word64 Layer, [Layer]) -> [Layer] -> m (Map Word64 Layer, [Layer])
-stepLayers (oldMap, _) layers = do
-  -- First make a map of the current layers and a map of
-  -- the layers that no longer exist.
-  let newMap  = M.fromList $ map (layerUid &&& id) layers
-      freeMap = M.difference oldMap newMap
-  -- Free the old layers
-  sequence_ $ liftIO . layerFree <$> freeMap
-  -- Return the new map
-  return (newMap, layers)
-
-
-render :: MonadIO m => Window -> [Layer] -> m ()
-render window layers = do
-  liftIO $ print $ map layerUid layers
-  -- Render the new layers in order
+render :: MonadIO m => Window -> [Widget] -> m ()
+render window widgets = do
+  liftIO $ print $ map widgetUid widgets
+  -- Render the new widgets in order
   glClearColor 0 0 0 1
   glClear GL_COLOR_BUFFER_BIT
   v2Cint <- get $ windowSize window
   let V2 ww wh = fromIntegral <$> v2Cint
   glViewport 0 0 ww wh
-  mapM_ (liftIO . layerRender) layers
+  forM_ widgets $ \w -> liftIO (renderWidget w $ widgetTransform w)
   glSwapWindow window
 
 
 ----------------------------------------------------------------------
-mainLoop :: Odin r t m => DynamicWriterT t [Layer] m () -> m ()
+mainLoop :: Odin r t m => DynamicWriterT t [Widget] m () -> m ()
 mainLoop guest = do
-  window         <- getWindow
-  (_, dynLayers) <- runDynamicWriterT guest
+  window          <- getWindow
+  (_, dynWidgets) <- runDynamicWriterT guest
   let initial = (M.empty, [])
-  evLayers <- snd <$$> accumM stepLayers initial (updated dynLayers)
-  performEvent_ $ render window <$> evLayers
+  evWidgets <- snd <$$> accumM stepWidgets initial (updated dynWidgets)
+  performEvent_ $ render window <$> evWidgets
 
-
-commitLayers :: OdinLayered r t m => Dynamic t [Layer] -> m ()
-commitLayers = tellDyn
-
-
-commitLayer :: OdinLayered r t m => Dynamic t Layer -> m ()
-commitLayer = tellDyn . fmap pure
-
-
-commitLayerWhen
-  :: OdinLayered r t m
-  => Dynamic t Bool -> Dynamic t Layer -> m ()
-commitLayerWhen dIsAlive = commitLayers . zipDynWith f dIsAlive
-  where f isAlive layer = layer <$ guard isAlive
 
 
 ffor3 :: Applicative f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d

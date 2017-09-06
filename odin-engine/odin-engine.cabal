@@ -96,6 +96,7 @@ executable odin-engine-new-exe
                      , gelatin-gl
                      , odin-engine
                      , reflex-sdl2
+                     , vector
   default-language:    Haskell2010
 
 executable odin-engine-exe

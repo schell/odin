@@ -62,7 +62,7 @@ compileTextField (V2V2Renderer backend) tvFontMap (TextFieldNeeds text colr font
 
 ----------------------------------------------------------------------
 textField
-  :: OdinLayered r t m
+  :: OdinWidget r t m
   => TextFieldCfg t
   -> m (Dynamic t (V2 Float))
 textField cfg = do
@@ -80,10 +80,10 @@ textField cfg = do
       mkLayer needs = do
         k  <- freshWith tvFresh
         tf <- compileTextField v2v2 tvFontMap needs
-        return (tf, \ts -> [Layer k (renderTextField ts tf) (freeTextField tf)])
+        return (tf, \ts -> [Widget k ts $ textFieldRenderer tf])
   evTFAndMkLayers <- performEvent $ mkLayer <$> evNeeds
   dTFAndMkLayers  <- holdDyn (def, const []) evTFAndMkLayers
   let dLayers = zipDynWith (\(_, f) ts -> f ts) dTFAndMkLayers dTfrm
-  commitLayers dLayers
+  commitWidgets dLayers
 
   return $ textFieldSize . fst <$> dTFAndMkLayers
