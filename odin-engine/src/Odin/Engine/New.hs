@@ -56,19 +56,38 @@ newtype IconFont    = IconFont    FontDescriptor deriving (Show, Eq, Ord)
 type FontMap = Map FontDescriptor Atlas
 
 
-data Boundary = Boundary (V2 Float) (V2 Float) (V2 Float) (Vector (V2 Float)) deriving (Show)
+data Shape =
+    ShapeRectangle (V2 Float) Float Float
+    -- ^ A rectangle with a point for the top left and scalar width and height.
+  | ShapeCircle (V2 Float) Float
+    -- ^ A circle with a point for the center and a radius.
+  | ShapePath (Vector (V2 Float))
 
 
-boundaryToVectorV2 :: Boundary -> Vector (V2 Float)
-boundaryToVectorV2 (Boundary a b c ds) = V.fromList [a, b, c] V.++ ds
+transformShape :: [RenderTransform2] -> Shape -> Shape
+transformShape ts (ShapeRectangle p w h) =
+  let mv = affine2sModelview $ extractSpatial ts
+      p1 = transformV2 mv p
+      V2 w1 h1 = (transformV2 mv $ p + V2 w h) - p1
+  in ShapeRectangle p1 w1 h1
+transformShape ts (ShapeCircle p r) =
+  let mv = affine2sModelview $ extractSpatial ts
+      p1 = transformV2 mv p
+      r1 = abs $ distance p1 $ transformV2 mv $ p + V2 r 0
+  in ShapeCircle p1 r1
+transformShape ts (ShapePath vs) = ShapePath $ V.map (transformV2 mv) vs
+  where mv = affine2sModelview $ extractSpatial ts
 
 
-boundaryHasPoint :: Boundary -> V2 Float -> Bool
-boundaryHasPoint b = pathHasPoint (boundaryToVectorV2 b)
+shapeHasPoint :: Shape -> V2 Float -> Bool
+shapeHasPoint (ShapeRectangle (V2 tlx tly) w h) (V2 px py) =
+  px >= tlx && px <= (tlx + w) && py >= tly && py <= (tly + py)
+shapeHasPoint (ShapeCircle v r) p = abs (distance v p) <= r
+shapeHasPoint (ShapePath vs) p = pathHasPoint vs p
 
 
-boundariesHavePoint :: [Boundary] -> V2 Float -> Bool
-boundariesHavePoint bs p = any (`boundaryHasPoint` p) bs
+shapesHavePoint :: [Shape] -> V2 Float -> Bool
+shapesHavePoint bs p = any (`shapeHasPoint` p) bs
 
 
 data WidgetUserMotion = UserNoMotion
@@ -79,7 +98,30 @@ data WidgetUserMotion = UserNoMotion
 
 
 data WidgetTree = WidgetTreeBranch [RenderTransform2] [WidgetTree]
-                | WidgetTreeNode [RenderTransform2] [Boundary] Renderer2
+                | WidgetTreeLeaf Word64 [RenderTransform2] [Shape] Renderer2
+
+
+data Widget = Widget { widgetUid       :: Word64
+                     , widgetTransform :: [RenderTransform2]
+                     , widgetBoundary  :: [Shape]
+                     , widgetRenderer2 :: Renderer2
+                     }
+
+
+flattenWidgetTree :: [RenderTransform2] -> WidgetTree -> [Widget]
+flattenWidgetTree parentTs (WidgetTreeLeaf uid ts bs r2) =
+  [Widget uid (parentTs ++ ts) bs r2]
+flattenWidgetTree parentTs (WidgetTreeBranch ts ws) =
+  concatMap (flattenWidgetTree $ parentTs ++ ts) ws
+
+
+widgetHasPoint :: Widget -> V2 Float -> Bool
+widgetHasPoint (Widget _ ts bs _) p =
+  any ((`shapeHasPoint` p) . transformShape ts) bs
+
+
+widgetsHavePoint :: [Widget] -> V2 Float -> Bool
+widgetsHavePoint nodes p = any (`widgetHasPoint` p) nodes
 
 
 instance Monoid WidgetTree where
@@ -98,12 +140,6 @@ data OdinData r t = OdinData { odinUserData     :: r
                              , odin12FPSEvent   :: Event t ()
                              , odinWidgetTree   :: WidgetTree
                              }
-
-
-data Widget = Widget { widgetUid       :: Word64
-                     , widgetTransform :: [RenderTransform2]
-                     , widgetRenderer2 :: Renderer2
-                     }
 
 
 renderWidget :: Widget -> [RenderTransform2] -> IO ()
@@ -130,23 +166,8 @@ stepWidgets (oldMap, _) widgets = do
   return (newMap, widgets)
 
 
-commitWidgets :: OdinWidget r t m => Dynamic t [Widget] -> m ()
-commitWidgets = tellDyn
-
-
-commitWidget :: OdinWidget r t m => Dynamic t Widget -> m ()
-commitWidget = tellDyn . fmap pure
-
-
-commitWidgetWhen
-  :: OdinWidget r t m
-  => Dynamic t Bool -> Dynamic t Widget -> m ()
-commitWidgetWhen dIsAlive = commitWidgets . zipDynWith f dIsAlive
-  where f isAlive widget = widget <$ guard isAlive
-
-
 type Odin r t m = (ReflexSDL2 (OdinData r t) t m, MonadIO (PushM t))
-type OdinWidget r t m = (Odin r t m, MonadDynamicWriter t [Widget] m)
+type OdinWidget r t m = (Odin r t m, MonadDynamicWriter t WidgetTree m)
 
 
 getWindow :: Odin r t m => m Window
@@ -281,7 +302,6 @@ runOdin r guest = do
                       , odinDefaultFont  = defaultFont
                       , odinIconFont     = iconFont
                       , odin12FPSEvent   = never
-                      , odinMyWidgets    = []
                       }
   host odin guest
 
@@ -300,12 +320,13 @@ render window widgets = do
 
 
 ----------------------------------------------------------------------
-mainLoop :: Odin r t m => DynamicWriterT t [Widget] m () -> m ()
+mainLoop :: Odin r t m => DynamicWriterT t WidgetTree m () -> m ()
 mainLoop guest = do
   window          <- getWindow
-  (_, dynWidgets) <- runDynamicWriterT guest
-  let initial = (M.empty, [])
-  evWidgets <- snd <$$> accumM stepWidgets initial (updated dynWidgets)
+  (_, dWidgetTree) <- runDynamicWriterT guest
+  let dNodes  = flattenWidgetTree [] <$> dWidgetTree
+      initial = (M.empty, [])
+  evWidgets <- snd <$$> accumM stepWidgets initial (updated dNodes)
   performEvent_ $ render window <$> evWidgets
 
 

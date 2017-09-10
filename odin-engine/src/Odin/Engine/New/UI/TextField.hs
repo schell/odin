@@ -80,10 +80,10 @@ textField cfg = do
       mkLayer needs = do
         k  <- freshWith tvFresh
         tf <- compileTextField v2v2 tvFontMap needs
-        return (tf, \ts -> [Widget k ts $ textFieldRenderer tf])
+        return (tf, \ts -> WidgetTreeLeaf k ts [] $ textFieldRenderer tf)
   evTFAndMkLayers <- performEvent $ mkLayer <$> evNeeds
-  dTFAndMkLayers  <- holdDyn (def, const []) evTFAndMkLayers
+  dTFAndMkLayers  <- holdDyn (def, const mempty) evTFAndMkLayers
   let dLayers = zipDynWith (\(_, f) ts -> f ts) dTFAndMkLayers dTfrm
-  commitWidgets dLayers
+  tellDyn dLayers
 
   return $ textFieldSize . fst <$> dTFAndMkLayers

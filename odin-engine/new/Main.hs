@@ -13,6 +13,7 @@ module Main where
 import           Control.Lens                 hiding (to)
 import           Control.Monad                (guard, void)
 import           Data.Default                 (def)
+import qualified Data.Vector.Unboxed          as V
 import           Gelatin.GL
 import           Reflex.SDL2                  hiding (fan)
 import           System.Exit                  (exitSuccess)
@@ -25,22 +26,24 @@ import           Odin.Engine.New.UI.TextField
 
 
 widgetLayer
-  :: forall r t m a. Odin r t m
+  :: forall r t m a. OdinWidget r t m
   => (Dynamic t WidgetUserMotion -> DynamicWriterT t WidgetTree m a)
-  -> m a
+  -> m (a, Dynamic t WidgetUserMotion)
 widgetLayer f = mdo
-  (a, dWidgetTree) <- runEventWriterT $ f dMotion
-  dBounds          <- holdDyn [] evBoundaries
-  dMousePos        <- holdDyn (-1/0) =<< getMousePositionEvent
-  dMotion          <- holdUniqDyn =<< foldDyn foldf UserNoMotion
-    (updated $ zipDynWith boundariesHavePoint dBounds dMousePos)
-  return a
+  (a, dWidgetTree) <- runDynamicWriterT $ f dMotion
+  tellDyn dWidgetTree
+
+  let dNodes = flattenWidgetTree [] <$> dWidgetTree
+  dMousePos <- holdDyn (-1/0) =<< getMousePositionEvent
+  dMotion   <- holdUniqDyn =<< foldDyn foldf UserNoMotion
+    (updated $ zipDynWith widgetsHavePoint dNodes dMousePos)
+
+  return (a, dMotion)
   where foldf True = \case
           UserNoMotion          -> UserMousedIntoWidget
           UserMousedIntoWidget  -> UserUsingWidget
           UserUsingWidget       -> UserUsingWidget
           UserMousedOutOfWidget -> UserMousedIntoWidget
-
         foldf False = \case
           UserNoMotion          -> UserNoMotion
           UserMousedIntoWidget  -> UserMousedOutOfWidget
@@ -48,15 +51,16 @@ widgetLayer f = mdo
           UserMousedOutOfWidget -> UserNoMotion
 
 
-
-
-
 guest :: forall r t m. (OdinWidget r t m) => m ()
 guest = initialize12FPSEvent $ do
   widgetLayer $ \dUserMotion -> do
     putDebugLnE (updated dUserMotion) show
-    evPB <- getPostBuild
-    tellEvent $ [Boundary 0 (V2 100 0) 100 $ V.singleton $ V2 0 100] <$ evPB
+    k <- fresh
+    tellDyn $ constDyn $ WidgetTreeLeaf k [] [ShapeRectangle 0 100 100] mempty
+    widgetLayer $ \dUserMotionTop -> do
+      putDebugLnE (updated dUserMotionTop) $ ("top " ++) . show
+      k <- fresh
+      tellDyn $ constDyn $ WidgetTreeLeaf k [] [ShapeRectangle 50 100 100] mempty
   ------------------------------------------------------------------------------
   -- First we'll draw a colorful background that always stays anchored at the
   -- top left corner, but also stretces to the boundaries of the window.

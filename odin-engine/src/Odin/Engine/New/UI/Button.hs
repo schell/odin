@@ -147,12 +147,13 @@ button cfg0 = do
                               <*> paint p (ButtonData txt ButtonStateOver)
                               <*> paint p (ButtonData txt ButtonStateDown)
                               <*> paint p (ButtonData txt ButtonStateClicked)
-        let layerf :: [RenderTransform2] -> ButtonState -> [Widget]
-            layerf ts st = [Widget k ts $ buttonRenderer2 btn st]
+        let layerf :: [RenderTransform2] -> ButtonState -> WidgetTree
+            -- TODO: Make sure we write the boundaries instead of '[]'
+            layerf ts st = WidgetTreeLeaf k ts [] $ buttonRenderer2 btn st
         return (btn, layerf)
 
   evBtnMkWidget <- performEvent $ mkWidget <$> evNeeds
-  dMkWidget     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkWidget
+  dMkWidget     <- holdDyn (\_ _ -> mempty) $ snd <$> evBtnMkWidget
   dMayBInt      <- holdDyn Nothing $ Just . fst <$> evBtnMkWidget
 
   evMotion      <- getMouseMotionEvent
@@ -171,5 +172,5 @@ button cfg0 = do
   dUniqState  <- holdUniqDyn dState
   dMkPainting <- holdDyn mempty $ paintingForButtonState . fst <$> evBtnMkWidget
   let dBounds = paintingBounds <$> zipDynWith ($) dMkPainting dUniqState
-  commitWidgets $ forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
+  tellDyn $ forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
   return $ ButtonOutput (zipDynWith transformBounds dTfrm dBounds) dUniqState
