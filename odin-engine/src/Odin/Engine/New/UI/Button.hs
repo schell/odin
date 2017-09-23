@@ -17,7 +17,7 @@ import           Reflex.SDL2                  hiding (fan)
 
 import           Odin.Engine.New
 import           Odin.Engine.New.UI.Configs
-import           Odin.Engine.New.UI.Paint
+import           Odin.Engine.New.UI.Painting
 import           Odin.Engine.New.UI.Painters
 
 
@@ -39,19 +39,6 @@ paintingForButtonState btn = \case
   ButtonStateClicked -> biClicked btn
 
 
-buttonRenderer2 :: ButtonInternal -> ButtonState -> Renderer2
-buttonRenderer2 btn st = paintingRenderer $ paintingForButtonState btn st
-
-
---renderButton :: ButtonInternal -> [RenderTransform2] -> ButtonState -> IO ()
---renderButton btn ts = flip renderPainting ts . paintingForButtonState btn
---
---
---freeButton :: ButtonInternal -> IO ()
---freeButton (ButtonInternal up ovr down clicked) =
---  mapM_ freePainting [up, ovr, down, clicked]
-
-
 ----------------------------------------------------------------------
 transformBounds
   :: [RenderTransform2] -> (V2 Float, V2 Float) -> (V2 Float, V2 Float)
@@ -61,9 +48,8 @@ transformBounds ts (tl, br) = (transformV2 mv tl, transformV2 mv br)
 
 globalPointIsInsideButton
   :: ButtonInternal -> ButtonState -> [RenderTransform2] -> V2 Float -> Bool
-globalPointIsInsideButton btn st ts p = pointInBox p (transformBounds ts bounds)
-  where pnt    = paintingForButtonState btn st
-        bounds = paintingBounds pnt
+globalPointIsInsideButton btn st ts =
+  shapeHasPoint (transformShape ts $ paintingShape $ paintingForButtonState btn st)
 
 
 data ButtonUpdate = ButtonUpdateMotion MouseMotionEventData
@@ -79,7 +65,7 @@ data ButtonStep = ButtonStep { bsInternal :: ButtonInternal
 
 
 data ButtonOutput t =
-  ButtonOutput { buttonOutputBounds :: Dynamic t (V2 Float, V2 Float)
+  ButtonOutput { buttonOutputBounds :: Dynamic t [Shape]
                , buttonOutputState  :: Dynamic t ButtonState
                }
 
@@ -147,13 +133,14 @@ button cfg0 = do
                               <*> paint p (ButtonData txt ButtonStateOver)
                               <*> paint p (ButtonData txt ButtonStateDown)
                               <*> paint p (ButtonData txt ButtonStateClicked)
-        let layerf :: [RenderTransform2] -> ButtonState -> WidgetTree
-            -- TODO: Make sure we write the boundaries instead of '[]'
-            layerf ts st = WidgetTreeLeaf k ts [] $ buttonRenderer2 btn st
+        let layerf ts st = let painting = paintingForButtonState btn st
+                               r        = paintingRenderer painting
+                               shape    = paintingShape painting
+                           in [Widget k ts [shape] r]
         return (btn, layerf)
 
   evBtnMkWidget <- performEvent $ mkWidget <$> evNeeds
-  dMkWidget     <- holdDyn (\_ _ -> mempty) $ snd <$> evBtnMkWidget
+  dMkWidget     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkWidget
   dMayBInt      <- holdDyn Nothing $ Just . fst <$> evBtnMkWidget
 
   evMotion      <- getMouseMotionEvent
@@ -170,7 +157,6 @@ button cfg0 = do
 
   dState      <- foldDyn stepButton ButtonStateUp evStep
   dUniqState  <- holdUniqDyn dState
-  dMkPainting <- holdDyn mempty $ paintingForButtonState . fst <$> evBtnMkWidget
-  let dBounds = paintingBounds <$> zipDynWith ($) dMkPainting dUniqState
-  tellDyn $ forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
-  return $ ButtonOutput (zipDynWith transformBounds dTfrm dBounds) dUniqState
+  let dWidgets = forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
+  tellDyn dWidgets
+  return $ ButtonOutput (concatMap globalWidgetBoundary <$> dWidgets) dUniqState

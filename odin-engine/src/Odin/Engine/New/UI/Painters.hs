@@ -19,7 +19,7 @@ import           Gelatin.GL                 (compilePicture)
 import           Control.Monad              (when)
 import           Data.Char.FontAwesome
 import           Odin.Engine.New
-import           Odin.Engine.New.UI.Paint
+import           Odin.Engine.New.UI.Painting
 import           Odin.Engine.New.UI.Configs
 
 --------------------------------------------------------------------------------

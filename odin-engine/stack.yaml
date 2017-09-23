@@ -86,6 +86,7 @@ packages:
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
+- sdl2-2.3.0
 - freetype2-0.1.1
 - prim-uniq-0.1.0.1
 - ref-tf-0.4.0.1

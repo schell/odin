@@ -18,10 +18,11 @@ library
   hs-source-dirs:      src
   other-modules:
   exposed-modules:   Odin.Engine.New
+                   , Odin.Engine.New.UI.Animation
                    , Odin.Engine.New.UI.Configs
                    , Odin.Engine.New.UI.Button
-                   , Odin.Engine.New.UI.Paint
                    , Odin.Engine.New.UI.Painters
+                   , Odin.Engine.New.UI.Painting
                    , Odin.Engine.New.UI.Picture
                    , Odin.Engine.New.UI.TextField
                      --  Control.Monad.Trans.NextT
@@ -96,6 +97,8 @@ executable odin-engine-new-exe
                      , gelatin-gl
                      , odin-engine
                      , reflex-sdl2
+                     , stm
+                     , varying
                      , vector
   default-language:    Haskell2010
 

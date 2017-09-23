@@ -12,15 +12,15 @@ module Odin.Engine.New.UI.Configs
   ) where
 
 
-import           Control.Lens             as L ((&), (.~), (^.))
-import           Control.Lens             (makeFields)
-import           Data.Default             (Default, def)
+import           Control.Lens                as L ((&), (.~), (^.))
+import           Control.Lens                (makeFields)
+import           Data.Default                (Default, def)
 import           Gelatin.GL
-import           GHC.Generics             (Generic)
-import           Reflex.SDL2              (Event, Reflex, never)
+import           GHC.Generics                (Generic)
+import           Reflex.SDL2                 (Event, Reflex, never)
 
-import           Odin.Engine.New          (FontDescriptor)
-import           Odin.Engine.New.UI.Paint (Painter)
+import           Odin.Engine.New             (FontDescriptor)
+import           Odin.Engine.New.UI.Painting (Painter)
 
 instance Reflex t => Default (Event t a) where
   def = never
@@ -58,3 +58,9 @@ data ButtonCfg t =
             , buttonCfgSetTransformEvent     :: Event t [RenderTransform2]
             } deriving (Generic, Default)
 $(makeFields ''ButtonCfg)
+
+
+
+newtype AnimeCfg t = AnimeCfg { animeCfgDeltaSecondsEvent :: Event t Float }
+                   deriving (Generic, Default)
+$(makeFields ''AnimeCfg)

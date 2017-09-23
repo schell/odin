@@ -5,13 +5,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE RecursiveDo           #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Odin.Engine.New
   ( module Odin.Engine.New
   , TVar
+  , module Varying
   ) where
 
 
@@ -24,8 +24,10 @@ import           Control.Monad               (forM_, guard)
 import           Control.Monad.Reader        (MonadReader (..))
 import           Control.Monad.STM           (atomically)
 import           Control.Monad.Trans.Either  (runEitherT)
+import           Control.Varying             as Varying hiding (Event)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as M
+import           Data.Monoid                 ((<>))
 import qualified Data.Vector.Unboxed         as V
 import           Data.Word                   (Word64)
 import           Gelatin.FreeType2           (Atlas (..), GlyphSize (..),
@@ -62,13 +64,14 @@ data Shape =
   | ShapeCircle (V2 Float) Float
     -- ^ A circle with a point for the center and a radius.
   | ShapePath (Vector (V2 Float))
+  deriving (Show)
 
 
 transformShape :: [RenderTransform2] -> Shape -> Shape
 transformShape ts (ShapeRectangle p w h) =
   let mv = affine2sModelview $ extractSpatial ts
       p1 = transformV2 mv p
-      V2 w1 h1 = (transformV2 mv $ p + V2 w h) - p1
+      V2 w1 h1 = transformV2 mv (p + V2 w h) - p1
   in ShapeRectangle p1 w1 h1
 transformShape ts (ShapeCircle p r) =
   let mv = affine2sModelview $ extractSpatial ts
@@ -81,7 +84,7 @@ transformShape ts (ShapePath vs) = ShapePath $ V.map (transformV2 mv) vs
 
 shapeHasPoint :: Shape -> V2 Float -> Bool
 shapeHasPoint (ShapeRectangle (V2 tlx tly) w h) (V2 px py) =
-  px >= tlx && px <= (tlx + w) && py >= tly && py <= (tly + py)
+  px >= tlx && px <= (tlx + w) && py >= tly && py <= (tly + h)
 shapeHasPoint (ShapeCircle v r) p = abs (distance v p) <= r
 shapeHasPoint (ShapePath vs) p = pathHasPoint vs p
 
@@ -96,9 +99,28 @@ data WidgetUserMotion = UserNoMotion
                       | UserMousedOutOfWidget
                       deriving (Show, Eq)
 
+deriving instance Show RenderTransform2
 
 data WidgetTree = WidgetTreeBranch [RenderTransform2] [WidgetTree]
                 | WidgetTreeLeaf Word64 [RenderTransform2] [Shape] Renderer2
+
+instance Show WidgetTree where
+  show = go 0
+    where str n (WidgetTreeBranch rs ws) = "WidgetTreeBranch " ++ show rs ++ concatMap (go $ n + 1) ws
+          str _ (WidgetTreeLeaf k rs sh _) = "WidgetTreeLeaf " ++ unwords [show k, show rs, show sh]
+          go 0 w = str 0 w
+          go n w = "\n" ++ concat (replicate n " ") ++ "| " ++ str n w
+
+
+transformTree :: [RenderTransform2] -> WidgetTree -> WidgetTree
+transformTree ts = \case
+  WidgetTreeBranch ts0 ws -> WidgetTreeBranch (ts0 ++ ts) ws
+  WidgetTreeLeaf k ts0 ss r -> WidgetTreeLeaf k (ts0 ++ ts) ss r
+
+
+insertChildTree :: WidgetTree -> WidgetTree -> WidgetTree
+insertChildTree (WidgetTreeBranch ts ws) w = WidgetTreeBranch ts $ ws ++ [w]
+insertChildTree leaf w                     = WidgetTreeBranch [] [leaf, w]
 
 
 data Widget = Widget { widgetUid       :: Word64
@@ -106,6 +128,26 @@ data Widget = Widget { widgetUid       :: Word64
                      , widgetBoundary  :: [Shape]
                      , widgetRenderer2 :: Renderer2
                      }
+
+
+instance Show Widget where
+  show (Widget uid ts bs _) = unwords [ "Widget{ widgetUid = " ++ show uid ++ ","
+                                      , "widgetTransform = " ++ show ts ++ ","
+                                      , "widgetBoundary = " ++ show bs
+                                      , "}"
+                                      ]
+
+
+transformWidget :: Widget -> [RenderTransform2] -> Widget
+transformWidget (Widget k ts bs r) ts2 = Widget k (ts ++ ts2) bs r
+
+
+transformWidgets :: [Widget] -> [RenderTransform2] -> [Widget]
+transformWidgets ws ts = fmap (`transformWidget` ts) ws
+
+
+globalWidgetBoundary :: Widget -> [Shape]
+globalWidgetBoundary w = widgetBoundary $ transformWidget w (widgetTransform w)
 
 
 flattenWidgetTree :: [RenderTransform2] -> WidgetTree -> [Widget]
@@ -124,22 +166,20 @@ widgetsHavePoint :: [Widget] -> V2 Float -> Bool
 widgetsHavePoint nodes p = any (`widgetHasPoint` p) nodes
 
 
-instance Monoid WidgetTree where
-  mempty = WidgetTreeBranch [] []
-  mappend a b = WidgetTreeBranch [] [a, b]
-
-
-data OdinData r t = OdinData { odinUserData     :: r
-                             , odinWindow       :: Window
-                             , odinFontMap      :: TVar FontMap
-                             , odinFresh        :: TVar Word64
-                             , odinV2V4Renderer :: V2V4Renderer
-                             , odinV2V2Renderer :: V2V2Renderer
-                             , odinDefaultFont  :: DefaultFont
-                             , odinIconFont     :: IconFont
-                             , odin12FPSEvent   :: Event t ()
-                             , odinWidgetTree   :: WidgetTree
+data OdinData r t = OdinData { odinUserData      :: r
+                             , odinWindow        :: Window
+                             , odinFontMap       :: TVar FontMap
+                             , odinFresh         :: TVar Word64
+                             , odinV2V4Renderer  :: V2V4Renderer
+                             , odinV2V2Renderer  :: V2V2Renderer
+                             , odinDefaultFont   :: DefaultFont
+                             , odinIconFont      :: IconFont
                              }
+
+data OdinReservedWords = ORW12FPSEvent
+                       | ORW24FPSEvent
+                       | ORW30FPSEvent
+                       deriving (Show, Eq, Enum, Bounded)
 
 
 renderWidget :: Widget -> [RenderTransform2] -> IO ()
@@ -167,7 +207,11 @@ stepWidgets (oldMap, _) widgets = do
 
 
 type Odin r t m = (ReflexSDL2 (OdinData r t) t m, MonadIO (PushM t))
-type OdinWidget r t m = (Odin r t m, MonadDynamicWriter t WidgetTree m)
+
+type OdinWidget r t m = ( MonadDynamicWriter t [Widget] m
+                        , ReflexSDL2 (OdinData r t) t m
+                        , MonadIO (PushM t)
+                        )
 
 
 getWindow :: Odin r t m => m Window
@@ -210,6 +254,7 @@ defaultFont = DefaultFont $ fontDescriptor "../assets/fonts/KMKDSP__.ttf" 16
 
 iconFont :: IconFont
 iconFont = IconFont $ fontDescriptor "../assets/fonts/FontAwesome.otf" 16
+
 
 -- | TODO: Change this to 'getFontMapVar'
 getTVarFontMap :: Odin r t m => m (TVar FontMap)
@@ -273,13 +318,14 @@ getIconFont :: Odin r t m => m IconFont
 getIconFont = odinIconFont <$> getUserData
 
 
-initialize12FPSEvent :: Odin r t m => m a -> m a
-initialize12FPSEvent guest = do
-  ev12FPS <- getRecurringTimerEvent $ floor $ 1000/(12 :: Double)
-  userLocal (\o -> o{odin12FPSEvent = ev12FPS}) guest
+get12FPSEvent :: Odin r t m => m (Event t ())
+get12FPSEvent = do
+  let code = fromIntegral $ fromEnum ORW12FPSEvent
+  getRecurringTimerEventWithEventCode code $
+          floor $ 1000/(12 :: Double)
 
 
-runOdin :: Reflex t => r -> ConcreteReflexSDL2 (OdinData r t) a -> IO ()
+runOdin :: Reflex t => r -> ConcreteReflexSDL2 (OdinData r t) () -> IO ()
 runOdin r guest = do
   initializeAll
   let ogl = defaultOpenGL{ glProfile = Core Debug 3 3 }
@@ -291,24 +337,22 @@ runOdin r guest = do
   Right (window, SDL2Backends v2v4 v2v2) <-
     runEitherT $ startupSDL2BackendsWithConfig cfg "odin-engine-new-exe"
 
-  tvFontMap <- atomically $ newTVar M.empty
-  tvFresh   <- atomically $ newTVar 0
-  let odin = OdinData { odinUserData     = r
-                      , odinWindow       = window
-                      , odinFontMap      = tvFontMap
-                      , odinFresh        = tvFresh
-                      , odinV2V4Renderer = V2V4Renderer v2v4
-                      , odinV2V2Renderer = V2V2Renderer v2v2
-                      , odinDefaultFont  = defaultFont
-                      , odinIconFont     = iconFont
-                      , odin12FPSEvent   = never
-                      }
-  host odin guest
+  let firstFreshK = fromIntegral $ fromEnum (maxBound :: OdinReservedWords) + 1
+  tvFontMap <- atomically $ newTVar mempty
+  tvFresh   <- atomically $ newTVar firstFreshK
+  flip host guest OdinData { odinUserData     = r
+                           , odinWindow       = window
+                           , odinFontMap      = tvFontMap
+                           , odinFresh        = tvFresh
+                           , odinV2V4Renderer = V2V4Renderer v2v4
+                           , odinV2V2Renderer = V2V2Renderer v2v2
+                           , odinDefaultFont  = defaultFont
+                           , odinIconFont     = iconFont
+                           }
 
 
 render :: MonadIO m => Window -> [Widget] -> m ()
 render window widgets = do
-  liftIO $ print $ map widgetUid widgets
   -- Render the new widgets in order
   glClearColor 0 0 0 1
   glClear GL_COLOR_BUFFER_BIT
@@ -320,15 +364,14 @@ render window widgets = do
 
 
 ----------------------------------------------------------------------
-mainLoop :: Odin r t m => DynamicWriterT t WidgetTree m () -> m ()
-mainLoop guest = do
-  window          <- getWindow
-  (_, dWidgetTree) <- runDynamicWriterT guest
-  let dNodes  = flattenWidgetTree [] <$> dWidgetTree
-      initial = (M.empty, [])
+runWidgets :: Odin r t m => DynamicWriterT t [Widget] m a -> m a
+runWidgets guest = do
+  window      <- getWindow
+  (a, dNodes) <- runDynamicWriterT guest
+  let initial = (M.empty, [])
   evWidgets <- snd <$$> accumM stepWidgets initial (updated dNodes)
   performEvent_ $ render window <$> evWidgets
-
+  return a
 
 
 ffor3 :: Applicative f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d

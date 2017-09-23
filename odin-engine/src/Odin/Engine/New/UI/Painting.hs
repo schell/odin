@@ -1,16 +1,17 @@
-{-# LANGUAGE AllowAmbiguousTypes    #-}
-{-# LANGUAGE DataKinds              #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE UndecidableInstances   #-}
-module Odin.Engine.New.UI.Paint where
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
+module Odin.Engine.New.UI.Painting where
 
 import           Gelatin.GL
-import           Reflex.SDL2 hiding (fan)
+import           Odin.Engine.New (Shape (..))
+import           Reflex.SDL2     hiding (fan)
 
 
 ----------------------------------------------------------------------
@@ -38,6 +39,12 @@ paintingOrigin = fst . paintingBounds
 
 paintingCenter :: Painting -> V2 Float
 paintingCenter p = let (tl,br) = paintingBounds p in tl + (br - tl)/2
+
+
+paintingShape :: Painting -> Shape
+paintingShape p = let (tl, br) = paintingBounds p
+                      V2 w h   = br - tl
+                  in ShapeRectangle tl w h
 
 
 instance Monoid Painting where
