@@ -74,8 +74,8 @@ packages:
   extra-dep: true
 
 - location:
-    git: https://github.com/schell/htiled.git
-    commit: 99326b98a8f38b9e00a0907ee7b9108df03b7375
+    git: https://github.com/schell/aeson-tiled
+    commit: e89aecd177e62e99e1f8985168718318ed299082
   extra-dep: true
 
 - location:

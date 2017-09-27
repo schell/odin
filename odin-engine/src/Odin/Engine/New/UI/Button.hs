@@ -4,16 +4,19 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecursiveDo           #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Odin.Engine.New.UI.Button where
 
-import           Control.Applicative          (liftA2)
+import           Control.Applicative          (liftA2, (<$))
+import           Control.Monad          (guard)
 import           Control.Lens                 hiding (to)
 import           Gelatin.GL
 import           Reflex.SDL2                  hiding (fan)
+import SDL.Raw.Enum (pattern SDL_SYSTEM_CURSOR_HAND)
 
 import           Odin.Engine.New
 import           Odin.Engine.New.UI.Configs
@@ -136,7 +139,9 @@ button cfg0 = do
         let layerf ts st = let painting = paintingForButtonState btn st
                                r        = paintingRenderer painting
                                shape    = paintingShape painting
-                           in [Widget k ts [shape] r]
+                               mcursor  = SDL_SYSTEM_CURSOR_HAND <$
+                                            guard (st == ButtonStateOver)
+                           in [Widget k ts [shape] r mcursor]
         return (btn, layerf)
 
   evBtnMkWidget <- performEvent $ mkWidget <$> evNeeds

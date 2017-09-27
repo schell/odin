@@ -2,12 +2,11 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TupleSections         #-}
 module Odin.Engine.New.UI.Painters
   ( getButtonPainter
---  , iconButtonPainter
---  , textInputPainter
+  , getIconButtonPainter
+  , getTextInputPainter
 --  , slotDefaultText
   ) where
 
@@ -51,7 +50,6 @@ getButtonPainter = do
   V2V4Renderer v2v4 <- getV2V4
   DefaultFont font  <- getDefaultFont
   tvFontMap         <- getTVarFontMap
-
   return $ Painter $ \(ButtonData txt st) ->
     loadAtlasInto tvFontMap font asciiChars >>= \case
       Nothing    -> do
@@ -81,93 +79,91 @@ getButtonPainter = do
                       textr $ t:rs
         return $ Painting bb (bgc >> textc, r)
 
---iconButtonPainter
---  :: ( MonadIO m
---     , Reads '[IconFont, V2V2Renderer, V2V4Renderer] m
---     , Mutate FontMap m
---     )
---  => Painter (ButtonData, ButtonState) m
---iconButtonPainter = Painter $ \(ButtonData{..}, st) -> do
---  IconFont font <- readIconFontDescriptor
---  loadAtlas font allFontAwesomeChars >>= \case
---    Nothing    -> do
---      liftIO $ putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
---      return mempty
---    Just atlas0 -> do
---      v2v2 <- v2v2Backend
---      ((textfgc,textfgr), V2 w _, atlas1) <- liftIO $
---        freetypeRenderer2 v2v2 atlas0 (bgColorForButtonState st) btnDataStr
---      ((textbgc,textbgr), V2 _ _, atlas)  <- liftIO $
---        freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) btnDataStr
---      saveAtlas atlas
---
---      let V2 fgx fgy = bgOffsetForButtonState st
---          V2 bgx bgy = bgOffsetForButtonState ButtonStateDown
---          r rs = do textbgr $ rs ++ [move bgx $ 16 + bgy]
---                    textfgr $ rs ++ [move fgx $ 16 + fgy]
---          c = textfgc >> textbgc
---      return $ Painting (0, V2 (w+2) 18) (c,r)
+getIconButtonPainter
+  :: Odin r t m
+  => m (Painter ButtonData IO)
+getIconButtonPainter = do
+  V2V2Renderer v2v2 <- getV2V2
+  IconFont font     <- getIconFont
+  tvFontMap         <- getTVarFontMap
+  return $ Painter $ \(ButtonData txt st) ->
+    loadAtlasInto tvFontMap font allFontAwesomeChars >>= \case
+      Nothing    -> do
+        putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
+        return mempty
+      Just atlas0 -> do
+        ((textfgc,textfgr), V2 w _, atlas1) <-
+          freetypeRenderer2 v2v2 atlas0 (bgColorForButtonState st) txt
+        ((textbgc,textbgr), V2 _ _, atlas)  <-
+          freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) txt
+        saveAtlasInto tvFontMap atlas
+
+        let V2 fgx fgy = bgOffsetForButtonState st
+            V2 bgx bgy = bgOffsetForButtonState ButtonStateDown
+            r rs = do textbgr $ rs ++ [move bgx $ 16 + bgy]
+                      textfgr $ rs ++ [move fgx $ 16 + fgy]
+            c = textfgc >> textbgc
+        return $ Painting (0, V2 (w+2) 18) (c,r)
 ----------------------------------------------------------------------------------
 ---- TextInput Styling
 ----------------------------------------------------------------------------------
---textColorForTextInputState :: TextInputState -> V4 Float
---textColorForTextInputState st = if st == TextInputStateEditing then canary else white
---
---bgColorForTextInputState :: TextInputState -> V4 Float
---bgColorForTextInputState TextInputStateDown    = V4 0.3 0.3 0.3 1
---bgColorForTextInputState TextInputStateEditing = V4 0.2 0.2 0.2 1
---bgColorForTextInputState _                     = V4 0 0 0 1
---
---lnColorForTextInputState :: TextInputState -> V4 Float
---lnColorForTextInputState TextInputStateUp   = white `withAlpha` 0.4
---lnColorForTextInputState TextInputStateOver = white `withAlpha` 0.8
---lnColorForTextInputState TextInputStateDown = white
---lnColorForTextInputState _                  = white `withAlpha` 0.8
---
---textInputPainter
---  :: ( MonadIO m
---     , Reads '[DefaultFont, V2V4Renderer, V2V2Renderer] m
---     , Mutate FontMap m
---     )
---  => Painter (TextInputData, TextInputState) m
---textInputPainter = Painter $ \(TextInputData{..}, st) -> do
---  DefaultFont font <- readDefaultFontDescriptor
---  loadAtlas font asciiChars >>= \case
---    Nothing -> do
---      liftIO $ putStrLn "ERROR PAINTING TEXTINPUT!"
---      return mempty
---    Just atlas0 -> do
---      let color = textColorForTextInputState st
---      v2v2 <- v2v2Backend
---      ((textc,textr), size@(V2 tw th), atlas) <- liftIO $
---        freetypeRenderer2 v2v2 atlas0 color txtnDataStr
---      saveAtlas atlas
---
---      let hasLeader = st == TextInputStateEditing
---          padding   = 4
---          inc       = 1.5 * padding
---          bgcolor   = bgColorForTextInputState st
---          lncolor   = lnColorForTextInputState st
---
---      v2v4     <- v2v4Backend
---      (bb,(bgc,bgr)) <- liftIO $ compilePicture v2v4 $ do
---        setStroke [StrokeWidth 3, StrokeFeather 1]
---        setGeometry $ do
---          fan $ mapVertices (,bgcolor) $ rectangle 0 (size + V2 inc inc)
---          line $ do
---            to (0, lncolor)
---            to (V2 (tw + inc) 0, lncolor)
---            to (V2 (tw + inc) (th + inc), lncolor)
---            to (V2 0 (th + inc), lncolor)
---            to (0, lncolor)
---          when hasLeader $ fan $ mapVertices (,color `withAlpha` 0.5) $
---            rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
---        pictureBounds2 fst
---
---      let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
---          r rs = do bgr rs
---                    textr $ t:rs
---      return $ Painting bb (bgc >> textc, r)
+textColorForTextInputState :: TextInputState -> V4 Float
+textColorForTextInputState st = if st == TextInputStateEditing then canary else white
+
+bgColorForTextInputState :: TextInputState -> V4 Float
+bgColorForTextInputState TextInputStateDown    = V4 0.3 0.3 0.3 1
+bgColorForTextInputState TextInputStateEditing = V4 0.2 0.2 0.2 1
+bgColorForTextInputState _                     = V4 0 0 0 1
+
+lnColorForTextInputState :: TextInputState -> V4 Float
+lnColorForTextInputState TextInputStateUp   = white `withAlpha` 0.4
+lnColorForTextInputState TextInputStateOver = white `withAlpha` 0.8
+lnColorForTextInputState TextInputStateDown = white
+lnColorForTextInputState _                  = white `withAlpha` 0.8
+
+getTextInputPainter
+  :: Odin r t m
+  => m (Painter TextInputData IO)
+getTextInputPainter = do
+  V2V2Renderer v2v2 <- getV2V2
+  V2V4Renderer v2v4 <- getV2V4
+  DefaultFont font  <- getDefaultFont
+  tvFontMap         <- getTVarFontMap
+  return $ Painter $ \(TextInputData txt st) ->
+    loadAtlasInto tvFontMap font asciiChars >>= \case
+      Nothing -> do
+        putStrLn "ERROR PAINTING TEXTINPUT!"
+        return mempty
+      Just atlas0 -> do
+        let color = textColorForTextInputState st
+        ((textc,textr), size@(V2 tw th), atlas) <- liftIO $
+          freetypeRenderer2 v2v2 atlas0 color txt
+        saveAtlasInto tvFontMap atlas
+
+        let hasLeader = st == TextInputStateEditing
+            padding   = 4
+            inc       = 1.5 * padding
+            bgcolor   = bgColorForTextInputState st
+            lncolor   = lnColorForTextInputState st
+
+        (bb,(bgc,bgr)) <- compilePicture v2v4 $ do
+          setStroke [StrokeWidth 3, StrokeFeather 1]
+          setGeometry $ do
+            fan $ mapVertices (,bgcolor) $ rectangle 0 (size + V2 inc inc)
+            line $ do
+              to (0, lncolor)
+              to (V2 (tw + inc) 0, lncolor)
+              to (V2 (tw + inc) (th + inc), lncolor)
+              to (V2 0 (th + inc), lncolor)
+              to (0, lncolor)
+            when hasLeader $ fan $ mapVertices (,color `withAlpha` 0.5) $
+              rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
+          pictureBounds2 fst
+
+        let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
+            r rs = do bgr rs
+                      textr $ t:rs
+        return $ Painting bb (bgc >> textc, r)
 ----------------------------------------------------------------------------------
 ---- Text
 ----------------------------------------------------------------------------------

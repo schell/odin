@@ -60,7 +60,26 @@ data ButtonCfg t =
 $(makeFields ''ButtonCfg)
 
 
-
 newtype AnimeCfg t = AnimeCfg { animeCfgDeltaSecondsEvent :: Event t Float }
                    deriving (Generic, Default)
 $(makeFields ''AnimeCfg)
+
+
+data TextInputState = TextInputStateUp
+                    | TextInputStateOver
+                    | TextInputStateDown
+                    | TextInputStateEditing
+                    | TextInputStateEdited
+                    deriving (Show, Eq, Ord, Enum, Bounded)
+
+data TextInputData = TextInputData { textInputText  :: String
+                                   , textInputState :: TextInputState
+                                   }
+
+data TextInputCfg t =
+  TextInputCfg { textInputCfgSetTextEvent             :: Event t String
+               , textInputCfgSetPlaceholderTextEvent  :: Event t String
+               , textInputCfgSetTextInputPainterEvent :: Event t (Painter TextInputData IO)
+               , textInputCfgSetTransformEvent        :: Event t [RenderTransform2]
+               } deriving (Generic, Default)
+$(makeFields ''TextInputCfg)

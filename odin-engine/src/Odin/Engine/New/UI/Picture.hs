@@ -42,7 +42,7 @@ picture v2vX cfg = do
   let mkLayer pic = do
         k  <- freshWith tvFresh
         r2 <- snd <$> compilePicture v2vX pic
-        return $ \ts -> [Widget k ts [] r2]
+        return $ \ts -> [Widget k ts [] r2 Nothing]
   evMkLayer <- performEvent $ mkLayer <$> (cfg ^. setPictureEvent)
   dMkLayer  <- holdDyn (const []) evMkLayer
   tellDyn $ zipDynWith ($) dMkLayer dTfrm

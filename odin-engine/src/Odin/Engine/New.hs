@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
@@ -15,27 +16,29 @@ module Odin.Engine.New
   ) where
 
 
-import           Control.Applicative         (liftA2)
+import           Control.Applicative         (liftA2, (<|>))
 import           Control.Arrow               ((&&&))
 import           Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVar,
                                               readTVarIO, writeTVar)
 import           Control.Lens                (at, (&), (.~))
-import           Control.Monad               (forM_, guard)
-import           Control.Monad.Reader        (MonadReader (..))
+import           Control.Monad               (forM_, when)
 import           Control.Monad.STM           (atomically)
 import           Control.Monad.Trans.Either  (runEitherT)
 import           Control.Varying             as Varying hiding (Event)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as M
-import           Data.Monoid                 ((<>))
+import           Data.Maybe                  (fromMaybe)
 import qualified Data.Vector.Unboxed         as V
 import           Data.Word                   (Word64)
 import           Gelatin.FreeType2           (Atlas (..), GlyphSize (..),
                                               allocAtlas)
 import           Gelatin.SDL2
 import           Reflex.SDL2
-import           Reflex.SDL2.Internal        (SystemEvents (sysUserData))
 import qualified SDL
+import           SDL.Raw.Enum                (pattern SDL_SYSTEM_CURSOR_ARROW,
+                                              SystemCursor)
+import qualified SDL.Raw.Event               as SDLE
+import           SDL.Raw.Types               (Cursor)
 
 
 type OdinRenderer v = Backend GLuint SDL.Event v (V2 Float) Float Raster
@@ -127,19 +130,21 @@ data Widget = Widget { widgetUid       :: Word64
                      , widgetTransform :: [RenderTransform2]
                      , widgetBoundary  :: [Shape]
                      , widgetRenderer2 :: Renderer2
+                     , widgetCursor    :: Maybe SystemCursor
                      }
 
 
 instance Show Widget where
-  show (Widget uid ts bs _) = unwords [ "Widget{ widgetUid = " ++ show uid ++ ","
-                                      , "widgetTransform = " ++ show ts ++ ","
-                                      , "widgetBoundary = " ++ show bs
-                                      , "}"
-                                      ]
+  show (Widget uid ts bs _ msc) = unwords [ "Widget{ widgetUid = " ++ show uid ++ ","
+                                          , "widgetTransform = " ++ show ts ++ ","
+                                          , "widgetBoundary = " ++ show bs ++ ","
+                                          , "widgetCursor = " ++ show msc
+                                          , "}"
+                                          ]
 
 
 transformWidget :: Widget -> [RenderTransform2] -> Widget
-transformWidget (Widget k ts bs r) ts2 = Widget k (ts ++ ts2) bs r
+transformWidget (Widget k ts bs r sc) ts2 = Widget k (ts ++ ts2) bs r sc
 
 
 transformWidgets :: [Widget] -> [RenderTransform2] -> [Widget]
@@ -150,30 +155,31 @@ globalWidgetBoundary :: Widget -> [Shape]
 globalWidgetBoundary w = widgetBoundary $ transformWidget w (widgetTransform w)
 
 
-flattenWidgetTree :: [RenderTransform2] -> WidgetTree -> [Widget]
-flattenWidgetTree parentTs (WidgetTreeLeaf uid ts bs r2) =
-  [Widget uid (parentTs ++ ts) bs r2]
-flattenWidgetTree parentTs (WidgetTreeBranch ts ws) =
-  concatMap (flattenWidgetTree $ parentTs ++ ts) ws
+--flattenWidgetTree :: [RenderTransform2] -> WidgetTree -> [Widget]
+--flattenWidgetTree parentTs (WidgetTreeLeaf uid ts bs r2) =
+--  [Widget uid (parentTs ++ ts) bs r2]
+--flattenWidgetTree parentTs (WidgetTreeBranch ts ws) =
+--  concatMap (flattenWidgetTree $ parentTs ++ ts) ws
 
 
 widgetHasPoint :: Widget -> V2 Float -> Bool
-widgetHasPoint (Widget _ ts bs _) p =
-  any ((`shapeHasPoint` p) . transformShape ts) bs
+widgetHasPoint w p =
+  any ((`shapeHasPoint` p) . transformShape (widgetTransform w)) $ widgetBoundary w
 
 
 widgetsHavePoint :: [Widget] -> V2 Float -> Bool
 widgetsHavePoint nodes p = any (`widgetHasPoint` p) nodes
 
 
-data OdinData r t = OdinData { odinUserData      :: r
-                             , odinWindow        :: Window
-                             , odinFontMap       :: TVar FontMap
-                             , odinFresh         :: TVar Word64
-                             , odinV2V4Renderer  :: V2V4Renderer
-                             , odinV2V2Renderer  :: V2V2Renderer
-                             , odinDefaultFont   :: DefaultFont
-                             , odinIconFont      :: IconFont
+data OdinData r t = OdinData { odinUserData     :: r
+                             , odinWindow       :: Window
+                             , odinFontMap      :: TVar FontMap
+                             , odinFresh        :: TVar Word64
+                             , odinV2V4Renderer :: V2V4Renderer
+                             , odinV2V2Renderer :: V2V2Renderer
+                             , odinDefaultFont  :: DefaultFont
+                             , odinIconFont     :: IconFont
+                             , odinSystemCursor :: TVar (SystemCursor, SDL.Raw.Types.Cursor)
                              }
 
 data OdinReservedWords = ORW12FPSEvent
@@ -338,21 +344,29 @@ runOdin r guest = do
     runEitherT $ startupSDL2BackendsWithConfig cfg "odin-engine-new-exe"
 
   let firstFreshK = fromIntegral $ fromEnum (maxBound :: OdinReservedWords) + 1
-  tvFontMap <- atomically $ newTVar mempty
-  tvFresh   <- atomically $ newTVar firstFreshK
-  flip host guest OdinData { odinUserData     = r
-                           , odinWindow       = window
-                           , odinFontMap      = tvFontMap
-                           , odinFresh        = tvFresh
-                           , odinV2V4Renderer = V2V4Renderer v2v4
-                           , odinV2V2Renderer = V2V2Renderer v2v2
-                           , odinDefaultFont  = defaultFont
-                           , odinIconFont     = iconFont
-                           }
+  tvFontMap   <- atomically $ newTVar mempty
+  tvFresh     <- atomically $ newTVar firstFreshK
+  arrowCursor <- SDLE.createSystemCursor SDL_SYSTEM_CURSOR_ARROW
+  tvCursor    <- atomically $ newTVar (SDL_SYSTEM_CURSOR_ARROW, arrowCursor)
+  host OdinData { odinUserData     = r
+                , odinWindow       = window
+                , odinFontMap      = tvFontMap
+                , odinFresh        = tvFresh
+                , odinV2V4Renderer = V2V4Renderer v2v4
+                , odinV2V2Renderer = V2V2Renderer v2v2
+                , odinDefaultFont  = defaultFont
+                , odinIconFont     = iconFont
+                , odinSystemCursor = tvCursor
+                } guest
 
 
-render :: MonadIO m => Window -> [Widget] -> m ()
-render window widgets = do
+render
+  :: MonadIO m
+  => Window
+  -> TVar (SystemCursor, SDL.Raw.Types.Cursor)
+  -> [Widget]
+  -> m ()
+render window tvCursor widgets = do
   -- Render the new widgets in order
   glClearColor 0 0 0 1
   glClear GL_COLOR_BUFFER_BIT
@@ -360,6 +374,16 @@ render window widgets = do
   let V2 ww wh = fromIntegral <$> v2Cint
   glViewport 0 0 ww wh
   forM_ widgets $ \w -> liftIO (renderWidget w $ widgetTransform w)
+  -- Update the cursor based on widgets.
+  prevCursor <- liftIO $ readTVarIO tvCursor
+  let nxtCursor = fromMaybe SDL_SYSTEM_CURSOR_ARROW $
+                    foldr (<|>) Nothing $ widgetCursor <$> widgets
+  when (nxtCursor /= fst prevCursor) $ do
+    cursor <- SDLE.createSystemCursor nxtCursor
+    SDLE.setCursor cursor
+    liftIO $ atomically $ writeTVar tvCursor (nxtCursor, cursor)
+    SDLE.freeCursor $ snd prevCursor
+  -- Swap the window
   glSwapWindow window
 
 
@@ -370,7 +394,8 @@ runWidgets guest = do
   (a, dNodes) <- runDynamicWriterT guest
   let initial = (M.empty, [])
   evWidgets <- snd <$$> accumM stepWidgets initial (updated dNodes)
-  performEvent_ $ render window <$> evWidgets
+  tvmCursor <- odinSystemCursor <$> getUserData
+  performEvent_ $ render window tvmCursor <$> evWidgets
   return a
 
 

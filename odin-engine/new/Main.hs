@@ -32,6 +32,7 @@ import           Odin.Engine.New.UI.Animation
 import           Odin.Engine.New.UI.Button
 import           Odin.Engine.New.UI.Configs
 import           Odin.Engine.New.UI.Picture
+import           Odin.Engine.New.UI.TextInput
 import           Odin.Engine.New.UI.TextField
 
 
@@ -100,7 +101,7 @@ guest = do
   r <- ((snd <$>) . liftIO) $ compilePicture v2v4 $
     setGeometry $ fan $ mapVertices (, 1) $ rectangle 0 100
 
-  let square = [Widget k [moveV2 100]{-(mkReddish mot)-} [ShapeRectangle 0 100 100] r]
+  let square = [Widget k [moveV2 100] [ShapeRectangle 0 100 100] r Nothing]
   dSquare <- holdDyn [] (square <$ evPB)
   tellDyn dSquare
 
@@ -134,6 +135,15 @@ guest = do
   dX <- anime myTween $ def & deltaSecondsEvent .~ evGatedDelta
   tellDyn $ zipDynWith transformWidgets dSquare $ ffor dX $ \x ->
     [move x 100, multiply 0 1 1 1, scale 0.5 0.5]
+  ------------------------------------------------------------------------------
+  -- Text input widget
+  ------------------------------------------------------------------------------
+  evInputPos <-
+    (\(V2 _ y) -> fromIntegral <$> V2 10 (y - 32)) <$$> getWindowSizeEvent
+  tiOutput <- textInput "initial text" $
+    def & setTransformEvent .~ (pure . moveV2 <$> evInputPos)
+  putDebugLnE (updated $ tioState tiOutput)  $ ("textinput state: " ++) . show
+  putDebugLnE (textInputEditedEvent tiOutput) $ ("edited: " ++) . show
 
 
 main :: IO ()

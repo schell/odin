@@ -80,7 +80,7 @@ textField cfg = do
       mkLayer needs = do
         k  <- freshWith tvFresh
         tf <- compileTextField v2v2 tvFontMap needs
-        return (tf, \ts -> [Widget k ts [] $ textFieldRenderer tf])
+        return (tf, \ts -> [Widget k ts [] (textFieldRenderer tf) Nothing])
   evTFAndMkLayers <- performEvent $ mkLayer <$> evNeeds
   dTFAndMkLayers  <- holdDyn (def, const []) evTFAndMkLayers
   let dLayers = zipDynWith (\(_, f) ts -> f ts) dTFAndMkLayers dTfrm
