@@ -110,6 +110,9 @@ getIconButtonPainter = do
 textColorForTextInputState :: TextInputState -> V4 Float
 textColorForTextInputState st = if st == TextInputStateEditing then canary else white
 
+placeholderTextColor :: V4 Float
+placeholderTextColor = grey
+
 bgColorForTextInputState :: TextInputState -> V4 Float
 bgColorForTextInputState TextInputStateDown    = V4 0.3 0.3 0.3 1
 bgColorForTextInputState TextInputStateEditing = V4 0.2 0.2 0.2 1
@@ -129,22 +132,25 @@ getTextInputPainter = do
   V2V4Renderer v2v4 <- getV2V4
   DefaultFont font  <- getDefaultFont
   tvFontMap         <- getTVarFontMap
-  return $ Painter $ \(TextInputData txt st) ->
+  return $ Painter $ \(TextInputData txt placeholder st) ->
     loadAtlasInto tvFontMap font asciiChars >>= \case
       Nothing -> do
         putStrLn "ERROR PAINTING TEXTINPUT!"
         return mempty
       Just atlas0 -> do
         let color = textColorForTextInputState st
-        ((textc,textr), size@(V2 tw th), atlas) <- liftIO $
+        ((textc, textr), V2 ttw tth, atlas1) <-
           freetypeRenderer2 v2v2 atlas0 color txt
+        ((ptextc, ptextr), V2 ptw pth, atlas) <-
+          freetypeRenderer2 v2v2 atlas1 placeholderTextColor placeholder
         saveAtlasInto tvFontMap atlas
 
-        let hasLeader = st == TextInputStateEditing
-            padding   = 4
-            inc       = 1.5 * padding
-            bgcolor   = bgColorForTextInputState st
-            lncolor   = lnColorForTextInputState st
+        let size@(V2 tw th) = V2 (max ttw ptw) (max tth pth)
+            hasLeader       = st == TextInputStateEditing
+            padding         = 4
+            inc             = 2 * padding
+            bgcolor         = bgColorForTextInputState st
+            lncolor         = lnColorForTextInputState st
 
         (bb,(bgc,bgr)) <- compilePicture v2v4 $ do
           setStroke [StrokeWidth 3, StrokeFeather 1]
@@ -156,27 +162,15 @@ getTextInputPainter = do
               to (V2 (tw + inc) (th + inc), lncolor)
               to (V2 0 (th + inc), lncolor)
               to (0, lncolor)
-            when hasLeader $ fan $ mapVertices (,color `withAlpha` 0.5) $
-              rectangle (V2 tw padding) (V2 (tw + 1.5) (th + padding))
+            when hasLeader $ fan $ mapVertices (,color `withAlpha` 0.5) $ do
+              let lxy = V2 (padding + ttw) padding
+                  lwh = V2 1.5 tth
+              rectangle lxy (lxy + lwh)
           pictureBounds2 fst
 
-        let t = move 0 $ glyphHeight $ atlasGlyphSize atlas
+        let t = move padding $ glyphHeight $ atlasGlyphSize atlas
             r rs = do bgr rs
-                      textr $ t:rs
-        return $ Painting bb (bgc >> textc, r)
-----------------------------------------------------------------------------------
----- Text
-----------------------------------------------------------------------------------
---slotDefaultText
---  :: ( MonadIO m
---     , OdinReader DefaultFont m
---     , ReadsRenderers m
---     , Mutate FontMap m
---     , MonadSafe m
---     )
---  => V4 Float
---  -> String
---  -> m (Slot Text)
---slotDefaultText color str = do
---  DefaultFont font <- readDefaultFontDescriptor
---  slotText font color str
+                      if null txt && st /= TextInputStateEditing
+                      then ptextr $ t:rs
+                      else textr $ t:rs
+        return $ Painting bb (bgc >> ptextc >> textc, r)

@@ -72,8 +72,9 @@ data TextInputState = TextInputStateUp
                     | TextInputStateEdited
                     deriving (Show, Eq, Ord, Enum, Bounded)
 
-data TextInputData = TextInputData { textInputText  :: String
-                                   , textInputState :: TextInputState
+data TextInputData = TextInputData { textInputText        :: String
+                                   , textInputPlaceholder :: String
+                                   , textInputState       :: TextInputState
                                    }
 
 data TextInputCfg t =

@@ -24,6 +24,8 @@ import           Odin.Engine.New.UI.Painters
 import           Odin.Engine.New.UI.Painting
 
 
+-- | The result of running a text input widget. Contains the source of truth
+-- of the input's current state and text value.
 data TextInputOutput t = TextInputOutput { tioState :: Dynamic t TextInputState
                                          , tioText  :: Dynamic t String
                                          }
@@ -41,6 +43,7 @@ textInputEditedEvent tio =
 
 data TextInputUpdate = TextInputSetTransform [RenderTransform2]
                      | TextInputSetText String
+                     | TextInputSetPlaceholderText String
                      | TextInputSetPainter (Painter TextInputData IO)
                      | TextInputMouseMotion MouseMotionEventData
                      | TextInputMouseButton  MouseButtonEventData
@@ -48,21 +51,25 @@ data TextInputUpdate = TextInputSetTransform [RenderTransform2]
                      | TextInputKeyboard KeyboardEventData
 
 
-data TextInputInternal = TII { tiiK         :: Word64
-                             , tiiTransform :: [RenderTransform2]
-                             , tiiState     :: TextInputState
-                             , tiiText      :: String
-                             , tiiLastText  :: String
-                             , tiiMousePos  :: V2 Float
-                             , tiiPainter   :: Painter TextInputData IO
-                             , tiiPainting  :: TextInputState -> Painting
+data TextInputInternal = TII { tiiK           :: Word64
+                             , tiiTransform   :: [RenderTransform2]
+                             , tiiState       :: TextInputState
+                             , tiiText        :: String
+                             , tiiLastText    :: String
+                             , tiiPlaceholder :: String
+                             , tiiMousePos    :: V2 Float
+                             , tiiPainter     :: Painter TextInputData IO
+                             , tiiPainting    :: TextInputState -> Painting
                              }
 
 
 mkPaintings
-  :: Painter TextInputData IO -> String -> IO (TextInputState -> Painting)
-mkPaintings painter txt = do
-  let runInputPainter = runPainter painter . TextInputData txt
+  :: Painter TextInputData IO
+  -> String
+  -> String
+  -> IO (TextInputState -> Painting)
+mkPaintings painter txt placeholder = do
+  let runInputPainter = runPainter painter . TextInputData txt placeholder
       states          = [minBound .. maxBound]
   paintings <- mapM runInputPainter states
   return $ \st -> fromMaybe mempty $ lookup st $ zip states paintings
@@ -113,12 +120,17 @@ foldTextInput tvFresh st up
 
   | TextInputSetText txt     <- up = liftIO $ do
       k      <- freshWith tvFresh
-      paints <- mkPaintings (tiiPainter st) txt
+      paints <- mkPaintings (tiiPainter st) txt (tiiPlaceholder st)
       return st{ tiiK = k, tiiPainting = paints , tiiText = txt, tiiLastText = txt }
+
+  | TextInputSetPlaceholderText txt <- up = liftIO $ do
+      k      <- freshWith tvFresh
+      paints <- mkPaintings (tiiPainter st) (tiiText st) txt
+      return st{ tiiK = k, tiiPainting = paints , tiiPlaceholder = txt }
 
   | TextInputSetPainter pntr <- up = liftIO $ do
       k      <- freshWith tvFresh
-      paints <- mkPaintings pntr (tiiText st)
+      paints <- mkPaintings pntr (tiiText st) (tiiPlaceholder st)
       return $ st{ tiiK = k, tiiPainter = pntr, tiiPainting = paints }
 
   | TextInputMouseMotion dat <- up
@@ -156,7 +168,7 @@ foldTextInput tvFresh st up
   , TextInputStateEditing  <- tiiState st = liftIO $ do
       let txt1 = tiiText st ++ T.unpack txt
       k      <- freshWith tvFresh
-      paints <- mkPaintings (tiiPainter st) txt1
+      paints <- mkPaintings (tiiPainter st) txt1 (tiiPlaceholder st)
       return st{ tiiK = k, tiiPainting = paints, tiiText = txt1 }
 
   | TextInputKeyboard dat <- up
@@ -167,7 +179,7 @@ foldTextInput tvFresh st up
   , code `elem` [KeycodeBackspace, KeycodeDelete] = liftIO $ do
       let txt1 = init $ tiiText st
       k      <- freshWith tvFresh
-      paints <- mkPaintings (tiiPainter st) txt1
+      paints <- mkPaintings (tiiPainter st) txt1 (tiiPlaceholder st)
       return st{ tiiK = k, tiiPainting = paints, tiiText = txt1 }
 
   | TextInputKeyboard dat <- up
@@ -187,10 +199,17 @@ foldTextInput tvFresh st up
   | otherwise = return st
 
 
+-- | Creates a text input for the user to input text. Returns an output type
+-- containing a 'Dynamic t TextInputState' and 'Dynamic t String'. Use
+-- textInputEditedEvent with the output type to be updated with newly committed
+-- text.
 textInput
   :: forall r t m. OdinWidget r t m
   => String
+  -- ^ The placeholder text for the input. The input will stretch to accomodate
+  -- the size of the text.
   -> TextInputCfg t
+  -- ^ A configuration of update events.
   -> m (TextInputOutput t)
 textInput txt cfg = do
   painter       <- getTextInputPainter
@@ -201,18 +220,19 @@ textInput txt cfg = do
   evKeyboard    <- getKeyboardEvent
 
   let evUpdate = leftmost
-        [ TextInputSetTransform <$> cfg ^. setTransformEvent
-        , TextInputSetText      <$> cfg ^. setTextEvent
-        , TextInputSetPainter   <$> cfg ^. setTextInputPainterEvent
-        , TextInputMouseMotion  <$> evMouseMotion
-        , TextInputMouseButton  <$> evMouseButton
-        , TextInputTextInput    <$> evTextInput
-        , TextInputKeyboard     <$> evKeyboard
+        [ TextInputSetTransform       <$> cfg ^. setTransformEvent
+        , TextInputSetText            <$> cfg ^. setTextEvent
+        , TextInputSetPainter         <$> cfg ^. setTextInputPainterEvent
+        , TextInputSetPlaceholderText <$> cfg ^. setPlaceholderTextEvent
+        , TextInputMouseMotion        <$> evMouseMotion
+        , TextInputMouseButton        <$> evMouseButton
+        , TextInputTextInput          <$> evTextInput
+        , TextInputKeyboard           <$> evKeyboard
         ]
   initial <- liftIO $ do
     k      <- freshWith tvFresh
-    paints <- mkPaintings painter txt
-    return $ TII k [] TextInputStateUp txt txt ((-1)/0) painter paints
+    paints <- mkPaintings painter "" txt
+    return $ TII k [] TextInputStateUp "" "" txt ((-1)/0) painter paints
   dTII    <- accumM (foldTextInput tvFresh) initial evUpdate
   tellDyn $ pure . toWidget <$> dTII
   TextInputOutput <$> holdUniqDyn (tiiState <$> dTII)

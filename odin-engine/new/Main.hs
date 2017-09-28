@@ -31,8 +31,8 @@ import           Odin.Engine.New
 import           Odin.Engine.New.UI.Animation
 import           Odin.Engine.New.UI.Button
 import           Odin.Engine.New.UI.Configs
-import           Odin.Engine.New.UI.Picture
 import           Odin.Engine.New.UI.TextInput
+import           Odin.Engine.New.UI.Picture
 import           Odin.Engine.New.UI.TextField
 
 
@@ -140,7 +140,7 @@ guest = do
   ------------------------------------------------------------------------------
   evInputPos <-
     (\(V2 _ y) -> fromIntegral <$> V2 10 (y - 32)) <$$> getWindowSizeEvent
-  tiOutput <- textInput "initial text" $
+  tiOutput <- textInput "Placeholder text..." $
     def & setTransformEvent .~ (pure . moveV2 <$> evInputPos)
   putDebugLnE (updated $ tioState tiOutput)  $ ("textinput state: " ++) . show
   putDebugLnE (textInputEditedEvent tiOutput) $ ("edited: " ++) . show

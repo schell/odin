@@ -39,6 +39,7 @@ import           SDL.Raw.Enum                (pattern SDL_SYSTEM_CURSOR_ARROW,
                                               SystemCursor)
 import qualified SDL.Raw.Event               as SDLE
 import           SDL.Raw.Types               (Cursor)
+import           SDL.Video.OpenGL            (glGetDrawableSize)
 
 
 type OdinRenderer v = Backend GLuint SDL.Event v (V2 Float) Float Raster
@@ -337,7 +338,7 @@ runOdin r guest = do
   let ogl = defaultOpenGL{ glProfile = Core Debug 3 3 }
       cfg = defaultWindow{ windowOpenGL      = Just ogl
                          , windowResizable   = True
-                         , windowHighDPI     = False
+                         , windowHighDPI     = True
                          , windowInitialSize = V2 640 480
                          }
   Right (window, SDL2Backends v2v4 v2v2) <-
@@ -370,7 +371,7 @@ render window tvCursor widgets = do
   -- Render the new widgets in order
   glClearColor 0 0 0 1
   glClear GL_COLOR_BUFFER_BIT
-  v2Cint <- get $ windowSize window
+  v2Cint <- glGetDrawableSize window
   let V2 ww wh = fromIntegral <$> v2Cint
   glViewport 0 0 ww wh
   forM_ widgets $ \w -> liftIO (renderWidget w $ widgetTransform w)
