@@ -9,6 +9,7 @@
 module Odin.Engine.New.UI.Configs
   ( module Odin.Engine.New.UI.Configs
   , module L
+  , def
   ) where
 
 
@@ -19,7 +20,7 @@ import           Gelatin.GL
 import           GHC.Generics                (Generic)
 import           Reflex.SDL2                 (Event, Reflex, never)
 
-import           Odin.Engine.New             (FontDescriptor)
+import           Odin.Engine.New             (FontDescriptor, Shape)
 import           Odin.Engine.New.UI.Painting (Painter)
 
 instance Reflex t => Default (Event t a) where
@@ -35,8 +36,8 @@ data TextFieldCfg t =
 $(makeFields ''TextFieldCfg)
 
 
-data PictureCfg tex vert t =
-  PictureCfg { pictureCfgSetPictureEvent   :: Event t (Picture tex vert ())
+data PictureCfg vert t =
+  PictureCfg { pictureCfgSetPictureEvent   :: Event t (Picture GLuint vert ())
              , pictureCfgSetTransformEvent :: Event t [RenderTransform2]
              } deriving (Generic, Default)
 $(makeFields ''PictureCfg)
@@ -48,6 +49,7 @@ data ButtonState = ButtonStateUp
                  | ButtonStateClicked
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
+
 data ButtonData = ButtonData { buttonDataText  :: String
                              , buttonDataState :: ButtonState
                              }
@@ -58,11 +60,6 @@ data ButtonCfg t =
             , buttonCfgSetTransformEvent     :: Event t [RenderTransform2]
             } deriving (Generic, Default)
 $(makeFields ''ButtonCfg)
-
-
-newtype AnimeCfg t = AnimeCfg { animeCfgDeltaSecondsEvent :: Event t Float }
-                   deriving (Generic, Default)
-$(makeFields ''AnimeCfg)
 
 
 data TextInputState = TextInputStateUp
@@ -84,3 +81,10 @@ data TextInputCfg t =
                , textInputCfgSetTransformEvent        :: Event t [RenderTransform2]
                } deriving (Generic, Default)
 $(makeFields ''TextInputCfg)
+
+
+data LayerCfg t =
+  LayerCfg { layerCfgSetTransformEvent :: Event t [RenderTransform2]
+           , layerCfgSetBoundaryEvent  :: Event t Shape
+           } deriving (Generic, Default)
+$(makeFields ''LayerCfg)

@@ -19,9 +19,13 @@ library
   other-modules:
   exposed-modules:   Data.Char.FontAwesome
                    , Odin.Engine.New
+                   , Odin.Engine.New.EventT
                    , Odin.Engine.New.UI.Animation
+                   , Odin.Engine.New.UI.Checkbox
                    , Odin.Engine.New.UI.Configs
                    , Odin.Engine.New.UI.Button
+                   , Odin.Engine.New.UI.Layer
+                   , Odin.Engine.New.UI.Layout
                    , Odin.Engine.New.UI.Painters
                    , Odin.Engine.New.UI.Painting
                    , Odin.Engine.New.UI.Picture
@@ -35,14 +39,6 @@ library
                      ----, Odin.Engine.Eff.Common
                      ----, Odin.Engine.Eff.Coroutine
                      --, Odin.Engine.GUI
-                     --, Odin.Engine.GUI.Animation
-                     --, Odin.Engine.GUI.Button
-                     --, Odin.Engine.GUI.Button.Internal
-                     --, Odin.Engine.GUI.Text
-                     --, Odin.Engine.GUI.Text.Internal
-                     --, Odin.Engine.GUI.TextInput
-                     --, Odin.Engine.GUI.TextInput.Internal
-                     --, Odin.Engine.GUI.Layer
                      --, Odin.Engine.GUI.Pane
                      --, Odin.Engine.GUI.Panel
                      --, Odin.Engine.GUI.Picture
@@ -72,6 +68,7 @@ library
                      , aeson-tiled
                      , lens
                      , linear
+                     , mmorph >= 1.0
                      , mtl
                      , pipes-safe
                      , pretty-show

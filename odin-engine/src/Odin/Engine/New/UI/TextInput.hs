@@ -3,7 +3,8 @@
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 module Odin.Engine.New.UI.TextInput
-  ( textInput
+  ( textInputWith
+  , textInput
   , TextInputOutput(..)
   , textInputEditedEvent
   ) where
@@ -203,16 +204,19 @@ foldTextInput tvFresh st up
 -- containing a 'Dynamic t TextInputState' and 'Dynamic t String'. Use
 -- textInputEditedEvent with the output type to be updated with newly committed
 -- text.
-textInput
+textInputWith
   :: forall r t m. OdinWidget r t m
-  => String
+  => Painter TextInputData IO
+  -- ^ A custom painter to paint this text input widget.
+  -> String
   -- ^ The placeholder text for the input. The input will stretch to accomodate
   -- the size of the text.
+  -> [RenderTransform2]
+  -- ^ The initial transform of the text input.
   -> TextInputCfg t
   -- ^ A configuration of update events.
   -> m (TextInputOutput t)
-textInput txt cfg = do
-  painter       <- getTextInputPainter
+textInputWith painter txt ts cfg = do
   tvFresh       <- getFreshVar
   evMouseMotion <- getMouseMotionEvent
   evMouseButton <- getMouseButtonEvent
@@ -232,8 +236,27 @@ textInput txt cfg = do
   initial <- liftIO $ do
     k      <- freshWith tvFresh
     paints <- mkPaintings painter "" txt
-    return $ TII k [] TextInputStateUp "" "" txt ((-1)/0) painter paints
+    return $ TII k ts TextInputStateUp "" "" txt ((-1)/0) painter paints
   dTII    <- accumM (foldTextInput tvFresh) initial evUpdate
   tellDyn $ pure . toWidget <$> dTII
   TextInputOutput <$> holdUniqDyn (tiiState <$> dTII)
                   <*> holdUniqDyn (tiiText  <$> dTII)
+
+
+-- | Creates a text input for the user to input text. Returns an output type
+-- containing a 'Dynamic t TextInputState' and 'Dynamic t String'. Use
+-- textInputEditedEvent with the output type to be updated with newly committed
+-- text.
+textInput
+  :: forall r t m. OdinWidget r t m
+  => String
+  -- ^ The placeholder text for the input. The input will stretch to accomodate
+  -- the size of the text.
+  -> [RenderTransform2]
+  -- ^ The initial transform of the text input.
+  -> TextInputCfg t
+  -- ^ A configuration of update events.
+  -> m (TextInputOutput t)
+textInput txt ts cfg = do
+  painter <- getTextInputPainter
+  textInputWith painter txt ts cfg

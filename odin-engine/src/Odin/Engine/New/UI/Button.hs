@@ -4,164 +4,210 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RecursiveDo           #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-module Odin.Engine.New.UI.Button where
+module Odin.Engine.New.UI.Button
+  ( buttonWith
+  , button
+  , iconButton
+  , buttonClickedEvent
+  , ButtonState (..)
+  , ButtonData (..)
+  , ButtonCfg (..)
+  , (^.)
+  , (.~)
+  , (&)
+  , setTransformEvent
+  , setTextEvent
+  , setButtonPainterEvent
+  , def
+  ) where
 
-import           Control.Applicative          (liftA2, (<$))
-import           Control.Monad          (guard)
-import           Control.Lens                 hiding (to)
+import           Control.Applicative         ((<$))
+import           Control.Lens                hiding (to)
+import           Control.Monad               (guard)
+import           Data.Maybe                  (fromMaybe)
+import           Data.Word                   (Word64)
 import           Gelatin.GL
-import           Reflex.SDL2                  hiding (fan)
-import SDL.Raw.Enum (pattern SDL_SYSTEM_CURSOR_HAND)
+import           Reflex.SDL2                 hiding (fan)
+import           SDL.Raw.Enum                (pattern SDL_SYSTEM_CURSOR_HAND)
 
 import           Odin.Engine.New
 import           Odin.Engine.New.UI.Configs
-import           Odin.Engine.New.UI.Painting
 import           Odin.Engine.New.UI.Painters
+import           Odin.Engine.New.UI.Painting
 
 
-data ButtonNeeds = ButtonNeeds String (Painter ButtonData IO)
-
-
-data ButtonInternal = ButtonInternal { biUp      :: Painting
-                                     , biOver    :: Painting
-                                     , biDown    :: Painting
-                                     , biClicked :: Painting
+data ButtonInternal = ButtonInternal { biK         :: Word64
+                                     , biTransform:: [RenderTransform2]
+                                     , biText      :: String
+                                     , biMousePos  :: V2 Float
+                                     , biState     :: ButtonState
+                                     , biPainter   :: Painter ButtonData IO
+                                     , biPainting  :: ButtonState -> Painting
                                      }
 
 
-paintingForButtonState :: ButtonInternal -> ButtonState -> Painting
-paintingForButtonState btn = \case
-  ButtonStateUp      -> biUp      btn
-  ButtonStateOver    -> biOver    btn
-  ButtonStateDown    -> biDown    btn
-  ButtonStateClicked -> biClicked btn
+mkPaintings :: Painter ButtonData IO -> String -> IO (ButtonState -> Painting)
+mkPaintings pntr str = do
+  let runInputPainter = runPainter pntr . ButtonData str
+      states          = [minBound .. maxBound]
+  paintings <- mapM runInputPainter states
+  return $ \st -> fromMaybe mempty $ lookup st $ zip states paintings
 
 
-----------------------------------------------------------------------
-transformBounds
-  :: [RenderTransform2] -> (V2 Float, V2 Float) -> (V2 Float, V2 Float)
-transformBounds ts (tl, br) = (transformV2 mv tl, transformV2 mv br)
-  where mv = affine2sModelview $ extractSpatial ts
+biBoundary :: ButtonInternal -> Shape
+biBoundary bi = paintingShape $ biPainting bi $ biState bi
 
 
-globalPointIsInsideButton
-  :: ButtonInternal -> ButtonState -> [RenderTransform2] -> V2 Float -> Bool
-globalPointIsInsideButton btn st ts =
-  shapeHasPoint (transformShape ts $ paintingShape $ paintingForButtonState btn st)
+biContainsMouse :: ButtonInternal -> Bool
+biContainsMouse bi =
+  shapeHasPoint (transformShape (biTransform bi) (biBoundary bi))
+                (biMousePos bi)
+
+biRender :: ButtonInternal -> [RenderTransform2] -> IO ()
+biRender bi = renderPainting $ biPainting bi $ biState bi
 
 
-data ButtonUpdate = ButtonUpdateMotion MouseMotionEventData
+biFree :: ButtonInternal -> IO ()
+biFree bi = mapM_ (freePainting . biPainting bi) [minBound .. maxBound]
+
+
+toWidget :: ButtonInternal -> Widget
+toWidget bi = Widget { widgetUid       = biK bi
+                     , widgetBoundary  = [biBoundary bi]
+                     , widgetTransform = biTransform bi
+                     , widgetCursor    = SDL_SYSTEM_CURSOR_HAND <$
+                         guard (biState bi == ButtonStateOver)
+                     , widgetRenderer2 = (biFree bi, biRender bi)
+                     }
+
+
+data ButtonUpdate = ButtonUpdateSetTransform [RenderTransform2]
+                  | ButtonUpdateSetText String
+                  | ButtonUpdateSetPainter (Painter ButtonData IO)
+                  | ButtonUpdateMotion MouseMotionEventData
                   | ButtonUpdateButton MouseButtonEventData
-                  | ButtonUpdateNone
+                  | ButtonUpdateCycle
 
 
-data ButtonStep = ButtonStep { bsInternal :: ButtonInternal
-                             , bsMousePos :: V2 Float
-                             , bsTfrms    :: [RenderTransform2]
-                             , bsUpdate   :: ButtonUpdate
-                             }
+foldButton
+  :: MonadIO m
+  => TVar Word64
+  -> ButtonInternal
+  -> ButtonUpdate
+  -> m ButtonInternal
+foldButton tvFresh bi up
+  | ButtonUpdateSetTransform ts <- up = return bi { biTransform = ts }
 
+  | ButtonUpdateSetText str <- up = liftIO $ do
+    k  <- freshWith tvFresh
+    ps <- mkPaintings (biPainter bi) str
+    return bi {biK = k, biPainting = ps}
 
-data ButtonOutput t =
-  ButtonOutput { buttonOutputBounds :: Dynamic t [Shape]
-               , buttonOutputState  :: Dynamic t ButtonState
+  | ButtonUpdateSetPainter pntr <- up = liftIO $ do
+    k  <- freshWith tvFresh
+    ps <- mkPaintings pntr (biText bi)
+    return bi {biK = k, biPainting = ps, biPainter = pntr}
+
+  | ButtonUpdateMotion dat <- up
+  , P v2Cint               <- mouseMotionEventPos dat
+  , bi1                    <- bi {biMousePos = fromIntegral <$> v2Cint} =
+    if biState bi `elem` [ButtonStateUp, ButtonStateOver, ButtonStateClicked]
+    then return bi1 { biState = if biContainsMouse bi1
+                                then ButtonStateOver
+                                else ButtonStateUp
+                    }
+    else return bi1
+
+  | ButtonUpdateButton dat <- up
+  , ButtonStateOver        <- biState bi
+  , ButtonLeft             <- mouseButtonEventButton dat
+  , Pressed                <- mouseButtonEventMotion dat =
+    return bi { biState = ButtonStateDown }
+
+  | ButtonUpdateButton dat <- up
+  , ButtonStateDown        <- biState bi
+  , ButtonLeft             <- mouseButtonEventButton dat
+  , Released               <- mouseButtonEventMotion dat
+  , P v2Cint               <- mouseButtonEventPos    dat
+  , bi1                    <- bi {biMousePos = fromIntegral <$> v2Cint} =
+    return bi1 { biState = if biContainsMouse bi1
+                           then ButtonStateClicked
+                           else ButtonStateUp
                }
 
-
-stepButton :: ButtonStep -> ButtonState -> ButtonState
-stepButton (ButtonStep btn pos ts update) bstate
-  | ButtonUpdateNone <- update = bstate
-
-  | ButtonUpdateMotion _ <- update
-  , ButtonStateUp == bstate
-  , globalPointIsInsideButton btn bstate ts pos = ButtonStateOver
-
-  | ButtonUpdateMotion _ <- update
-  , ButtonStateOver == bstate
-  , not $ globalPointIsInsideButton btn bstate ts pos = ButtonStateUp
-
-  | ButtonUpdateButton dat <- update
-  , ButtonStateOver == bstate
-  , ButtonLeft      == mouseButtonEventButton dat
-  , 1               == mouseButtonEventClicks dat
-  , Pressed         == mouseButtonEventMotion dat = ButtonStateDown
-
-  | ButtonUpdateButton dat <- update
-  , ButtonStateDown == bstate
-  , ButtonLeft      == mouseButtonEventButton dat
-  , Released        == mouseButtonEventMotion dat =
-    if globalPointIsInsideButton btn bstate ts pos
-    then ButtonStateClicked
-    else ButtonStateUp
-
-  | ButtonStateClicked == bstate
-  , ButtonUpdateMotion _ <- update =
-    if globalPointIsInsideButton btn bstate ts pos
-    then ButtonStateOver
-    else ButtonStateUp
-
-  | ButtonStateClicked == bstate
-  , ButtonUpdateButton dat <- update
-  , ButtonLeft == mouseButtonEventButton dat
-  , Pressed    == mouseButtonEventMotion dat = ButtonStateDown
-
-  | otherwise = bstate
+  | otherwise = return bi { biState = if biContainsMouse bi
+                                      then ButtonStateOver
+                                      else ButtonStateUp
+                          }
 
 
-button :: forall r t m. OdinWidget r t m => ButtonCfg t -> m (ButtonOutput t)
-button cfg0 = do
-  buttonPainter <- getButtonPainter
-  evPB          <- getPostBuild
-  let cfg = cfg0 & setButtonPainterEvent %~
-            leftmost . (:[buttonPainter <$ evPB])
-
+buttonWith
+  :: forall r t m. OdinWidget r t m
+  => Painter ButtonData IO
+  -> String
+  -> [RenderTransform2]
+  -> ButtonCfg t
+  -> m (Dynamic t ButtonState)
+buttonWith buttonPainter str ts cfg = do
   tvFresh <- getFreshVar
 
-  dTfrm     <- holdDyn [] (cfg ^. setTransformEvent)
-  dMayText  <- holdDyn Nothing $ Just <$> (cfg ^. setTextEvent)
-  dMayPaint <- holdDyn Nothing $ Just <$> (cfg ^. setButtonPainterEvent)
+  evMotion <- getMouseMotionEvent
+  evButton <- getMouseButtonEvent
 
-  let dMayNeeds :: Dynamic t (Maybe ButtonNeeds)
-      dMayNeeds = forDyn2 dMayText dMayPaint $ liftA2 ButtonNeeds
-      evNeeds :: Event t ButtonNeeds
-      evNeeds = fmapMaybe id $ updated dMayNeeds
-      mkWidget (ButtonNeeds txt p) = do
-        k   <- freshWith tvFresh
-        btn <- ButtonInternal <$> paint p (ButtonData txt ButtonStateUp)
-                              <*> paint p (ButtonData txt ButtonStateOver)
-                              <*> paint p (ButtonData txt ButtonStateDown)
-                              <*> paint p (ButtonData txt ButtonStateClicked)
-        let layerf ts st = let painting = paintingForButtonState btn st
-                               r        = paintingRenderer painting
-                               shape    = paintingShape painting
-                               mcursor  = SDL_SYSTEM_CURSOR_HAND <$
-                                            guard (st == ButtonStateOver)
-                           in [Widget k ts [shape] r mcursor]
-        return (btn, layerf)
+  mdo
+    let evUpdate = leftmost [ ButtonUpdateSetTransform <$> cfg ^. setTransformEvent
+                            , ButtonUpdateSetText      <$> cfg ^. setTextEvent
+                            , ButtonUpdateSetPainter   <$> cfg ^. setButtonPainterEvent
+                            , ButtonUpdateMotion       <$> evMotion
+                            , ButtonUpdateButton       <$> evButton
+                            , ButtonUpdateCycle        <$  evAfterClick
+                            ]
+    initial <- liftIO $ do
+      k  <- freshWith tvFresh
+      ps <- mkPaintings buttonPainter str
+      return ButtonInternal { biK = k
+                            , biTransform = ts
+                            , biText = str
+                            , biMousePos = -1/0
+                            , biState = ButtonStateUp
+                            , biPainter = buttonPainter
+                            , biPainting = ps
+                            }
 
-  evBtnMkWidget <- performEvent $ mkWidget <$> evNeeds
-  dMkWidget     <- holdDyn (\_ _ -> []) $ snd <$> evBtnMkWidget
-  dMayBInt      <- holdDyn Nothing $ Just . fst <$> evBtnMkWidget
+    dInternal <- accumM (foldButton tvFresh) initial evUpdate
+    tellDyn $ pure . toWidget <$> dInternal
+    dState <- holdUniqDyn $ biState <$> dInternal
+    let evClicked = fmapMaybe (guard . (== ButtonStateClicked)) $ updated dState
+    kcode        <- fresh
+    evAfterClick <- delayEventWithEventCode (fromIntegral kcode) 1 evClicked
+    return dState
 
-  evMotion      <- getMouseMotionEvent
-  evButton      <- getMouseButtonEvent
-  let evUpdate = leftmost [ ButtonUpdateMotion <$> evMotion
-                          , ButtonUpdateButton <$> evButton
-                          ]
-  dUpdate       <- holdDyn ButtonUpdateNone evUpdate
-  dMousePos     <- holdDyn ((-1)/0) =<< getMousePositionEvent
-  let evStep = fmapMaybe id $ updated $
-        forDyn4 dMayBInt dMousePos dTfrm dUpdate $ \case
-          Nothing -> \_ _ _ -> Nothing
-          Just b  -> \p t u -> Just $ ButtonStep b p t u
 
-  dState      <- foldDyn stepButton ButtonStateUp evStep
-  dUniqState  <- holdUniqDyn dState
-  let dWidgets = forDyn3 dTfrm dState dMkWidget $ \ts st mk -> mk ts st
-  tellDyn dWidgets
-  return $ ButtonOutput (concatMap globalWidgetBoundary <$> dWidgets) dUniqState
+button
+  :: forall r t m. OdinWidget r t m
+  => String
+  -> [RenderTransform2]
+  -> ButtonCfg t
+  -> m (Dynamic t ButtonState)
+button str ts cfg = do
+  pntr <- getButtonPainter
+  buttonWith pntr str ts cfg
+
+
+iconButton
+  :: forall r t m. OdinWidget r t m
+  => Char
+  -> [RenderTransform2]
+  -> ButtonCfg t
+  -> m (Dynamic t ButtonState)
+iconButton char ts cfg = do
+  pntr <- getIconButtonPainter
+  buttonWith pntr [char] ts cfg
+
+buttonClickedEvent :: Reflex t => Dynamic t ButtonState -> Event t ()
+buttonClickedEvent = fmapMaybe (guard . (== ButtonStateClicked)) . updated

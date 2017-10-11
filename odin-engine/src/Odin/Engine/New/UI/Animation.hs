@@ -1,20 +1,23 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Odin.Engine.New.UI.Animation where
 
-import           Control.Varying
+import           Control.Monad.Fix          (MonadFix)
+import           Control.Varying            hiding (Event)
 import           Data.Functor.Identity      (Identity (..))
 import           Reflex.SDL2
 
-import           Odin.Engine.New
-import           Odin.Engine.New.UI.Configs
 
-
-runAnime :: Var Float b -> Float -> (b, Var Float b)
-runAnime v = runIdentity . runVarT v
-
-
-anime :: Odin r t m => Var Float b -> AnimeCfg t -> m (Dynamic t b)
-anime v cfg = do
- dbAndV <- foldDyn (\t (_, vn) -> runAnime vn t) (runAnime v 0) (cfg ^. deltaSecondsEvent)
- return $ fst <$> dbAndV
+-- | Integrates a pure varying network graph into reflex. Returns a dynamic of
+-- the graph output.
+varying
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => Var a b
+  -- ^ The varying network graph.
+  -> a
+  -- ^ The initial input.
+  -> Event t a
+  -- ^ An event that provides successive input.
+  -> m (Dynamic t b)
+varying v a0 = (fmap fst <$>) . foldDyn (\t (_, vn) -> runVarying vn t) (runVarying v a0)
+  where runVarying v1 = runIdentity . runVarT v1

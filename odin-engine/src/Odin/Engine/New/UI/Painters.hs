@@ -30,11 +30,13 @@ textColorForButtonState ButtonStateOver = V4 0.74 0.23 0.22 1
 textColorForButtonState ButtonStateDown = red --V4 0.74 0.23 0.22 1
 textColorForButtonState _ = textColorForButtonState ButtonStateUp
 
+
 bgColorForButtonState :: ButtonState -> V4 Float
 bgColorForButtonState ButtonStateUp   = fromHex 0xFFFFFFFF
 bgColorForButtonState ButtonStateOver = fromHex 0xFFFFFFFF
 bgColorForButtonState ButtonStateDown = fromHex 0xFFFFFFFF
 bgColorForButtonState _               = bgColorForButtonState ButtonStateUp
+
 
 bgOffsetForButtonState :: ButtonState -> V2 Float
 bgOffsetForButtonState ButtonStateUp   = V2 0 0
@@ -42,21 +44,22 @@ bgOffsetForButtonState ButtonStateOver = V2 0 0
 bgOffsetForButtonState ButtonStateDown = V2 2 2
 bgOffsetForButtonState _               = bgOffsetForButtonState ButtonStateUp
 
-getButtonPainter
+
+getButtonPainterWithFont
   :: Odin r t m
-  => m (Painter ButtonData IO)
-getButtonPainter = do
+  => FontDescriptor
+  -> m (Painter ButtonData IO)
+getButtonPainterWithFont font = do
   V2V2Renderer v2v2 <- getV2V2
   V2V4Renderer v2v4 <- getV2V4
-  DefaultFont font  <- getDefaultFont
   tvFontMap         <- getTVarFontMap
   return $ Painter $ \(ButtonData txt st) ->
-    loadAtlasInto tvFontMap font asciiChars >>= \case
+    loadAtlasInto tvFontMap font txt >>= \case
       Nothing    -> do
         putStrLn "ERROR PAINTING BUTTON!"
         return mempty
       Just atlas0 -> do
-        ((textc,textr), V2 tw th, atlas) <-
+        ((textc, textr), V2 tw th, atlas) <-
           freetypeRenderer2 v2v2 atlas0 (textColorForButtonState st) txt
         saveAtlasInto tvFontMap atlas
 
@@ -65,7 +68,6 @@ getButtonPainter = do
             shxy = V2 4 4
             bgxy = bgOffsetForButtonState st
             gh   = glyphHeight $ atlasGlyphSize atlas
-            bb   = listToBox [shxy, shxy+sz, bgxy, bgxy+sz]
 
         -- drop shadow and background
         (_,(bgc,bgr)) <- compilePicture v2v4 $ setGeometry $ do
@@ -77,34 +79,53 @@ getButtonPainter = do
         let t = moveV2 $ V2 4 gh + bgxy
             r rs = do bgr rs
                       textr $ t:rs
+            bb   = listToBox [0, shxy, shxy+sz, bgxy, bgxy+sz]
         return $ Painting bb (bgc >> textc, r)
 
-getIconButtonPainter
-  :: Odin r t m
-  => m (Painter ButtonData IO)
-getIconButtonPainter = do
-  V2V2Renderer v2v2 <- getV2V2
-  IconFont font     <- getIconFont
-  tvFontMap         <- getTVarFontMap
-  return $ Painter $ \(ButtonData txt st) ->
-    loadAtlasInto tvFontMap font allFontAwesomeChars >>= \case
-      Nothing    -> do
-        putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
-        return mempty
-      Just atlas0 -> do
-        ((textfgc,textfgr), V2 w _, atlas1) <-
-          freetypeRenderer2 v2v2 atlas0 (bgColorForButtonState st) txt
-        ((textbgc,textbgr), V2 _ _, atlas)  <-
-          freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) txt
-        saveAtlasInto tvFontMap atlas
 
-        let V2 fgx fgy = bgOffsetForButtonState st
-            V2 bgx bgy = bgOffsetForButtonState ButtonStateDown
-            r rs = do textbgr $ rs ++ [move bgx $ 16 + bgy]
-                      textfgr $ rs ++ [move fgx $ 16 + fgy]
-            c = textfgc >> textbgc
-        return $ Painting (0, V2 (w+2) 18) (c,r)
-----------------------------------------------------------------------------------
+getButtonPainter :: Odin r t m => m (Painter ButtonData IO)
+getButtonPainter = do
+  DefaultFont font <- getDefaultFont
+  tvFontMap        <- getTVarFontMap
+  _ <- loadAtlasInto tvFontMap font asciiChars
+  getButtonPainterWithFont font
+
+
+getIconButtonPainter :: Odin r t m => m (Painter ButtonData IO)
+getIconButtonPainter = do
+  IconFont font <- getIconFont
+  tvFontMap     <- getTVarFontMap
+  _ <- loadAtlasInto tvFontMap font allFontAwesomeChars
+  getButtonPainterWithFont font
+
+
+{-getIconButtonPainter
+  :: Odin r t m
+  => m (Painter ButtonData IO)-}
+-- getIconButtonPainter = do
+--   V2V2Renderer v2v2 <- getV2V2
+--   IconFont font     <- getIconFont
+--   tvFontMap         <- getTVarFontMap
+--   return $ Painter $ \(ButtonData txt st) ->
+--     loadAtlasInto tvFontMap font allFontAwesomeChars >>= \case
+--       Nothing    -> do
+--         putStrLn "ERROR PAINTING BUTTON! Could not load the font atlas"
+--         return mempty
+--       Just atlas0 -> do
+--         ((textfgc,textfgr), V2 w _, atlas1) <-
+--           freetypeRenderer2 v2v2 atlas0 (bgColorForButtonState st) txt
+--         ((textbgc,textbgr), V2 _ _, atlas)  <-
+--           freetypeRenderer2 v2v2 atlas1 (V4 0 0 0 0.4) txt
+--         saveAtlasInto tvFontMap atlas
+
+--         let V2 fgx fgy = bgOffsetForButtonState st
+--             V2 bgx bgy = bgOffsetForButtonState ButtonStateDown
+--             r rs = do textbgr $ rs ++ [move bgx $ 32 + bgy]
+--                       textfgr $ rs ++ [move fgx $ 32 + fgy]
+--             c = textfgc >> textbgc
+--         return $ Painting (0, V2 (w+2) 34) (c,r)
+
+---------------------------------------------------------------------------------
 ---- TextInput Styling
 ----------------------------------------------------------------------------------
 textColorForTextInputState :: TextInputState -> V4 Float
