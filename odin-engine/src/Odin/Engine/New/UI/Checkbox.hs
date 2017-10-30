@@ -34,11 +34,11 @@ foldCheckbox cb up
 checkbox
   :: OdinWidget r t m
   => Bool
-  -> [RenderTransform2]
+--  -> [RenderTransform2]
   -> Event t Bool
   -> m (Dynamic t Bool, Dynamic t ButtonState)
-checkbox iniIsOn ts evIsOn = mdo
-  dSt <- iconButton faSquareO ts $ def & setTextEvent .~ evText
+checkbox iniIsOn {-ts-} evIsOn = mdo
+  dSt <- iconButton faSquareO {-ts-} $ def & setTextEvent .~ evText
   let evUpdate = leftmost [ CheckboxSetIsOn <$> evIsOn
                           , CheckboxToggle  <$  buttonClickedEvent dSt
                           ]

@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-8.17
+resolver: lts-9.10
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -37,23 +37,6 @@ resolver: lts-8.17
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - .
-- location: ../../reflex-sdl2
-  extra-dep: true
-#- location:
-#    git: https://github.com/schell/reflex-sdl2
-#    commit: 54a212972d63671a3ab645260ba035e2ea2eb141
-#  extra-dep: true
-
-- location:
-    git: https://github.com/schell/gelatin
-    commit: 0af61cd5540c7651978fb10cea269161209c41c6
-  subdirs:
-  - gelatin
-  - gelatin-shaders
-  - gelatin-gl
-  - gelatin-sdl2
-  - gelatin-freetype2
-  extra-dep: true
 
 - location:
     git: https://github.com/schell/shapes.git
@@ -61,11 +44,6 @@ packages:
   subdirs:
   - shapes
   - shapes-math
-  extra-dep: true
-
-- location:
-    git: https://github.com/IxpertaSolutions/freer-effects.git
-    commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
   extra-dep: true
 
 - location:
@@ -83,13 +61,26 @@ packages:
     commit: a6ee264850cf80c55e8fed99575107a44af57081
   extra-dep: true
 
+- location:
+    git: https://github.com/schell/gelatin
+    commit: 5bd69f800de24b1d3fc77d157bd437ce8aedca0f
+  extra-dep: true
+  subdirs:
+  - gelatin-sdl2
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- sdl2-2.3.0
 - freetype2-0.1.1
+- gelatin-0.1.0.0
+- gelatin-shaders-0.1.0.0
+- gelatin-gl-0.1.0.0
+#- gelatin-sdl2-0.1.1.0
+- gelatin-freetype2-0.1.0.0
 - prim-uniq-0.1.0.1
 - ref-tf-0.4.0.1
+- reflex-sdl2-0.2.0.0
+- sdl2-2.3.0
 flags: {}
 
 # Extra package databases containing global packages

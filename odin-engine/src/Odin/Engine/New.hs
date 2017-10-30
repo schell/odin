@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# OPTIONS_GHC -fno-warn-orphans  #-}
 module Odin.Engine.New
   ( module Odin.Engine.New
   , TVar
@@ -22,7 +23,6 @@ import           Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVar,
                                               readTVarIO, writeTVar)
 import           Control.Lens                (at, (&), (.~))
 import           Control.Monad               (forM_, when)
-import           Control.Monad.Reader        (local)
 import           Control.Monad.STM           (atomically)
 import           Control.Monad.Trans.Either  (runEitherT)
 import           Control.Varying             as Varying hiding (Event, never)
@@ -38,7 +38,6 @@ import           Gelatin.FreeType2           (Atlas (..), GlyphSize (..),
                                               allocAtlas)
 import           Gelatin.SDL2
 import           Reflex.SDL2
-import           Reflex.SDL2.Internal        (sysUserData)
 import qualified SDL
 import           SDL.Raw.Enum                (pattern SDL_SYSTEM_CURSOR_ARROW,
                                               SystemCursor)
@@ -336,8 +335,8 @@ runOdin r guest = do
                          , windowHighDPI     = True
                          , windowInitialSize = V2 640 480
                          }
-  Right (window, SDL2Backends v2v4 v2v2) <-
-    runEitherT $ startupSDL2BackendsWithConfig cfg "odin-engine-new-exe"
+  window                         <- initSDL2Window cfg "odin-engine-new-exe"
+  Right (SDL2Backends v2v4 v2v2) <- runEitherT $ startupSDL2BackendsWithWindow window
 
   tvFontMap   <- atomically $ newTVar mempty
   tvFresh     <- atomically $ newTVar 0

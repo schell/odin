@@ -3,6 +3,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+-- | A Layer is an offscreen buffer that can be rendered to, and then
+-- transformed and rendered separately. It is used for GUI elements like Pane
+-- and Panel.
 module Odin.Engine.New.UI.Layer
   ( layer
   , LayerCfg (..)
@@ -23,16 +26,12 @@ import           Odin.Engine.New.UI.Configs
 
 
 --------------------------------------------------------------------------------
--- | A Layer is an offscreen buffer that can be rendered to, and then
--- transformed and rendered separately. It is used for GUI elements like Pane
--- and Panel.
 data LayerInternal = LayerInternal { liK               :: Word64
                                    , liWidgetsK        :: Word64
                                    , liFramebuffer     :: GLuint
                                    , liTexture         :: GLuint
                                    , liSize            :: V2 Int
                                    , liBackgroundColor :: V4 Float
-                                   , liTransform       :: [RenderTransform2]
                                    , liBoundary        :: Shape
                                    , liWidgets         :: [Widget]
                                    , liPictureRenderer :: Renderer2
@@ -49,16 +48,16 @@ toWidgets :: LayerInternal -> [Widget]
 toWidgets l =
   let (cleanPic, rendPic) = liPictureRenderer l
       pictureWidget = Widget { widgetUid       = liK l
-                             , widgetTransform = liTransform l
+                             , widgetTransform = []
                              , widgetBoundary  = [liBoundary l]
                              , widgetRenderer2 =
                                (cleanPic >> freeLayerFBTex l, rendPic)
                              , widgetCursor    =
                                msum $ reverse $ map widgetCursor $ liWidgets l
                              }
-      cleanupSubsWidget = Widget { widgetUid = liWidgetsK l
+      cleanupSubsWidget = Widget { widgetUid       = liWidgetsK l
                                  , widgetTransform = []
-                                 , widgetBoundary = []
+                                 , widgetBoundary  = []
                                  , widgetRenderer2 =
                                    (mapM_ freeWidget $ liWidgets l, const $ return ())
                                  , widgetCursor = Nothing
@@ -130,8 +129,7 @@ renderWidgetsIntoLayer window l = do
   return ()
 
 
-data LayerUpdate = LayerSetTransform [RenderTransform2]
-                 | LayerSetAABB (V2 Float, V2 Float)
+data LayerUpdate = LayerSetAABB (V2 Float, V2 Float)
                  | LayerWidgets [Widget]
 
 
@@ -144,7 +142,6 @@ foldLayer
   -> LayerUpdate
   -> m LayerInternal
 foldLayer window tvFresh (V2V2Renderer v2v2) st = \case
-  LayerSetTransform ts  -> return $ st { liTransform = ts }
   LayerSetAABB (tl, br) -> liftIO $ do
     let sz  = br - tl
         szi = floor <$> sz
@@ -182,47 +179,24 @@ layer
   -- ^ The initial shape of the layer's boundary.
   -> V4 Float
   -- ^ The initial background color.
-  -> [RenderTransform2]
-  -- ^ The initial transform of this layer.
   -> LayerCfg t
   -- ^ Any event driven updates.
   -> DynamicWriterT t [Widget] m a
   -- ^ The subwidgets to run in this layer.
   -> m a
-layer boundIni colorIni tsIni cfg subwidgets = do
-  dMousePos  <- holdDyn (-1/0) =<< getMousePositionEvent
-  dTransform <- holdDyn tsIni    $ cfg ^. setTransformEvent
-  dShape     <- holdDyn boundIni $ cfg ^. setBoundaryEvent
+layer boundIni colorIni cfg subwidgets = do
+  dMousePos <- holdDyn (-1/0) =<< getMousePositionEvent
+  dShape    <- holdDyn boundIni $ cfg ^. setBoundaryEvent
 
-  let dLocalMousePos = forDyn2 dMousePos dTransform $ \p ts ->
-                         let mv = inv44 $ affine2sModelview $ extractSpatial ts
-                         in transformV2 mv p
-      dHasMouse      = forDyn2 dShape dLocalMousePos shapeHasPoint
+  let dHasMouse = forDyn2 dShape dMousePos shapeHasPoint
 
   evMouseMotion <- getMouseMotionEvent
   evMouseButton <- getMouseButtonEvent
   evMouseWheel  <- getMouseWheelEvent
 
-  let transformMot ts dat
-        | P ep <- fromIntegral <$> mouseMotionEventPos dat
-        , er   <- fromIntegral <$> mouseMotionEventRelMotion dat
-        , mv   <- inv44 $ affine2sModelview $ extractSpatial ts =
-          dat { mouseMotionEventPos = P $ floor <$> transformV2 mv ep
-              , mouseMotionEventRelMotion = floor <$> transformV2 mv er
-              }
-      evLocalMouseMotion =
-        gate (current dHasMouse) $ attachPromptlyDynWith transformMot
-                                                         dTransform
-                                                         evMouseMotion
-      transformBtn ts dat
-        | P ep <- fromIntegral <$> mouseButtonEventPos dat
-        , mv   <- inv44 $ affine2sModelview $ extractSpatial ts =
-          dat { mouseButtonEventPos = P $ floor <$> transformV2 mv ep }
-      evLocalMouseButton =
-        gate (current dHasMouse) $ attachPromptlyDynWith transformBtn
-                                                         dTransform
-                                                         evMouseButton
-      evLocalMouseWheel = gate (current dHasMouse) evMouseWheel
+  let evLocalMouseMotion = gate (current dHasMouse) evMouseMotion
+      evLocalMouseButton = gate (current dHasMouse) evMouseButton
+      evLocalMouseWheel  = gate (current dHasMouse) evMouseWheel
 
   (a, dWidgets) <- local (\se -> se { sysMouseMotionEvent = evLocalMouseMotion
                                     , sysMouseButtonEvent = evLocalMouseButton
@@ -244,29 +218,15 @@ layer boundIni colorIni tsIni cfg subwidgets = do
                          , liTexture = tex
                          , liSize = sz
                          , liBackgroundColor = colorIni
-                         , liTransform = tsIni
                          , liBoundary = boundIni
                          , liWidgets = []
                          , liPictureRenderer = picRend
                          }
 
-  let evTfrm    = LayerSetTransform        <$> cfg ^. setTransformEvent
-      evAABB    = LayerSetAABB . shapeAABB <$> cfg ^. setBoundaryEvent
+  let evAABB    = LayerSetAABB . shapeAABB <$> cfg ^. setBoundaryEvent
       evWidgets = LayerWidgets             <$> updated dWidgets
-      evUpdate  = leftmost [evTfrm, evAABB, evWidgets]
+      evUpdate  = leftmost [evAABB, evWidgets]
 
   dLayer <- accumM (foldLayer window tvFresh $ V2V2Renderer v2v2) initial evUpdate
   tellDyn $ toWidgets <$> dLayer
-
-  {-putDebugLnE (updated dLayer) $ \l ->
-    ("layer: \n" ++) $ unlines $ map ("  " ++) [ "k   = " ++ show (liK l)
-                                               , "wk  = " ++ show (liWidgetsK l)
-                                               , "fb  = " ++ show (liFramebuffer l)
-                                               , "tex = " ++ show (liTexture l)
-                                               , "sz  = " ++ show (liSize l)
-                                               , "bg  = " ++ show (liBackgroundColor l)
-                                               , "tfrm= " ++ show (liTransform l)
-                                               , "ws  = " ++ show (liWidgets l)
-                                               ]-}
-
   return a

@@ -5,6 +5,8 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE StandaloneDeriving     #-}
 {-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE UndecidableInstances   #-}
 {-# OPTIONS_GHC -fno-warn-orphans   #-}
 module Odin.Engine.New.UI.Configs
   ( module Odin.Engine.New.UI.Configs
@@ -30,15 +32,12 @@ data TextFieldCfg t =
   TextFieldCfg { textFieldCfgSetTextEvent           :: Event t String
                , textFieldCfgSetColorEvent          :: Event t (V4 Float)
                , textFieldCfgSetFontDescriptorEvent :: Event t FontDescriptor
-               , textFieldCfgSetTransformEvent      :: Event t [RenderTransform2]
-               --, textFieldCfgFreeEvent              :: Event t ()
                } deriving (Generic, Default)
 $(makeFields ''TextFieldCfg)
 
 
 data PictureCfg vert t =
   PictureCfg { pictureCfgSetPictureEvent   :: Event t (Picture GLuint vert ())
-             , pictureCfgSetTransformEvent :: Event t [RenderTransform2]
              } deriving (Generic, Default)
 $(makeFields ''PictureCfg)
 
@@ -57,7 +56,6 @@ data ButtonData = ButtonData { buttonDataText  :: String
 data ButtonCfg t =
   ButtonCfg { buttonCfgSetTextEvent          :: Event t String
             , buttonCfgSetButtonPainterEvent :: Event t (Painter ButtonData IO)
-            , buttonCfgSetTransformEvent     :: Event t [RenderTransform2]
             } deriving (Generic, Default)
 $(makeFields ''ButtonCfg)
 
@@ -78,13 +76,18 @@ data TextInputCfg t =
   TextInputCfg { textInputCfgSetTextEvent             :: Event t String
                , textInputCfgSetPlaceholderTextEvent  :: Event t String
                , textInputCfgSetTextInputPainterEvent :: Event t (Painter TextInputData IO)
-               , textInputCfgSetTransformEvent        :: Event t [RenderTransform2]
                } deriving (Generic, Default)
 $(makeFields ''TextInputCfg)
 
 
 data LayerCfg t =
-  LayerCfg { layerCfgSetTransformEvent :: Event t [RenderTransform2]
-           , layerCfgSetBoundaryEvent  :: Event t Shape
+  LayerCfg { layerCfgSetBoundaryEvent  :: Event t Shape
            } deriving (Generic, Default)
 $(makeFields ''LayerCfg)
+
+
+data PaneCfg t =
+  PaneCfg { paneCfgSetBoundaryEvent  :: Event t Shape
+          , paneCfgSetOffsetEvent    :: Event t (V2 Float)
+          } deriving (Generic, Default)
+$(makeFields ''PaneCfg)

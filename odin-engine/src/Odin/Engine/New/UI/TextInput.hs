@@ -42,8 +42,7 @@ textInputEditedEvent tio =
 
 
 
-data TextInputUpdate = TextInputSetTransform [RenderTransform2]
-                     | TextInputSetText String
+data TextInputUpdate = TextInputSetText String
                      | TextInputSetPlaceholderText String
                      | TextInputSetPainter (Painter TextInputData IO)
                      | TextInputMouseMotion MouseMotionEventData
@@ -53,7 +52,6 @@ data TextInputUpdate = TextInputSetTransform [RenderTransform2]
 
 
 data TextInputInternal = TII { tiiK           :: Word64
-                             , tiiTransform   :: [RenderTransform2]
                              , tiiState       :: TextInputState
                              , tiiText        :: String
                              , tiiLastText    :: String
@@ -81,10 +79,7 @@ tiiBoundary tii = paintingShape $ tiiPainting tii $ tiiState tii
 
 
 tiiContainsMouse :: TextInputInternal -> Bool
-tiiContainsMouse tii =
-  shapeHasPoint (transformShape (tiiTransform tii) (tiiBoundary tii))
-                (tiiMousePos tii)
-
+tiiContainsMouse tii = shapeHasPoint (tiiBoundary tii) (tiiMousePos tii)
 
 
 tiiRender :: TextInputInternal -> [RenderTransform2] -> IO ()
@@ -104,7 +99,7 @@ tiiCursor tii = case tiiState tii of
 
 toWidget :: TextInputInternal -> Widget
 toWidget tii = Widget (tiiK tii)
-                      (tiiTransform tii)
+                      []
                       [tiiBoundary tii]
                       (tiiFree tii, tiiRender tii)
                       (tiiCursor tii)
@@ -117,8 +112,6 @@ foldTextInput
   -> TextInputUpdate
   -> m TextInputInternal
 foldTextInput tvFresh st up
-  | TextInputSetTransform ts <- up = return st{ tiiTransform = ts }
-
   | TextInputSetText txt     <- up = liftIO $ do
       k      <- freshWith tvFresh
       paints <- mkPaintings (tiiPainter st) txt (tiiPlaceholder st)
@@ -211,12 +204,10 @@ textInputWith
   -> String
   -- ^ The placeholder text for the input. The input will stretch to accomodate
   -- the size of the text.
-  -> [RenderTransform2]
-  -- ^ The initial transform of the text input.
   -> TextInputCfg t
   -- ^ A configuration of update events.
   -> m (TextInputOutput t)
-textInputWith painter txt ts cfg = do
+textInputWith painter txt cfg = do
   tvFresh       <- getFreshVar
   evMouseMotion <- getMouseMotionEvent
   evMouseButton <- getMouseButtonEvent
@@ -224,8 +215,7 @@ textInputWith painter txt ts cfg = do
   evKeyboard    <- getKeyboardEvent
 
   let evUpdate = leftmost
-        [ TextInputSetTransform       <$> cfg ^. setTransformEvent
-        , TextInputSetText            <$> cfg ^. setTextEvent
+        [ TextInputSetText            <$> cfg ^. setTextEvent
         , TextInputSetPainter         <$> cfg ^. setTextInputPainterEvent
         , TextInputSetPlaceholderText <$> cfg ^. setPlaceholderTextEvent
         , TextInputMouseMotion        <$> evMouseMotion
@@ -236,7 +226,7 @@ textInputWith painter txt ts cfg = do
   initial <- liftIO $ do
     k      <- freshWith tvFresh
     paints <- mkPaintings painter "" txt
-    return $ TII k ts TextInputStateUp "" "" txt ((-1)/0) painter paints
+    return $ TII k TextInputStateUp "" "" txt ((-1)/0) painter paints
   dTII    <- accumM (foldTextInput tvFresh) initial evUpdate
   tellDyn $ pure . toWidget <$> dTII
   TextInputOutput <$> holdUniqDyn (tiiState <$> dTII)
@@ -252,11 +242,9 @@ textInput
   => String
   -- ^ The placeholder text for the input. The input will stretch to accomodate
   -- the size of the text.
-  -> [RenderTransform2]
-  -- ^ The initial transform of the text input.
   -> TextInputCfg t
   -- ^ A configuration of update events.
   -> m (TextInputOutput t)
-textInput txt ts cfg = do
+textInput txt cfg = do
   painter <- getTextInputPainter
-  textInputWith painter txt ts cfg
+  textInputWith painter txt cfg

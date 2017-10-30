@@ -38,6 +38,7 @@ import           Odin.Engine.New.UI.Checkbox
 import           Odin.Engine.New.UI.Configs
 import           Odin.Engine.New.UI.Layer
 import           Odin.Engine.New.UI.Layout
+import           Odin.Engine.New.UI.Pane
 import           Odin.Engine.New.UI.Picture
 import           Odin.Engine.New.UI.TextField
 import           Odin.Engine.New.UI.TextInput
@@ -55,24 +56,24 @@ subguest = do
               to (     1, V4 1 0 1 1)
               to (V2 0 1, V4 1 1 1 1)
   evWindowSize <- getWindowSizeEvent
-  let evTfrm = pure . scaleV2 . fmap fromIntegral <$> evWindowSize
-  colorPicture pic [] $ def & setTransformEvent .~ evTfrm
+  evTfrm <- holdDyn [] $ pure . scaleV2 . fmap fromIntegral <$> evWindowSize
+  transformDyn evTfrm $ colorPicture pic def
   ------------------------------------------------------------------------------
   -- Then we'll draw a button that quits the app when hit.
   ------------------------------------------------------------------------------
-  btnState <- button "Quit" [move 100 250] def
+  btnState <- transform [move 100 250] $ button "Quit" def
   let evClicked = fmapMaybe (guard . (== ButtonStateClicked)) $ updated btnState
   performEvent_ $ liftIO exitSuccess <$ evClicked
 
-  btnA <- button "Button A" [move 50 5] def
+  btnA <- transform [move 50 5] $ button "Button A" def
   let evClickedA = fmapMaybe (guard . (== ButtonStateClicked)) $ updated btnA
   performEvent_ $ liftIO (putStrLn "Clicked A") <$ evClickedA
 
-  btnB <- button "Button B" [move 70 13] def
+  btnB <- transform [move 70 13] $ button "Button B" def
   let evClickedB = fmapMaybe (guard . (== ButtonStateClicked)) $ updated btnB
   performEvent_ $ liftIO (putStrLn "Clicked B") <$ evClickedB
 
-  iconBtn <- iconButton faAnchor [] def
+  iconBtn <- iconButton faAnchor def
   putDebugLnE (buttonClickedEvent iconBtn) $ const "Clicked the anchor."
   ------------------------------------------------------------------------------
   -- Then we'll draw a text field that says "Hello" and follows the mouse.
@@ -82,9 +83,9 @@ subguest = do
   dPos              <- holdDyn 0 $ ffor evMotion $ \motion ->
                          let P v = mouseMotionEventPos motion
                          in fromIntegral <$> v
-  let evTFTfrms = pure . moveV2 <$> updated dPos
+  evTFTfrms <- holdDyn [move 100 100] $ pure . moveV2 <$> updated dPos
   void $ flip holdView (return () <$ evButton) $
-    textField 1 "Hello" [move 100 100] $ def & setTransformEvent .~ evTFTfrms
+    transformDyn evTFTfrms $ textField 1 "Hello" def
   ------------------------------------------------------------------------------
   -- Lastly we'll make sure that whenever a quit event comes in from the user
   -- we quit the app.
@@ -110,7 +111,7 @@ subguest = do
   -- Test using 'varying' for animation.
   ------------------------------------------------------------------------------
   dToggledOn <- mdo
-    dBtnState <- button "Stop animation" [move 200 10] $
+    dBtnState <- transform [move 200 10] $ button "Stop animation" $
       def & setTextEvent .~ evToggleText
     let evClickedToggle =
           fmapMaybe (guard . (== ButtonStateClicked)) $ updated dBtnState
@@ -133,7 +134,7 @@ subguest = do
   ------------------------------------------------------------------------------
   -- Text input widget
   ------------------------------------------------------------------------------
-  tiOutput <- textInput "Placeholder text..." [move 20 50] def
+  tiOutput <- transform [move 20 50] $ textInput "Placeholder text..." def
   putDebugLnE (updated $ tioState tiOutput)  $ ("textinput state: " ++) . show
   putDebugLnE (textInputEditedEvent tiOutput) $ ("edited: " ++) . show
   ------------------------------------------------------------------------------
@@ -142,16 +143,18 @@ subguest = do
   let sequenceOfEvents n = do
         liftIO $ putStrLn $ "Round " ++ show n
         liftIO $ putStrLn "Step 1"
-        liftE $ buttonClickedEvent <$> button "Next" [] def
+        liftE $ buttonClickedEvent <$> button "Next" def
 
         liftIO $ putStrLn "Step 2"
-        liftE $ buttonClickedEvent <$> button "Next, again" [move 0 50] def
+        liftE $ transform [move 0 50] $
+          buttonClickedEvent <$> button "Next, again" def
 
         liftIO $ putStrLn "Step 3"
         liftE getPostBuild
 
         liftIO $ putStrLn "Step 4"
-        liftE $ buttonClickedEvent <$> button "Blah!" [move 0 100] def
+        liftE $ transform [move 0 100] $
+          buttonClickedEvent <$> button "Blah!" def
 
         liftIO $ putStrLn "Rinse and repeat!"
         when (n < 2) $ sequenceOfEvents $ n + 1
@@ -161,21 +164,7 @@ subguest = do
 
 
 guest :: forall r t m. OdinWidget r t m => m ()
-guest = do
-  subguest
-  layer (ShapeRectangle 0 300 300) 0.5 [move 150 20, rotate $ pi/8] def subguest
-
-  let onClicked b = (b <$) . buttonClickedEvent
-  setIsOnEvs <- alignInRow
-    [ onClicked True  <$> button "Turn on checkbox"  [move 0 $ 200 - 32] def
-    , onClicked False <$> button "Turn off checkbox" [move 10 $ 200 - 32] def
-    , transform (constDyn [multiply 1 1 0 1]) $
-        onClicked False <$> button "Turn off checkbox" [move 10 $ 200 - 32] def
-    ]
-
-  (dIsOn, dSt) <- checkbox False [move 0 200] $ leftmost setIsOnEvs
-  putDebugLnE (updated dIsOn) show
-  putDebugLnE (updated dSt) show
+guest = subguest
 
 
 main :: IO ()

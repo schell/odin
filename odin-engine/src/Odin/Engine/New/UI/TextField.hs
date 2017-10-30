@@ -17,24 +17,20 @@ import           Reflex.SDL2
 import           Odin.Engine.New
 import           Odin.Engine.New.UI.Configs as TF (TextFieldCfg, setColorEvent,
                                                    setFontDescriptorEvent,
-                                                   setTextEvent,
-                                                   setTransformEvent, (.~),
-                                                   (^.))
+                                                   setTextEvent, (.~), (^.))
 
 
-data TextFieldUpdate = TextFieldUpdateTransform [RenderTransform2]
-                     | TextFieldUpdateText String
+data TextFieldUpdate = TextFieldUpdateText String
                      | TextFieldUpdateFont FontDescriptor
                      | TextFieldUpdateColor (V4 Float)
 
 
-data TextFieldInternal = TF { tfK         :: Word64
-                            , tfTransform :: [RenderTransform2]
-                            , tfRenderer  :: Renderer2
-                            , tfBoundary  :: Shape
-                            , tfText      :: String
-                            , tfFont      :: FontDescriptor
-                            , tfColor     :: V4 Float
+data TextFieldInternal = TF { tfK        :: Word64
+                            , tfRenderer :: Renderer2
+                            , tfBoundary :: Shape
+                            , tfText     :: String
+                            , tfFont     :: FontDescriptor
+                            , tfColor    :: V4 Float
                             }
 
 
@@ -48,7 +44,7 @@ renderTextField ts = ($ ts) . snd . tfRenderer
 
 toWidget :: TextFieldInternal -> Widget
 toWidget tf = Widget { widgetUid       = tfK tf
-                     , widgetTransform = tfTransform tf
+                     , widgetTransform = []
                      , widgetBoundary  = [tfBoundary tf]
                      , widgetRenderer2 = tfRenderer tf
                      , widgetCursor    = Nothing
@@ -64,7 +60,7 @@ foldTextField
   -> TextFieldUpdate
   -> m TextFieldInternal
 foldTextField v2v2 tvFresh tvFontMap tf up
-  | TextFieldUpdateTransform ts <- up = return tf {tfTransform = ts}
+  -- | TextFieldUpdateTransform ts <- up = return tf {tfTransform = ts}
 
   | TextFieldUpdateText str <- up
   , tf1 <- tf {tfText = str} = newTF v2v2 tvFresh tvFontMap tf1
@@ -105,23 +101,20 @@ textFieldWith
   => FontDescriptor
   -> V4 Float
   -> String
-  -> [RenderTransform2]
   -> TextFieldCfg t
   -> m ()
-textFieldWith font color str ts cfg = do
+textFieldWith font color str cfg = do
   tvFresh   <- getFreshVar
   tvFontMap <- getTVarFontMap
   v2v2      <- getV2V2
 
-  let evUpdate = leftmost [ TextFieldUpdateTransform <$> cfg ^. setTransformEvent
-                          , TextFieldUpdateText      <$> cfg ^. setTextEvent
-                          , TextFieldUpdateFont      <$> cfg ^. setFontDescriptorEvent
-                          , TextFieldUpdateColor     <$> cfg ^. setColorEvent
+  let evUpdate = leftmost [ TextFieldUpdateText  <$> cfg ^. setTextEvent
+                          , TextFieldUpdateFont  <$> cfg ^. setFontDescriptorEvent
+                          , TextFieldUpdateColor <$> cfg ^. setColorEvent
                           ]
   initial <- liftIO $
     newTF v2v2 tvFresh tvFontMap TF { tfK         = 0
                                     , tfFont      = font
-                                    , tfTransform = ts
                                     , tfColor     = color
                                     , tfText      = str
                                     , tfRenderer  = mempty
@@ -136,9 +129,8 @@ textField
   :: OdinWidget r t m
   => V4 Float
   -> String
-  -> [RenderTransform2]
   -> TextFieldCfg t
   -> m ()
-textField color str ts cfg = do
+textField color str cfg = do
   DefaultFont font <- getDefaultFont
-  textFieldWith font color str ts cfg
+  textFieldWith font color str cfg

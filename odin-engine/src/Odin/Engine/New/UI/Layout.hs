@@ -4,6 +4,7 @@
 {-# LANGUAGE TupleSections         #-}
 module Odin.Engine.New.UI.Layout
   ( measure
+  , transformDyn
   , transform
   , transformMouseEvents
   , alignWith
@@ -66,15 +67,23 @@ transformMouseEvents dTransform subwidgets = do
                    }) subwidgets
 
 
-transform
+transformDyn
   :: OdinWidget r t m
   => Dynamic t [RenderTransform2]
   -> DynamicWriterT t [Widget] m a
   -> m a
-transform dTfrm widgets = transformMouseEvents dTfrm $ do
+transformDyn dTfrm widgets = transformMouseEvents dTfrm $ do
   (a, dWidgets) <- runDynamicWriterT widgets
   tellDyn $ zipDynWith transformWidgets dWidgets dTfrm
   return a
+
+
+transform
+  :: OdinWidget r t m
+  => [RenderTransform2]
+  -> DynamicWriterT t [Widget] m a
+  -> m a
+transform ts = transformDyn (pure ts)
 
 
 alignWith

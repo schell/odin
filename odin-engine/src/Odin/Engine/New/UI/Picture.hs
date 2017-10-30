@@ -23,27 +23,25 @@ import           Reflex.SDL2
 
 import           Odin.Engine.New
 import           Odin.Engine.New.UI.Configs as Cfg (PictureCfg, setPictureEvent,
-                                                    setTransformEvent, (^.))
+                                                    (^.))
 
 
-data PictureInternal = PI { piK         :: Word64
-                          , piTransform :: [RenderTransform2]
-                          , piRenderer  :: Renderer2
-                          , piBoundary  :: Shape
+data PictureInternal = PI { piK        :: Word64
+                          , piRenderer :: Renderer2
+                          , piBoundary :: Shape
                           }
 
 
 toWidget :: PictureInternal -> Widget
 toWidget p = Widget { widgetUid       = piK p
-                    , widgetTransform = piTransform p
+                    , widgetTransform = []
                     , widgetRenderer2 = piRenderer p
                     , widgetBoundary  = [piBoundary p]
                     , widgetCursor    = Nothing
                     }
 
 
-data PictureUpdate v = PictureUpdateTransform [RenderTransform2]
-                     | PictureUpdatePicture (Picture GLuint v ())
+newtype PictureUpdate v = PictureUpdatePicture (Picture GLuint v ())
 
 
 foldPicture
@@ -54,8 +52,6 @@ foldPicture
   -> PictureUpdate v
   -> m PictureInternal
 foldPicture v2vX tvFresh p up
-  | PictureUpdateTransform ts <- up = return p {piTransform = ts}
-
   | PictureUpdatePicture pic  <- up = do
     k          <- freshWith tvFresh
     (shape, r) <- liftIO $ compilePicture v2vX $ do
@@ -73,18 +69,14 @@ pictureWith
   :: (OdinWidget r t m, v ~ (V2 Float, c), Unbox c)
   => OdinRenderer v
   -> Picture GLuint v void
-  -> [RenderTransform2]
   -> PictureCfg v t
   -> m ()
-pictureWith v2vX pic ts cfg = do
+pictureWith v2vX pic cfg = do
   tvFresh <- getFreshVar
 
-  let evUpdate = leftmost [ PictureUpdateTransform <$> cfg ^. setTransformEvent
-                          , PictureUpdatePicture   <$> cfg ^. setPictureEvent
-                          ]
-      emptyPI  = PI { piK = 0
+  let evUpdate = leftmost [ PictureUpdatePicture   <$> cfg ^. setPictureEvent ]
+      emptyPI  = PI { piK        = 0
                     , piRenderer = mempty
-                    , piTransform = ts
                     , piBoundary = ShapeRectangle 0 0 0
                     }
 
@@ -97,20 +89,18 @@ pictureWith v2vX pic ts cfg = do
 colorPicture
   :: OdinWidget r t m
   => Picture GLuint V2V4 void
-  -> [RenderTransform2]
   -> PictureCfg V2V4 t
   -> m ()
-colorPicture pic ts cfg = do
+colorPicture pic cfg = do
   V2V4Renderer v2v4 <- getV2V4
-  pictureWith v2v4 pic ts cfg
+  pictureWith v2v4 pic cfg
 
 
 texturePicture
   :: OdinWidget r t m
   => Picture GLuint V2V2 void
-  -> [RenderTransform2]
   -> PictureCfg V2V2 t
   -> m ()
-texturePicture pic ts cfg = do
+texturePicture pic cfg = do
   V2V2Renderer v2v2 <- getV2V2
-  pictureWith v2v2 pic ts cfg
+  pictureWith v2v2 pic cfg

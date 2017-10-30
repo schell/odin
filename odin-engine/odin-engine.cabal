@@ -29,6 +29,7 @@ library
                    , Odin.Engine.New.UI.Painters
                    , Odin.Engine.New.UI.Painting
                    , Odin.Engine.New.UI.Picture
+                   , Odin.Engine.New.UI.Pane
                    , Odin.Engine.New.UI.TextInput
                    , Odin.Engine.New.UI.TextField
                      --  Control.Monad.Trans.NextT
@@ -58,10 +59,10 @@ library
                      , foreign-store >= 0.2
                      , freer-effects
                      , fsnotify
-                     , gelatin
-                     , gelatin-freetype2
-                     , gelatin-gl
-                     , gelatin-sdl2
+                     , gelatin           >= 0.1   && < 0.2
+                     , gelatin-gl        >= 0.1   && < 0.2
+                     , gelatin-sdl2      >= 0.1.1 && < 0.2
+                     , gelatin-freetype2 >= 0.1   && < 0.2
                      , gl
                      , halive
                      , hashable >= 1.2
@@ -72,7 +73,7 @@ library
                      , mtl
                      , pipes-safe
                      , pretty-show
-                     , reflex-sdl2
+                     , reflex-sdl2 >= 0.2
                      , sdl2
                      , shapes
                      , stm
