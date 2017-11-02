@@ -5,7 +5,7 @@ before_test:
 # http://help.appveyor.com/discussions/problems/6312-curl-command-not-found
 - set PATH=C:\Program Files\Git\mingw64\bin;%PATH%
 
-- vcpkg install sdl2 pkg-config
+- vcpkg install sdl2
 
 - curl -sS -ostack.zip -L https://www.stackage.org/stack/windows-x86_64
 
