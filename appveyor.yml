@@ -5,7 +5,7 @@ before_test:
 # http://help.appveyor.com/discussions/problems/6312-curl-command-not-found
 - set PATH=C:\Program Files\Git\mingw64\bin;%PATH%
 
-- vcpkg install sdl2
+- vcpkg install sdl2 pkg-config
 
 - curl -sS -ostack.zip -L https://www.stackage.org/stack/windows-x86_64
 
@@ -20,4 +20,4 @@ test_script:
 - stack setup > nul
 # The ugly echo "" hack is to avoid complaints about 0 being an invalid file
 # descriptor
-- echo "" | stack --no-terminal test
+- echo "" | stack --no-terminal --no-haddock test
