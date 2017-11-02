@@ -49,13 +49,16 @@ data ButtonState = ButtonStateUp
                  deriving (Show, Eq, Ord, Enum, Bounded)
 
 
-data ButtonData = ButtonData { buttonDataText  :: String
-                             , buttonDataState :: ButtonState
-                             }
+data ButtonData a = ButtonData { buttonData      :: a
+                               , buttonDataState :: ButtonState
+                               }
 
-data ButtonCfg t =
-  ButtonCfg { buttonCfgSetTextEvent          :: Event t String
-            , buttonCfgSetButtonPainterEvent :: Event t (Painter ButtonData IO)
+buttonDataText :: ButtonData String -> String
+buttonDataText = buttonData
+
+data ButtonCfg t a =
+  ButtonCfg { buttonCfgSetData          :: Event t a
+            , buttonCfgSetButtonPainter :: Event t (Painter (ButtonData a) IO)
             } deriving (Generic, Default)
 $(makeFields ''ButtonCfg)
 

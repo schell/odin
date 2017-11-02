@@ -7,24 +7,23 @@ module Odin.Engine.New.UI.Layout
   , transformDyn
   , transform
   , transformMouseEvents
+  , transformSubwidgets
   , alignWith
   , alignInRow
   , alignInCol
+  , mapMDyn
+  , captureW
   ) where
 
 import           Control.Monad        (foldM)
-import           Control.Monad.Reader (local)
+import           Control.Monad.Trans  (lift)
+import           Control.Monad.Reader (local, MonadFix)
 import qualified Data.Vector.Unboxed  as V
 import           Gelatin.GL
 import           Reflex.SDL2          hiding (fan)
 import           Reflex.SDL2.Internal
 
 import           Odin.Engine.New
-
-
-widgetsAABB :: [Widget] -> (V2 Float, V2 Float)
-widgetsAABB =
-  foldIntoBox . V.fromList . map shapeAABB . concatMap globalWidgetBoundary
 
 
 measure
@@ -67,6 +66,31 @@ transformMouseEvents dTransform subwidgets = do
                    }) subwidgets
 
 
+-- | Map a monadic function over the output of a 'DynamicWriterT'.
+mapMDyn :: (Monoid w, Monoid w', Reflex t, MonadHold t m, MonadFix m)
+        => (Dynamic t w -> m (Dynamic t w'))
+        -> DynamicWriterT t w m a
+        -> DynamicWriterT t w' m (a, Dynamic t w')
+mapMDyn f dw = do
+  (r, d) <- lift $ do
+    (r, d) <- runDynamicWriterT dw
+    d' <- f d
+    return (r, d')
+  tellDyn d
+  return (r, d)
+
+
+captureW
+  :: (Monoid w, Reflex t, MonadHold t m, MonadFix m)
+  => DynamicWriterT t w m a
+  -> DynamicWriterT t w m (a, Dynamic t w)
+captureW dw = do
+  (r, d) <- lift $ runDynamicWriterT dw
+  tellDyn d
+  return (r, d)
+
+
+
 transformDyn
   :: OdinWidget r t m
   => Dynamic t [RenderTransform2]
@@ -74,6 +98,18 @@ transformDyn
   -> m a
 transformDyn dTfrm widgets = transformMouseEvents dTfrm $ do
   (a, dWidgets) <- runDynamicWriterT widgets
+  let dWidgetsTd = zipDynWith transformWidgets dWidgets dTfrm
+  tellDyn dWidgetsTd
+  return a
+
+
+transformSubwidgets
+  :: OdinWidget r t m
+  => Dynamic t [RenderTransform2]
+  -> DynamicWriterT t [Widget] m a
+  -> DynamicWriterT t [Widget] m a
+transformSubwidgets dTfrm widgets = transformMouseEvents dTfrm $ do
+  (a, dWidgets) <- captureW widgets
   tellDyn $ zipDynWith transformWidgets dWidgets dTfrm
   return a
 

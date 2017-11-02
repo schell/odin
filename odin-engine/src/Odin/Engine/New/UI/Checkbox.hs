@@ -7,7 +7,6 @@ module Odin.Engine.New.UI.Checkbox
   ( checkbox
   ) where
 
-import           Gelatin.GL                (RenderTransform2)
 import           Reflex.SDL2
 
 import           Data.Char.FontAwesome
@@ -34,15 +33,14 @@ foldCheckbox cb up
 checkbox
   :: OdinWidget r t m
   => Bool
---  -> [RenderTransform2]
   -> Event t Bool
   -> m (Dynamic t Bool, Dynamic t ButtonState)
-checkbox iniIsOn {-ts-} evIsOn = mdo
-  dSt <- iconButton faSquareO {-ts-} $ def & setTextEvent .~ evText
+checkbox iniIsOn evIsOn = mdo
+  dSt <- iconButton faSquareO $ def & setData .~ evText
   let evUpdate = leftmost [ CheckboxSetIsOn <$> evIsOn
                           , CheckboxToggle  <$  buttonClickedEvent dSt
                           ]
   dCB <- accum foldCheckbox (CB iniIsOn) evUpdate
-  let toStr b = [if b then faCheckSquareO else faSquareO]
-  evText <- toStr <$$> delayEventOneFrame (cbIsToggled <$> updated dCB)
+  let toChr b = if b then faCheckSquareO else faSquareO
+  evText <- toChr <$$> delayEventOneFrame (cbIsToggled <$> updated dCB)
   (, dSt) <$> holdUniqDyn (cbIsToggled <$> dCB)

@@ -1,42 +1,14 @@
-flags: {}
+resolver: lts-9.11
+
 packages:
-- .
-- ./odin-engine
+- odin-engine
 
 - location:
-    git: https://github.com/schell/gelatin
-    commit: 71cdb01965cd752f34209f6c462e4a679b53324e
-  subdirs:
-  - gelatin
-  - gelatin-shaders
-  - gelatin-gl
-  - gelatin-sdl2
-  - gelatin-freetype2
-  extra-dep: true
-
-#- location:
-#    git: https://github.com/chrra/htiled.git
-#    commit: 536651727199e4e90e84d9e52df1b10454d30966
-#  extra-dep: true
-
-- ../htiled
-
-- location:
-    git: https://github.com/schell/varying.git
-    commit: 15c44f7ab5cb459ad053b58b3776d226d56b0dc7
-  extra-dep: true
-
-- location:
-    git: https://github.com/schell/shapes.git
-    commit: 0f8a187695e9cd1228e79bb8a51f5a6a6de3469e
+    git: https://github.com/ublubu/shapes.git
+    commit: ddee4ccce4ac4d1f6d526477b66451aa578b0e0f
   subdirs:
   - shapes
   - shapes-math
-  extra-dep: true
-
-- location:
-    git: https://github.com/phadej/gl.git
-    commit: e7fd09f260ea5986bbd0addb9e41384ca79c004e
   extra-dep: true
 
 - location:
@@ -45,11 +17,27 @@ packages:
   extra-dep: true
 
 - location:
-    git: https://github.com/IxpertaSolutions/freer-effects.git
-    commit: da3b972379102c6cbde36879ff8f0f8c99bd4c81
+    git: https://github.com/reflex-frp/reflex
+    commit: a6ee264850cf80c55e8fed99575107a44af57081
+  extra-dep: true
+
+- location:
+    git: https://github.com/schell/QuadTree
+    commit: bd11166e50e5f2f4ade87613520aaf82e23cc9eb
   extra-dep: true
 
 extra-deps:
+- aeson-tiled-0.0.0.1
 - freetype2-0.1.1
-
-resolver: lts-8.0
+- gelatin-0.1.0.0
+- gelatin-shaders-0.1.0.0
+- gelatin-gl-0.1.0.0
+- gelatin-sdl2-0.1.1.0
+- gelatin-freetype2-0.1.0.0
+- prim-uniq-0.1.0.1
+- QuadTree-0.11.0
+- ref-tf-0.4.0.1
+- reflex-sdl2-0.2.0.0
+- sdl2-2.3.0
+flags: {}
+extra-package-dbs: []

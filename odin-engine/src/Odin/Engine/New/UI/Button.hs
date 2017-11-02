@@ -20,8 +20,8 @@ module Odin.Engine.New.UI.Button
   , (^.)
   , (.~)
   , (&)
-  , setTextEvent
-  , setButtonPainterEvent
+  , setData
+  , setButtonPainter
   , def
   ) where
 
@@ -40,39 +40,39 @@ import           Odin.Engine.New.UI.Painters
 import           Odin.Engine.New.UI.Painting
 
 
-data ButtonInternal = ButtonInternal { biK         :: Word64
-                                     , biText      :: String
-                                     , biMousePos  :: V2 Float
-                                     , biState     :: ButtonState
-                                     , biPainter   :: Painter ButtonData IO
-                                     , biPainting  :: ButtonState -> Painting
-                                     }
+data ButtonInternal a = ButtonInternal { biK         :: Word64
+                                       , biData      :: a
+                                       , biMousePos  :: V2 Float
+                                       , biState     :: ButtonState
+                                       , biPainter   :: Painter (ButtonData a) IO
+                                       , biPainting  :: ButtonState -> Painting
+                                       }
 
 
-mkPaintings :: Painter ButtonData IO -> String -> IO (ButtonState -> Painting)
-mkPaintings pntr str = do
-  let runInputPainter = runPainter pntr . ButtonData str
+mkPaintings :: Painter (ButtonData a) IO -> a -> IO (ButtonState -> Painting)
+mkPaintings pntr a = do
+  let runInputPainter = runPainter pntr . ButtonData a
       states          = [minBound .. maxBound]
   paintings <- mapM runInputPainter states
   return $ \st -> fromMaybe mempty $ lookup st $ zip states paintings
 
 
-biBoundary :: ButtonInternal -> Shape
+biBoundary :: ButtonInternal a -> Shape
 biBoundary bi = paintingShape $ biPainting bi $ biState bi
 
 
-biContainsMouse :: ButtonInternal -> Bool
+biContainsMouse :: ButtonInternal a -> Bool
 biContainsMouse bi = shapeHasPoint (biBoundary bi) (biMousePos bi)
 
-biRender :: ButtonInternal -> [RenderTransform2] -> IO ()
+biRender :: ButtonInternal a -> [RenderTransform2] -> IO ()
 biRender bi = renderPainting $ biPainting bi $ biState bi
 
 
-biFree :: ButtonInternal -> IO ()
+biFree :: ButtonInternal a -> IO ()
 biFree bi = mapM_ (freePainting . biPainting bi) [minBound .. maxBound]
 
 
-toWidget :: ButtonInternal -> Widget
+toWidget :: ButtonInternal a -> Widget
 toWidget bi = Widget { widgetUid       = biK bi
                      , widgetBoundary  = [biBoundary bi]
                      , widgetTransform = []
@@ -82,28 +82,28 @@ toWidget bi = Widget { widgetUid       = biK bi
                      }
 
 
-data ButtonUpdate = ButtonUpdateSetText String
-                  | ButtonUpdateSetPainter (Painter ButtonData IO)
-                  | ButtonUpdateMotion MouseMotionEventData
-                  | ButtonUpdateButton MouseButtonEventData
-                  | ButtonUpdateCycle
+data ButtonUpdate a = ButtonUpdateSetData a
+                    | ButtonUpdateSetPainter (Painter (ButtonData a) IO)
+                    | ButtonUpdateMotion MouseMotionEventData
+                    | ButtonUpdateButton MouseButtonEventData
+                    | ButtonUpdateCycle
 
 
 foldButton
   :: MonadIO m
   => TVar Word64
-  -> ButtonInternal
-  -> ButtonUpdate
-  -> m ButtonInternal
+  -> ButtonInternal a
+  -> ButtonUpdate a
+  -> m (ButtonInternal a)
 foldButton tvFresh bi up
-  | ButtonUpdateSetText str <- up = liftIO $ do
+  | ButtonUpdateSetData a <- up = liftIO $ do
     k  <- freshWith tvFresh
-    ps <- mkPaintings (biPainter bi) str
+    ps <- mkPaintings (biPainter bi) a
     return bi {biK = k, biPainting = ps}
 
   | ButtonUpdateSetPainter pntr <- up = liftIO $ do
     k  <- freshWith tvFresh
-    ps <- mkPaintings pntr (biText bi)
+    ps <- mkPaintings pntr (biData bi)
     return bi {biK = k, biPainting = ps, biPainter = pntr}
 
   | ButtonUpdateMotion dat <- up
@@ -140,29 +140,29 @@ foldButton tvFresh bi up
 
 
 buttonWith
-  :: forall r t m. OdinWidget r t m
-  => Painter ButtonData IO
-  -> String
-  -> ButtonCfg t
+  :: forall r t m a. OdinWidget r t m
+  => Painter (ButtonData a) IO
+  -> a
+  -> ButtonCfg t a
   -> m (Dynamic t ButtonState)
-buttonWith buttonPainter str cfg = do
+buttonWith buttonPainter a cfg = do
   tvFresh <- getFreshVar
 
   evMotion <- getMouseMotionEvent
   evButton <- getMouseButtonEvent
 
   mdo
-    let evUpdate = leftmost [ ButtonUpdateSetText    <$> cfg ^. setTextEvent
-                            , ButtonUpdateSetPainter <$> cfg ^. setButtonPainterEvent
+    let evUpdate = leftmost [ ButtonUpdateSetData    <$> cfg ^. setData
+                            , ButtonUpdateSetPainter <$> cfg ^. setButtonPainter
                             , ButtonUpdateMotion     <$> evMotion
                             , ButtonUpdateButton     <$> evButton
                             , ButtonUpdateCycle      <$  evAfterClick
                             ]
     initial <- liftIO $ do
       k  <- freshWith tvFresh
-      ps <- mkPaintings buttonPainter str
-      return ButtonInternal { biK = k
-                            , biText = str
+      ps <- mkPaintings buttonPainter a
+      return ButtonInternal { biK    = k
+                            , biData = a
                             , biMousePos = -1/0
                             , biState = ButtonStateUp
                             , biPainter = buttonPainter
@@ -181,7 +181,7 @@ buttonWith buttonPainter str cfg = do
 button
   :: forall r t m. OdinWidget r t m
   => String
-  -> ButtonCfg t
+  -> ButtonCfg t String
   -> m (Dynamic t ButtonState)
 button str cfg = do
   pntr <- getButtonPainter
@@ -191,11 +191,12 @@ button str cfg = do
 iconButton
   :: forall r t m. OdinWidget r t m
   => Char
-  -> ButtonCfg t
+  -> ButtonCfg t Char
   -> m (Dynamic t ButtonState)
 iconButton char cfg = do
   pntr <- getIconButtonPainter
-  buttonWith pntr [char] cfg
+  buttonWith pntr char cfg
+
 
 buttonClickedEvent :: Reflex t => Dynamic t ButtonState -> Event t ()
 buttonClickedEvent = fmapMaybe (guard . (== ButtonStateClicked)) . updated

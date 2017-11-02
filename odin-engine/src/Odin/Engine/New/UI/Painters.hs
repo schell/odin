@@ -5,15 +5,15 @@
 {-# LANGUAGE TupleSections         #-}
 module Odin.Engine.New.UI.Painters
   ( getButtonPainter
+  , getBlankButtonPainter
   , getIconButtonPainter
   , getTextInputPainter
---  , slotDefaultText
   ) where
 
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Gelatin
 import           Gelatin.FreeType2
-import           Gelatin.GL                 (compilePicture)
+import           Gelatin.GL                 (compilePicture, V2V4)
 
 import           Control.Monad              (when)
 import           Data.Char.FontAwesome
@@ -48,11 +48,11 @@ bgOffsetForButtonState _               = bgOffsetForButtonState ButtonStateUp
 getButtonPainterWithFont
   :: Odin r t m
   => FontDescriptor
-  -> m (Painter ButtonData IO)
+  -> m (Painter (ButtonData String) IO)
 getButtonPainterWithFont font = do
   V2V2Renderer v2v2 <- getV2V2
-  V2V4Renderer v2v4 <- getV2V4
   tvFontMap         <- getTVarFontMap
+  blankPntr         <- getBlankButtonPainter
   return $ Painter $ \(ButtonData txt st) ->
     loadAtlasInto tvFontMap font txt >>= \case
       Nothing    -> do
@@ -65,25 +65,39 @@ getButtonPainterWithFont font = do
 
         let pad  = V2 4 4
             sz   = V2 tw th + 2*pad
-            shxy = V2 4 4
             bgxy = bgOffsetForButtonState st
             gh   = glyphHeight $ atlasGlyphSize atlas
 
-        -- drop shadow and background
-        (_,(bgc,bgr)) <- compilePicture v2v4 $ setGeometry $ do
-          fan $ mapVertices (,V4 0 0 0 0.4) $
-            rectangle shxy (shxy + sz)
-          fan $ mapVertices (,bgColorForButtonState st) $
-            rectangle bgxy (bgxy + sz)
+        Painting bb (bgc, bgr) <-
+          runPainter blankPntr (ButtonData sz st)
 
         let t = moveV2 $ V2 4 gh + bgxy
             r rs = do bgr rs
                       textr $ t:rs
-            bb   = listToBox [0, shxy, shxy+sz, bgxy, bgxy+sz]
         return $ Painting bb (bgc >> textc, r)
 
 
-getButtonPainter :: Odin r t m => m (Painter ButtonData IO)
+getBlankButtonPainter
+  :: Odin r t m
+  => m (Painter (ButtonData (V2 Float)) IO)
+getBlankButtonPainter = do
+  V2V4Renderer v2v4 <- getV2V4
+  return $ Painter $ \(ButtonData sz st) -> do
+    let shxy = V2 4 4
+        bgxy = bgOffsetForButtonState st
+
+    -- drop shadow and background
+    (_, r) <- compilePicture v2v4 $ setGeometry $ do
+      fan $ mapVertices (,V4 0 0 0 0.4) $
+        rectangle shxy (shxy + sz)
+      fan $ mapVertices (,bgColorForButtonState st) $
+        rectangle bgxy (bgxy + sz)
+
+    let bb = listToBox [0, shxy, shxy+sz, bgxy, bgxy+sz]
+    return $ Painting bb r
+
+
+getButtonPainter :: Odin r t m => m (Painter (ButtonData String) IO)
 getButtonPainter = do
   DefaultFont font <- getDefaultFont
   tvFontMap        <- getTVarFontMap
@@ -91,12 +105,13 @@ getButtonPainter = do
   getButtonPainterWithFont font
 
 
-getIconButtonPainter :: Odin r t m => m (Painter ButtonData IO)
+getIconButtonPainter :: Odin r t m => m (Painter (ButtonData Char) IO)
 getIconButtonPainter = do
   IconFont font <- getIconFont
   tvFontMap     <- getTVarFontMap
   _ <- loadAtlasInto tvFontMap font allFontAwesomeChars
-  getButtonPainterWithFont font
+  pntr <- getButtonPainterWithFont font
+  return $ Painter $ \(ButtonData c st) -> runPainter pntr (ButtonData [c] st)
 
 
 {-getIconButtonPainter

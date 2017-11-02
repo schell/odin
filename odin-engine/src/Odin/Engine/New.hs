@@ -155,6 +155,10 @@ widgetHasPoint w p =
 widgetsHavePoint :: [Widget] -> V2 Float -> Bool
 widgetsHavePoint nodes p = any (`widgetHasPoint` p) nodes
 
+widgetsAABB :: [Widget] -> (V2 Float, V2 Float)
+widgetsAABB =
+  foldIntoBox . V.fromList . map shapeAABB . concatMap globalWidgetBoundary
+
 
 data OdinData r t =
   OdinData { odinUserData     :: r

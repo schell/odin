@@ -16,6 +16,7 @@ import           Control.Concurrent.STM.TVar  (TVar, modifyTVar', newTVar,
                                                readTVarIO, writeTVar)
 import           Control.Lens                 hiding (to, transform)
 import           Control.Monad                (guard, void, when)
+import           Control.Monad.Trans          (lift)
 import           Control.Monad.Fix            (fix)
 import           Control.Monad.STM            (atomically)
 import           Control.Varying              hiding (Event, never)
@@ -23,6 +24,7 @@ import           Data.Default                 (def)
 import           Data.Monoid                  ((<>))
 import qualified Data.Vector.Unboxed          as V
 import           Data.Word                    (Word32)
+import Data.QuadTree
 import           Gelatin.GL
 import           Reflex.SDL2                  hiding (fan, rotate)
 import           System.Exit                  (exitSuccess)
@@ -44,12 +46,8 @@ import           Odin.Engine.New.UI.TextField
 import           Odin.Engine.New.UI.TextInput
 
 
-subguest :: forall r t m. OdinWidget r t m => m ()
-subguest = do
-  ------------------------------------------------------------------------------
-  -- First we'll draw a colorful background that always stays anchored at the
-  -- top left corner, but also stretces to the boundaries of the window.
-  ------------------------------------------------------------------------------
+cuteBackground :: OdinWidget r t m => m ()
+cuteBackground = do
   let pic = setGeometry $ fan $ do
               to (     0, V4 1 1 0 1)
               to (V2 1 0, V4 0 1 1 1)
@@ -58,6 +56,25 @@ subguest = do
   evWindowSize <- getWindowSizeEvent
   evTfrm <- holdDyn [] $ pure . scaleV2 . fmap fromIntegral <$> evWindowSize
   transformDyn evTfrm $ colorPicture pic def
+
+
+quitOnQuitEvent :: OdinWidget r t m => m ()
+quitOnQuitEvent = getQuitEvent >>= performEvent_ . (liftIO exitSuccess <$)
+
+
+subguest :: forall r t m. OdinWidget r t m => m ()
+subguest = do
+  ------------------------------------------------------------------------------
+  -- Let's make sure that whenever a quit event comes in from the user
+  -- we quit the app.
+  ------------------------------------------------------------------------------
+  quitOnQuitEvent
+  ------------------------------------------------------------------------------
+  -- First we'll draw a colorful background that always stays anchored at the
+  -- top left corner, but also stretces to the boundaries of the window.
+  ------------------------------------------------------------------------------
+  cuteBackground
+
   ------------------------------------------------------------------------------
   -- Then we'll draw a button that quits the app when hit.
   ------------------------------------------------------------------------------
@@ -86,11 +103,7 @@ subguest = do
   evTFTfrms <- holdDyn [move 100 100] $ pure . moveV2 <$> updated dPos
   void $ flip holdView (return () <$ evButton) $
     transformDyn evTFTfrms $ textField 1 "Hello" def
-  ------------------------------------------------------------------------------
-  -- Lastly we'll make sure that whenever a quit event comes in from the user
-  -- we quit the app.
-  ------------------------------------------------------------------------------
-  getQuitEvent >>= performEvent_ . (liftIO exitSuccess <$)
+
   --------------------------------------------------------------------------------
   ---- Test directly writing widgets.
   --------------------------------------------------------------------------------
@@ -112,7 +125,7 @@ subguest = do
   ------------------------------------------------------------------------------
   dToggledOn <- mdo
     dBtnState <- transform [move 200 10] $ button "Stop animation" $
-      def & setTextEvent .~ evToggleText
+      def & setData .~ evToggleText
     let evClickedToggle =
           fmapMaybe (guard . (== ButtonStateClicked)) $ updated dBtnState
     evNumClicks <- accum (+) (1 :: Int) $ 1 <$ evClickedToggle
@@ -135,7 +148,7 @@ subguest = do
   -- Text input widget
   ------------------------------------------------------------------------------
   tiOutput <- transform [move 20 50] $ textInput "Placeholder text..." def
-  putDebugLnE (updated $ tioState tiOutput)  $ ("textinput state: " ++) . show
+  putDebugLnE (updated $ tioState tiOutput)   $ ("textinput state: " ++) . show
   putDebugLnE (textInputEditedEvent tiOutput) $ ("edited: " ++) . show
   ------------------------------------------------------------------------------
   -- Test event sequencing
@@ -164,7 +177,12 @@ subguest = do
 
 
 guest :: forall r t m. OdinWidget r t m => m ()
-guest = subguest
+guest = do
+  quitOnQuitEvent
+  cuteBackground
+  --subguest
+  --transform [move 100 100, rotate $ pi/8] $
+  --  pane (ShapeRectangle 0 300 300) black 0 def subguest
 
 
 main :: IO ()
