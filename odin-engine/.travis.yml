@@ -1,0 +1,109 @@
+# Use new container infrastructure to enable caching
+sudo: false
+
+# Choose a lightweight base image; we provide our own build tools.
+language: c
+
+# Caching so the next build will be fast too.
+cache:
+  directories:
+  - $HOME/.ghc
+  - $HOME/.cabal
+  - $HOME/.stack
+  - ./.stack-work
+
+# The different configurations we want to test. We have BUILD=cabal which uses
+# cabal-install, and BUILD=stack which uses Stack. More documentation on each
+# of those below.
+#
+# We set the compiler values here to tell Travis to use a different
+# cache file per set of arguments.
+#
+# If you need to have different apt packages for each combination in the
+# matrix, you can use a line such as:
+#     addons: {apt: {packages: [libfcgi-dev,libgmp-dev]}}
+matrix:
+  include:
+  # We grab the appropriate GHC and cabal-install versions from hvr's PPA. See:
+  # https://github.com/hvr/multi-ghc-travis
+  # The Stack builds. We can pass in arbitrary Stack arguments via the ARGS
+  # variable, such as using --stack-yaml to point to a different file.
+  - env: BUILD=stack ARGS=""
+    compiler: ": #stack default"
+    addons: {apt: {packages: [libsdl2-dev], sources: [hvr-ghc]}}
+
+  # Build on OS X in addition to Linux
+  - env: BUILD=stack ARGS=""
+    os: osx
+    compiler: ": #stack default osx"
+
+
+before_install:
+# Using compiler above sets CC to an invalid value, so unset it
+- unset CC
+
+# Install sdl2 if we're on osx
+- if [ `uname` = "Darwin"]; then brew install sdl2; fi
+
+# We want to always allow newer versions of packages when building on GHC HEAD
+- CABALARGS=""
+- if [ "x$GHCVER" = "xhead" ]; then CABALARGS=--allow-newer; fi
+
+# Download and unpack the stack executable
+- export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$HOME/.local/bin:/opt/alex/$ALEXVER/bin:/opt/happy/$HAPPYVER/bin:$HOME/.cabal/bin:$PATH
+- mkdir -p ~/.local/bin
+- |
+  if [ `uname` = "Darwin" ]
+  then
+    travis_retry curl --insecure -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 --include '*/stack' -C ~/.local/bin
+    travis_retry brew update
+    brew install ghc cabal-install
+  else
+    travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  fi
+
+- PACKAGES=$(stack --install-ghc query locals | grep '^ *path' | sed 's@^ *path:@@')
+
+install:
+- echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+- if [ -f configure.ac ]; then autoreconf -i; fi
+- |
+  set -ex
+  case "$BUILD" in
+    stack)
+      stack --no-terminal --install-ghc $ARGS test --bench --only-dependencies
+      ;;
+    meta)
+      cabal --version
+      ;;
+    cabal)
+      cabal --version
+      travis_retry cabal update
+      cabal new-build --only-dependencies $CABALARGS all
+      ;;
+  esac
+  set +ex
+
+script:
+- |
+  set -ex
+  case "$BUILD" in
+    stack)
+      stack --no-terminal $ARGS test --bench --no-run-benchmarks --haddock --no-haddock-deps
+      ;;
+    meta)
+      for dir in $PACKAGES
+      do
+        pushd $dir
+        cabal check
+        cabal sdist
+        popd
+      done
+      ;;
+    cabal)
+        cabal new-build $CABALARGS all
+        cabal new-test $CABALARGS all
+        # cabal new-bench $CABALARGS all # uncomment when/if we add benchmarks
+      ;;
+  esac
+  set +ex
