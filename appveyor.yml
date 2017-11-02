@@ -4,11 +4,7 @@ image: Visual Studio 2017
 before_test:
 # http://help.appveyor.com/discussions/problems/6312-curl-command-not-found
 - set PATH=C:\Program Files\Git\mingw64\bin;%PATH%
-
-- vcpkg install sdl2
-
 - curl -sS -ostack.zip -L https://www.stackage.org/stack/windows-x86_64
-
 - 7z x stack.zip stack.exe
 
 clone_folder: "c:\\stack"
@@ -18,6 +14,8 @@ environment:
 
 test_script:
 - stack setup > nul
+- stack exec -- pacman -Syu --noconfirm
+- stack exec -- pacman -S --noconfirm mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2
 # The ugly echo "" hack is to avoid complaints about 0 being an invalid file
 # descriptor
-- echo "" | stack --no-terminal --no-haddock test
+- stack --no-terminal --no-haddock build
