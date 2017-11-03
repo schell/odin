@@ -64,7 +64,7 @@ before_install:
     cd SDL2-2.0.4
     ./configure
     make -j4
-    make install
+    sudo make install
     cd ..
   fi
 
