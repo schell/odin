@@ -52,16 +52,24 @@ before_install:
 - |
   if [ `uname` = "Darwin" ]
   then
-    travis_retry curl --insecure -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 --include '*/stack' -C ~/.local/bin
+    travis_retry curl -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 --include '*/stack' -C ~/.local/bin
     travis_retry brew update
     brew install ghc cabal-install sdl2 freetype pkg-config
   else
     travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
     travis_retry sudo apt-get update
-    sudo apt-get install libsdl2-dev libfreetype6 pkg-config
+    sudo apt-get install libfreetype6 pkg-config
+    # Install SDL2-2.0.4 from source.
+    travis_retry curl -L https://www.libsdl.org/release/SDL2-2.0.4.zip | tar xz
+    cd SDL2-2.0.4
+    ./configure
+    make -j4
+    make install
+    cd ..
   fi
 
 - PACKAGES=$(stack --install-ghc query locals | grep '^ *path' | sed 's@^ *path:@@')
+
 
 install:
 - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
