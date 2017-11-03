@@ -54,10 +54,11 @@ before_install:
   then
     travis_retry curl --insecure -L https://www.stackage.org/stack/osx-x86_64 | tar xz --strip-components=1 --include '*/stack' -C ~/.local/bin
     travis_retry brew update
-    brew install ghc cabal-install sdl2 pkg-config
+    brew install ghc cabal-install sdl2 freetype pkg-config
   else
     travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
-    sudo travis_retry apt-get update
+    travis_retry sudo apt-get update
+    sudo apt-get install libsdl2-dev libfreetype6 pkg-config
   fi
 
 - PACKAGES=$(stack --install-ghc query locals | grep '^ *path' | sed 's@^ *path:@@')
