@@ -15,4 +15,4 @@ install:
 - stack exec -- pacman -S --noconfirm mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-freetype
 
 build_script:
-- stack --no-terminal --no-haddock build
+- stack --no-terminal build --no-haddock --no-haddock-deps --no-haddock-internal --ghc-options --jobs 1
