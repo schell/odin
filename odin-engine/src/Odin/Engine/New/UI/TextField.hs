@@ -9,6 +9,8 @@ module Odin.Engine.New.UI.TextField
   , module TF
   ) where
 
+import           Control.Monad              (foldM)
+import           Data.List                  (nub)
 import           Data.Word                  (Word64)
 import           Gelatin.FreeType2
 import           Gelatin.GL
@@ -80,7 +82,7 @@ newTF
   -> TextFieldInternal
   -> m TextFieldInternal
 newTF (V2V2Renderer backend) tvFresh tvFontMap tf =
-  loadAtlasInto tvFontMap (tfFont tf) (tfText tf) >>= \case
+  loadAtlasInto tvFontMap (tfFont tf) (nub $ asciiChars ++ tfText tf) >>= \case
     Nothing     -> do
       liftIO $ putStrLn "Error allocating text."
       return tf
@@ -107,20 +109,28 @@ textFieldWith font color str cfg = do
   tvFresh   <- getFreshVar
   tvFontMap <- getTVarFontMap
   v2v2      <- getV2V2
+  evPB      <- getPostBuild
 
-  let evUpdate = leftmost [ TextFieldUpdateText  <$> cfg ^. setTextEvent
-                          , TextFieldUpdateFont  <$> cfg ^. setFontDescriptorEvent
-                          , TextFieldUpdateColor <$> cfg ^. setColorEvent
-                          ]
-  initial <- liftIO $
-    newTF v2v2 tvFresh tvFontMap TF { tfK         = 0
-                                    , tfFont      = font
-                                    , tfColor     = color
-                                    , tfText      = str
-                                    , tfRenderer  = mempty
-                                    , tfBoundary  = ShapeRectangle 0 0 0
-                                    }
-  dTextField <- accumM (foldTextField v2v2 tvFresh tvFontMap) initial evUpdate
+  let foldTF = foldTextField v2v2 tvFresh tvFontMap
+      evUpdate = mergeWith (++)
+        [ pure . TextFieldUpdateText  <$> cfg ^. setTextEvent
+        , pure . TextFieldUpdateFont  <$> cfg ^. setFontDescriptorEvent
+        , pure . TextFieldUpdateColor <$> cfg ^. setColorEvent
+        ]
+      emptyTF = TF { tfK         = 0
+                   , tfFont      = font
+                   , tfColor     = color
+                   , tfText      = str
+                   , tfRenderer  = mempty
+                   , tfBoundary  = ShapeRectangle 0 0 0
+                   }
+      initUpdates = mergeWith (++)
+        [ [TextFieldUpdateText str   ] <$ evPB
+        , [TextFieldUpdateFont font  ] <$ evPB
+        , [TextFieldUpdateColor color] <$ evPB
+        ]
+      updates = leftmost [initUpdates, evUpdate]
+  dTextField <- accumM (foldM foldTF) emptyTF updates
   tellDyn $ pure . toWidget <$> dTextField
 
 

@@ -1,25 +1,25 @@
 odin
 ====
-Here I'm exploring building a roguelike and 2d engine.
+[odin-engine](https://github.com/schell/odin/tree/master/odin-engine) is a high
+level 2d game and application engine. It provides a number of composable GUI
+[widgets](https://github.com/schell/odin/tree/master/odin-engine/src/Odin/Engine/New/UI)
+and glue code to various useful libraries. It is written on top of
+[reflex-sdl2](https://github.com/schell/reflex-sdl2), an FRP over SDL2.
 
 batteries included
 ------------------
-* [odin-engine](https://github.com/schell/odin/tree/master/odin-engine) is a high
-  level 2d game engine. It provides a novel effects system built on top of
-  [freer](https://gitlab.com/queertypes/freer), as well as an immediate mode gui
-  with a number of [preexisting widgets](https://github.com/schell/odin/tree/master/odin-engine/src/Odin/Engine/GUI).
+* [reflex-sdl2](https://github.com/schell/reflex-sdl2) provides the main loop
+  and the control scheme is familiar FRP if you've used any reflex based hosts.
 
 * [gelatin-sdl2](https://github.com/schell/gelatin/tree/master/gelatin-sdl2)
-  is the OpenGL/SDL2 rendering backend.
+  is the OpenGL/SDL2 rendering backend. It supports 2d rendering through colors
+  and textures.
 
 * [varying](https://github.com/schell/varying) provides smooth FRP-based
   animation.
 
 * [shapes](https://github.com/ublubu/shapes) provides a purely function 2d
   collision detection and physics system.
-
-* [mapmaker](https://github.com/schell/odin/blob/master/app/MapMaker.hs) is an
-  example application written with `odin-engine`.
 
 installation
 ------------

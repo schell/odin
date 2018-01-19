@@ -56,27 +56,21 @@ library
                      , either
                      , exceptions
                      , filepath
-                     , foreign-store >= 0.2
-                     , freer-effects
-                     , fsnotify
                      , gelatin           >= 0.1   && < 0.2
                      , gelatin-gl        >= 0.1   && < 0.2
                      , gelatin-sdl2      >= 0.1.1 && < 0.2
                      , gelatin-freetype2 >= 0.1   && < 0.2
                      , gl
-                     , halive
-                     , hashable >= 1.2
-                     , aeson-tiled
+                     --, aeson-tiled
                      , lens
                      , linear
                      , mmorph >= 1.0
                      , mtl
                      , pipes-safe
                      , pretty-show
-                     , QuadTree    >= 0.11 && < 0.12
-                     , reflex-sdl2 >= 0.2
+                     , reflex-sdl2 >= 0.2.0.1
                      , sdl2
-                     , shapes
+                     --, shapes
                      , stm
                      , text
                      , transformers
@@ -97,7 +91,6 @@ executable odin-engine-new-exe
                      , gelatin-gl
                      , mtl
                      , odin-engine
-                     , QuadTree    >= 0.11 && < 0.12
                      , reflex-sdl2
                      , stm
                      , varying

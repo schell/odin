@@ -1,34 +1,28 @@
-resolver: lts-9.10
+resolver: nightly-2017-11-02
 packages:
 - .
 
+#- location:
+#    git: https://github.com/ublubu/shapes.git
+#    commit: 0f8a187695e9cd1228e79bb8a51f5a6a6de3469e
+#  subdirs:
+#  - shapes
+#  - shapes-math
+#  extra-dep: true
+
 - location:
-    git: https://github.com/ublubu/shapes.git
-    commit: ddee4ccce4ac4d1f6d526477b66451aa578b0e0f
-  subdirs:
-  - shapes
-  - shapes-math
+    git: https://github.com/schell/reflex
+    commit: fc69b9793218578e76e6eb79991ccdf665c88636
   extra-dep: true
 
 - location:
-    git: https://github.com/schell/halive.git
-    commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
-  extra-dep: true
-
-- location:
-    git: https://github.com/reflex-frp/reflex
-    commit: a6ee264850cf80c55e8fed99575107a44af57081
-  extra-dep: true
-
-- location:
-    git: https://github.com/schell/QuadTree
-    commit: bd11166e50e5f2f4ade87613520aaf82e23cc9eb
+    git: https://github.com/schell/reflex-sdl2
+    commit: b2089accef02ee218a8ec7d909471b34f824f09e
   extra-dep: true
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- aeson-tiled-0.0.0.1
 - freetype2-0.1.1
 - gelatin-0.1.0.0
 - gelatin-shaders-0.1.0.0
@@ -36,9 +30,7 @@ extra-deps:
 - gelatin-sdl2-0.1.1.0
 - gelatin-freetype2-0.1.0.0
 - prim-uniq-0.1.0.1
-- QuadTree-0.11.0
 - ref-tf-0.4.0.1
-- reflex-sdl2-0.2.0.0
 - sdl2-2.3.0
 flags: {}
 

@@ -383,7 +383,7 @@ tickUIPrepare = do
       P mouserel <- liftIO getRelativeMouseLocation
       mousebtnf  <- liftIO getMouseButtons
       let keycodes :: Map Keycode (InputMotion, Bool)
-          keycodes  = M.fromList $ concatMap keycode evs
+          keycodes = M.fromList $ concatMap keycode evs
           scancodes :: Map Scancode (InputMotion, Bool)
           scancodes = M.fromList $ concatMap scancode evs
           mousebtns :: Map MouseButton (InputMotion, Int)

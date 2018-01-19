@@ -73,15 +73,16 @@ pictureWith
   -> m ()
 pictureWith v2vX pic cfg = do
   tvFresh <- getFreshVar
-
-  let evUpdate = leftmost [ PictureUpdatePicture   <$> cfg ^. setPictureEvent ]
+  evPB    <- getPostBuild
+  let evUpdate = leftmost [ PictureUpdatePicture   <$> cfg ^. setPictureEvent
+                          , PictureUpdatePicture (void pic) <$ evPB
+                          ]
       emptyPI  = PI { piK        = 0
                     , piRenderer = mempty
                     , piBoundary = ShapeRectangle 0 0 0
                     }
 
-  initial      <- foldPicture v2vX tvFresh emptyPI (PictureUpdatePicture $ void pic)
-  dPicInternal <- accumM (foldPicture v2vX tvFresh) initial evUpdate
+  dPicInternal <- accumM (foldPicture v2vX tvFresh) emptyPI evUpdate
 
   tellDyn $ pure . toWidget <$> dPicInternal
 

@@ -330,15 +330,15 @@ delayEventOneFrame ev = do
   delayEventWithEventCode (fromIntegral k) 0 ev
 
 
-runOdin :: Reflex t => r -> ConcreteReflexSDL2 (OdinData r t) () -> IO ()
-runOdin r guest = do
+initialOdinData :: Reflex t => r -> IO (OdinData r t)
+initialOdinData r = do
   initializeAll
   let ogl = defaultOpenGL{ glProfile = Core Debug 3 3 }
       cfg = defaultWindow{ windowOpenGL      = Just ogl
-                         , windowResizable   = True
-                         , windowHighDPI     = True
-                         , windowInitialSize = V2 640 480
-                         }
+                        , windowResizable   = True
+                        , windowHighDPI     = True
+                        , windowInitialSize = V2 640 480
+                        }
   window                         <- initSDL2Window cfg "odin-engine-new-exe"
   Right (SDL2Backends v2v4 v2v2) <- runEitherT $ startupSDL2BackendsWithWindow window
 
@@ -347,17 +347,22 @@ runOdin r guest = do
   tvMapEvs    <- atomically $ newTVar mempty
   arrowCursor <- SDLE.createSystemCursor SDL_SYSTEM_CURSOR_ARROW
   tvCursor    <- atomically $ newTVar (SDL_SYSTEM_CURSOR_ARROW, arrowCursor)
-  host OdinData { odinUserData     = r
-                , odinWindow       = window
-                , odinFontMap      = tvFontMap
-                , odinFresh        = tvFresh
-                , odinV2V4Renderer = V2V4Renderer v2v4
-                , odinV2V2Renderer = V2V2Renderer v2v2
-                , odinDefaultFont  = defaultFont
-                , odinIconFont     = iconFont
-                , odinSystemCursor = tvCursor
-                , odinFPSEvents    = tvMapEvs
-                } guest
+
+  return OdinData { odinUserData     = r
+                  , odinWindow       = window
+                  , odinFontMap      = tvFontMap
+                  , odinFresh        = tvFresh
+                  , odinV2V4Renderer = V2V4Renderer v2v4
+                  , odinV2V2Renderer = V2V2Renderer v2v2
+                  , odinDefaultFont  = defaultFont
+                  , odinIconFont     = iconFont
+                  , odinSystemCursor = tvCursor
+                  , odinFPSEvents    = tvMapEvs
+                  }
+
+
+runOdin :: Reflex t => r -> ConcreteReflexSDL2 (OdinData r t) () -> IO ()
+runOdin r = (initialOdinData r >>=) . flip host
 
 
 render
@@ -396,7 +401,8 @@ runWidgets guest = do
   dWidgets  <- snd <$$> accumM freeStaleWidgets initial (updated dNodes)
   tvmCursor <- odinSystemCursor <$> getUserData
   evFrame   <- getFPSEvent 30
-  let evWidgets = tagPromptlyDyn dWidgets evFrame
+  evPB      <- getPostBuild
+  let evWidgets = tagPromptlyDyn dWidgets $ leftmost [evFrame, evPB]
   performEvent_ $ render window tvmCursor <$> evWidgets
   return a
 

@@ -24,7 +24,6 @@ import           Data.Default                 (def)
 import           Data.Monoid                  ((<>))
 import qualified Data.Vector.Unboxed          as V
 import           Data.Word                    (Word32)
-import Data.QuadTree
 import           Gelatin.GL
 import           Reflex.SDL2                  hiding (fan, rotate)
 import           System.Exit                  (exitSuccess)
@@ -179,7 +178,10 @@ subguest = do
 guest :: forall r t m. OdinWidget r t m => m ()
 guest = do
   quitOnQuitEvent
-  cuteBackground
+  --cuteBackground
+  let font = fontDescriptor "../assets/fonts/Inconsolata-Regular.ttf" 16
+  transform [move 100 100] $ textFieldWith font white "Hello" def
+
   --subguest
   --transform [move 100 100, rotate $ pi/8] $
   --  pane (ShapeRectangle 0 300 300) black 0 def subguest

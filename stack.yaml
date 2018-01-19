@@ -1,4 +1,4 @@
-resolver: lts-9.11
+resolver: nightly-2017-11-02
 
 packages:
 - odin-engine
@@ -12,18 +12,13 @@ packages:
   extra-dep: true
 
 - location:
-    git: https://github.com/schell/halive.git
-    commit: 48ba4f22649bb9372fc3fbc6e94f25df20dbae2c
+    git: https://github.com/schell/reflex
+    commit: fc69b9793218578e76e6eb79991ccdf665c88636
   extra-dep: true
 
 - location:
-    git: https://github.com/reflex-frp/reflex
-    commit: a6ee264850cf80c55e8fed99575107a44af57081
-  extra-dep: true
-
-- location:
-    git: https://github.com/schell/QuadTree
-    commit: bd11166e50e5f2f4ade87613520aaf82e23cc9eb
+    git: https://github.com/schell/reflex-sdl2
+    commit: b2089accef02ee218a8ec7d909471b34f824f09e
   extra-dep: true
 
 extra-deps:
@@ -35,9 +30,7 @@ extra-deps:
 - gelatin-sdl2-0.1.1.0
 - gelatin-freetype2-0.1.0.0
 - prim-uniq-0.1.0.1
-- QuadTree-0.11.0
 - ref-tf-0.4.0.1
-- reflex-sdl2-0.2.0.0
 - sdl2-2.3.0
 flags: {}
 extra-package-dbs: []
